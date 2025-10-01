@@ -58,7 +58,7 @@ async function getData() {
     // Add more patterns as needed
 
     // Order Book Snapshot
-    const depth = await client.depth({ symbol: 'SOLUSDT', limit: 5 });
+    const depth = await client.book({ symbol: 'SOLUSDT', limit: 5 });
     const biggestBuy = depth.bids[0]; // [price, size]
     const biggestSell = depth.asks[0];
     const ratio = parseFloat(biggestBuy[1]) / parseFloat(biggestSell[1]);
