@@ -30,19 +30,16 @@ function updateUI(data) {
   document.getElementById('psar-pos').textContent = data.psar.position;
   // Candle (last one)
   document.getElementById('candle-pattern').textContent = data.candlePattern;
-  // Order Book
-  document.getElementById('buy-wall').textContent = `${data.orderBook.buyWall.price} (${data.orderBook.buyWall.size})`;
-  document.getElementById('sell-wall').textContent = `${data.orderBook.sellWall.price} (${data.orderBook.sellWall.size})`;
-  document.getElementById('ratio').textContent = data.orderBook.ratio.toFixed(2);
-  // Last 5 Candles
+  // Order Book - not displaying
+  // Last 5 Candles (reverse for Candle 1 = most recent, format as requested)
   const candlesList = document.getElementById('last5-candles');
   candlesList.innerHTML = ''; // Clear
-  data.last5Candles.forEach((candle, index) => {
+  const reversedCandles = [...data.last5Candles].reverse(); // Reverse so [0] = newest
+  reversedCandles.forEach((candle, index) => {
     const li = document.createElement('li');
-    li.textContent = `Candle ${index + 1} (${candle.startTime} - ${candle.endTime}): O=${candle.ohlc.open.toFixed(2)}, H=${candle.ohlc.high.toFixed(2)}, L=${candle.ohlc.low.toFixed(2)}, C=${candle.ohlc.close.toFixed(2)}, Vol=${candle.volume.toFixed(0)}, Pattern=${candle.pattern}`;
+    li.textContent = `Candle ${index + 1}: (${candle.startTime} - ${candle.endTime}), Open value=${candle.ohlc.open.toFixed(2)}, Close value=${candle.ohlc.close.toFixed(2)}, Low=${candle.ohlc.low.toFixed(2)}, High=${candle.ohlc.high.toFixed(2)}, volume=${candle.volume.toFixed(0)}`;
     candlesList.appendChild(li);
   });
-  document.getElementById('avg-volume').textContent = data.avgVolume.toFixed(0);
   // Higher TF
   document.getElementById('trend1h').textContent = data.higherTF.trend1h;
   document.getElementById('trend4h').textContent = data.higherTF.trend4h;

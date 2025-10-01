@@ -94,10 +94,10 @@ async function getData() {
     const psar = TI.PSAR.calculate(psarInput).pop();
     const psarPosition = psar > currentPrice ? 'Above' : 'Below';
 
-    // Volume avg (over last 5)
+    // Volume avg (over last 5) - keeping in data but not displaying
     const avgVolume = last5Candles.reduce((sum, c) => sum + c.volume, 0) / last5Candles.length || 0;
 
-    // Order Book Snapshot
+    // Order Book Snapshot - keeping but not displaying
     const depth = await client.book({ symbol: 'SOLUSDT', limit: 5 });
     const biggestBuy = depth.bids[0]; // [price, size]
     const biggestSell = depth.asks[0];
