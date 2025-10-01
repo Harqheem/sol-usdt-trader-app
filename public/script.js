@@ -101,8 +101,8 @@ async function fetchData() {
 setInterval(fetchData, 900000); // 15 * 60 * 1000
 fetchData(); // Initial full fetch
 
-// Price every 1s
-setInterval(fetchPrice, 1000);
+// Price every 3s
+setInterval(fetchPrice, 3000);
 fetchPrice(); // Initial price
 
 document.getElementById('copy-btn').addEventListener('click', () => {

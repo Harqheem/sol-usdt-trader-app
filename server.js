@@ -227,7 +227,7 @@ async function getData() {
 
     // Send Telegram notification if new entry signal
     if (signal.startsWith('✅ Enter') && signal !== previousSignal) {
-      const notification = `New Entry Signal: ${signal}\nNotes: ${notes}`;
+      const notification = `SOL/USDT\nLEVERAGE 20\nEntry Price: ${entry}\nTake Profit: ${tp}\nStop loss: ${sl}\n\nNotes: ${notes}`;
       await sendTelegramNotification(notification);
       previousSignal = signal;
     } else if (!signal.startsWith('✅ Enter')) {
