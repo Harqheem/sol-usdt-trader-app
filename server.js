@@ -33,18 +33,18 @@ function detectCandlePattern(opens, highs, lows, closes, index) {
 
 async function getData() {
   try {
-    // Fetch 200 recent 1m klines (for calculations)
-    const klines1m = await client.candles({ symbol: 'SOLUSDT', interval: '1m', limit: 200 });
-    const lastCandle = klines1m[klines1m.length - 1];
-    const closes = klines1m.map(c => parseFloat(c.close));
-    const highs = klines1m.map(c => parseFloat(c.high));
-    const lows = klines1m.map(c => parseFloat(c.low));
-    const opens = klines1m.map(c => parseFloat(c.open));
-    const volumes = klines1m.map(c => parseFloat(c.volume));
+    // Fetch 300 recent 15m klines (for calculations, covers ~75 hours)
+    const klines15m = await client.candles({ symbol: 'SOLUSDT', interval: '15m', limit: 300 });
+    const lastCandle = klines15m[klines15m.length - 1];
+    const closes = klines15m.map(c => parseFloat(c.close));
+    const highs = klines15m.map(c => parseFloat(c.high));
+    const lows = klines15m.map(c => parseFloat(c.low));
+    const opens = klines15m.map(c => parseFloat(c.open));
+    const volumes = klines15m.map(c => parseFloat(c.volume));
 
-    // Last 5 candles data (slice -5 to -1 for closed ones, but include latest)
+    // Last 5 candles data
     const last5Candles = [];
-    for (let i = klines1m.length - 5; i < klines1m.length; i++) {
+    for (let i = klines15m.length - 5; i < klines15m.length; i++) {
       const ohlc = {
         open: opens[i],
         high: highs[i],
@@ -53,7 +53,9 @@ async function getData() {
       };
       const volume = volumes[i];
       const pattern = detectCandlePattern(opens, highs, lows, closes, i);
-      last5Candles.push({ ohlc, volume, pattern });
+      const startTime = new Date(klines15m[i].openTime).toLocaleTimeString();
+      const endTime = new Date(klines15m[i].closeTime).toLocaleTimeString();
+      last5Candles.push({ ohlc, volume, pattern, startTime, endTime });
     }
 
     // Core Price Info
@@ -90,13 +92,15 @@ async function getData() {
     const biggestSell = depth.asks[0];
     const ratio = parseFloat(biggestBuy[1]) / parseFloat(biggestSell[1]);
 
-    // Higher Timeframe Check
-    const klines1h = await client.candles({ symbol: 'SOLUSDT', interval: '1h', limit: 1 });
-    const ema99_1h = TI.EMA.calculate({ period: 99, values: await client.candles({ symbol: 'SOLUSDT', interval: '1h', limit: 100 }).then(k => k.map(c => parseFloat(c.close))) }).pop();
+    // Higher Timeframe Check (adjust fetch limits accordingly)
+    const klines1h = await client.candles({ symbol: 'SOLUSDT', interval: '1h', limit: 100 });
+    const closes1h = klines1h.map(c => parseFloat(c.close));
+    const ema99_1h = TI.EMA.calculate({ period: 99, values: closes1h }).pop();
     const trend1h = currentPrice > ema99_1h ? 'Above' : 'Below';
 
-    const klines4h = await client.candles({ symbol: 'SOLUSDT', interval: '4h', limit: 1 });
-    const ema99_4h = TI.EMA.calculate({ period: 99, values: await client.candles({ symbol: 'SOLUSDT', interval: '4h', limit: 100 }).then(k => k.map(c => parseFloat(c.close))) }).pop();
+    const klines4h = await client.candles({ symbol: 'SOLUSDT', interval: '4h', limit: 100 });
+    const closes4h = klines4h.map(c => parseFloat(c.close));
+    const ema99_4h = TI.EMA.calculate({ period: 99, values: closes4h }).pop();
     const trend4h = currentPrice > ema99_4h ? 'Above' : 'Below';
 
     // System Signals (simple logic - customize as needed)
@@ -117,9 +121,9 @@ async function getData() {
       volatility: { atr },
       bollinger: { upper: bb.upper, middle: bb.middle, lower: bb.lower },
       psar: { value: psar, position: psarPosition },
-      last5Candles, // New: array of {ohlc, volume, pattern}
+      last5Candles, // Updated with times
       avgVolume,
-      candlePattern: last5Candles[last5Candles.length - 1].pattern, // Keep for middle panel (last one)
+      candlePattern: last5Candles[last5Candles.length - 1].pattern, // Last one
       orderBook: { buyWall: { price: biggestBuy[0], size: biggestBuy[1] }, sellWall: { price: biggestSell[0], size: biggestSell[1] }, ratio },
       higherTF: { trend1h, trend4h },
       signals: { signal, notes }

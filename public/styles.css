@@ -22,3 +22,6 @@
   margin-bottom: 10px;
   border-bottom: 1px solid #ccc;
 }
+.top-bar span {
+  margin-right: 10px;
+}

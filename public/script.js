@@ -35,7 +35,7 @@ function updateUI(data) {
   candlesList.innerHTML = ''; // Clear
   data.last5Candles.forEach((candle, index) => {
     const li = document.createElement('li');
-    li.textContent = `Candle ${index + 1}: O=${candle.ohlc.open.toFixed(2)}, H=${candle.ohlc.high.toFixed(2)}, L=${candle.ohlc.low.toFixed(2)}, C=${candle.ohlc.close.toFixed(2)}, Vol=${candle.volume.toFixed(0)}, Pattern=${candle.pattern}`;
+    li.textContent = `Candle ${index + 1} (${candle.startTime} - ${candle.endTime}): O=${candle.ohlc.open.toFixed(2)}, H=${candle.ohlc.high.toFixed(2)}, L=${candle.ohlc.low.toFixed(2)}, C=${candle.ohlc.close.toFixed(2)}, Vol=${candle.volume.toFixed(0)}, Pattern=${candle.pattern}`;
     candlesList.appendChild(li);
   });
   document.getElementById('avg-volume').textContent = data.avgVolume.toFixed(0);
@@ -72,6 +72,7 @@ async function fetchPrice() {
     priceEl.style.color = 'black';
   }
   priceEl.textContent = `Current Price: ${newPrice.toFixed(2)}${arrow}`;
+  document.getElementById('current-time').textContent = `Current Time: ${new Date().toLocaleTimeString()}`; // New: Moving time
   previousPrice = newPrice;
 }
 
