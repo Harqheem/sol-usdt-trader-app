@@ -234,6 +234,15 @@ async function getData() {
       previousSignal = signal; // Reset if no entry
     }
 
+    // --- FOR TESTING: Force a test signal (uncomment to test, then re-comment after) ---
+    // signal = '✅ Enter Long (Test)';
+    // notes = 'This is a test notification. Entry: 100.00, TP: 120.00, SL: 90.00';
+    // if (signal !== previousSignal) {
+    //   const notification = `New Entry Signal: ${signal}\nNotes: ${notes}`;
+    //   await sendTelegramNotification(notification);
+    //   previousSignal = signal;
+    // }
+
     return {
       core: { currentPrice, ohlc, timestamp },
       movingAverages: { ema7, ema25, ema99, sma50, sma200 },
