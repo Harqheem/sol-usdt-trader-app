@@ -97,6 +97,10 @@ async function getData() {
     const psar = TI.PSAR.calculate(psarInput).pop();
     const psarPosition = psar > currentPrice ? 'Above' : 'Below';
 
+    // RSI (new for additional rule)
+    const rsiInput = { values: closes, period: 14 };
+    const rsi = TI.RSI.calculate(rsiInput).pop();
+
     // Volume avg (over last 5) - keeping in data but not displaying
     const avgVolume = last5Candles.reduce((sum, c) => sum + c.volume, 0) / last5Candles.length || 0;
 
@@ -117,33 +121,53 @@ async function getData() {
     const ema99_4h = TI.EMA.calculate({ period: 99, values: closes4h }).pop();
     const trend4h = currentPrice > ema99_4h ? 'Above' : 'Below';
 
-    // Improved System Signals with more confirmation
+    // Improved System Signals with scoring for less strict entry
     let signal = '❌ No Trade';
     let notes = 'Conflicting signals. Suggestion: Monitor for clearer trends.';
     
-    // Check if volume is increasing (for confirmation)
-    const isVolumeIncreasing = last5Candles.slice(-3).every((c, idx) => idx === 0 || c.volume > last5Candles[last5Candles.length - idx - 2].volume);
+    // Check if volume is increasing (relaxed to last 2 candles)
+    const isVolumeIncreasing = last5Candles.slice(-2).every((c, idx) => idx === 0 || c.volume > last5Candles[last5Candles.length - idx - 2].volume);
     
-    // Bullish conditions
-    const isBullish = currentPrice > ema7 && currentPrice > ema25 && currentPrice > ema99 &&
-                      last5Candles[last5Candles.length - 1].volume > avgVolume && ratio > 1 &&
-                      psarPosition === 'Below' && ['Hammer', 'Bullish Engulfing'].includes(last5Candles[last5Candles.length - 1].pattern) &&
-                      currentPrice < bb.upper * 0.98 && // Not overbought
-                      atr > avgAtr * 0.8 && // Sufficient volatility
-                      isVolumeIncreasing; // Volume confirmation
+    // Bullish score (add more rules, less strict threshold)
+    let bullishScore = 0;
+    if (currentPrice > ema7) bullishScore += 1;
+    if (currentPrice > ema25) bullishScore += 1;
+    if (currentPrice > ema99) bullishScore += 1;
+    if (last5Candles[last5Candles.length - 1].volume > avgVolume * 0.8) bullishScore += 1; // Relaxed
+    if (ratio > 0.9) bullishScore += 1; // Relaxed
+    if (psarPosition === 'Below') bullishScore += 1;
+    if (['Hammer', 'Bullish Engulfing'].includes(last5Candles[last5Candles.length - 1].pattern)) bullishScore += 1;
+    if (currentPrice < bb.upper) bullishScore += 1; // Relaxed (no *0.98)
+    if (atr > avgAtr * 0.5) bullishScore += 1; // Relaxed volatility
+    if (isVolumeIncreasing) bullishScore += 1;
+    if (trend1h === 'Above') bullishScore += 1;
+    if (trend4h === 'Above') bullishScore += 1;
+    if (rsi < 70) bullishScore += 1; // New: Not overbought
+    if (currentPrice > sma50) bullishScore += 1; // New: Above medium-term SMA
     
-    // Bearish conditions (symmetric)
-    const isBearish = currentPrice < ema7 && currentPrice < ema25 && currentPrice < ema99 &&
-                      last5Candles[last5Candles.length - 1].volume > avgVolume && ratio < 1 &&
-                      psarPosition === 'Above' && ['Shooting Star', 'Bearish Engulfing'].includes(last5Candles[last5Candles.length - 1].pattern) &&
-                      currentPrice > bb.lower * 1.02 && // Not oversold
-                      atr > avgAtr * 0.8 && // Sufficient volatility
-                      isVolumeIncreasing; // Volume confirmation (for downside strength)
+    // Bearish score (symmetric)
+    let bearishScore = 0;
+    if (currentPrice < ema7) bearishScore += 1;
+    if (currentPrice < ema25) bearishScore += 1;
+    if (currentPrice < ema99) bearishScore += 1;
+    if (last5Candles[last5Candles.length - 1].volume > avgVolume * 0.8) bearishScore += 1; // Relaxed
+    if (ratio < 1.1) bearishScore += 1; // Relaxed
+    if (psarPosition === 'Above') bearishScore += 1;
+    if (['Shooting Star', 'Bearish Engulfing'].includes(last5Candles[last5Candles.length - 1].pattern)) bearishScore += 1;
+    if (currentPrice > bb.lower) bearishScore += 1; // Relaxed (no *1.02)
+    if (atr > avgAtr * 0.5) bearishScore += 1; // Relaxed volatility
+    if (isVolumeIncreasing) bearishScore += 1;
+    if (trend1h === 'Below') bearishScore += 1;
+    if (trend4h === 'Below') bearishScore += 1;
+    if (rsi > 30) bearishScore += 1; // New: Not oversold
+    if (currentPrice < sma50) bearishScore += 1; // New: Below medium-term SMA
     
-    // Calculate Trade Levels
+    // Calculate Trade Levels if signal triggers
     let entry = 'N/A';
     let tp = 'N/A';
     let sl = 'N/A';
+    const isBullish = bullishScore >= 7; // Less strict threshold (out of 14)
+    const isBearish = bearishScore >= 7;
     if (isBullish || isBearish) {
       entry = currentPrice.toFixed(2);
       const recentLows = last5Candles.map(c => c.ohlc.low);
@@ -159,12 +183,12 @@ async function getData() {
       }
     }
 
-    if (isBullish && trend1h === 'Above' && trend4h === 'Above') {
+    if (isBullish) {
       signal = '✅ Enter Long';
-      notes = `Strong bullish alignment: Price above key EMAs, supportive higher TFs, bullish pattern, increasing volume, and sufficient volatility. Suggestion: Enter long with stop below recent low; target next resistance. Entry: ${entry}, TP: ${tp}, SL: ${sl}`;
-    } else if (isBearish && trend1h === 'Below' && trend4h === 'Below') {
+      notes = `Bullish score: ${bullishScore}/14 - Sufficient alignment for entry. Price trends positive, supportive indicators. Suggestion: Enter long with stop below recent low; target next resistance. Entry: ${entry}, TP: ${tp}, SL: ${sl}`;
+    } else if (isBearish) {
       signal = '✅ Enter Short';
-      notes = `Strong bearish alignment: Price below key EMAs, unsupportive higher TFs, bearish pattern, increasing volume, and sufficient volatility. Suggestion: Enter short with stop above recent high; target next support. Entry: ${entry}, TP: ${tp}, SL: ${sl}`;
+      notes = `Bearish score: ${bearishScore}/14 - Sufficient alignment for entry. Price trends negative, supportive indicators. Suggestion: Enter short with stop above recent high; target next support. Entry: ${entry}, TP: ${tp}, SL: ${sl}`;
     } else if (atr < avgAtr * 0.5 || last5Candles[last5Candles.length - 1].pattern === 'Doji' || (currentPrice > bb.upper || currentPrice < bb.lower)) {
       signal = '⏸ Wait for Confirmation';
       notes = 'Mixed or indecisive signals: Low volatility, indecision pattern, or potential overbought/oversold. Suggestion: Wait for breakout beyond BB or EMA crossover; monitor volume for confirmation.';
