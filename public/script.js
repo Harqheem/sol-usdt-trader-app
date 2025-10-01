@@ -97,8 +97,8 @@ async function fetchData() {
   }
 }
 
-// Full data every 15 min
-setInterval(fetchData, 900000); // 15 * 60 * 1000
+// Full data every 5 min
+setInterval(fetchData, 300000); // 5 * 60 * 1000
 fetchData(); // Initial full fetch
 
 // Price every 1 second
