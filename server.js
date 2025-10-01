@@ -18,7 +18,7 @@ function detectCandlePattern(opens, highs, lows, closes, index) {
   // Single-candle patterns
   if (TI.bullishhammerstick({ open: [open], high: [high], low: [low], close: [close] })) pattern = 'Hammer';
   else if (TI.doji({ open: [open], high: [high], low: [low], close: [close] })) pattern = 'Doji';
-  else if (TI.bearishshootingstarstick({ open: [open], high: [high], low: [low], close: [close] })) pattern = 'Shooting Star'; // New bearish
+  else if (TI.shootingstar({ open: [open], high: [high], low: [low], close: [close] })) pattern = 'Shooting Star'; // Fixed bearish
 
   // Two-candle patterns (if not first candle)
   if (index > 0) {
