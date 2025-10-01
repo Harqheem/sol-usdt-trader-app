@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SOL/USDT Trader App</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Top Bar -->
+    <div class="top-bar">
+      <span id="current-price"></span>
+      <span id="timestamp"></span>
+      <button id="copy-btn">Copy Data</button>
+    </div>
+    <!-- Left Panel -->
+    <div class="left-panel">
+      <h3>Trend & Volatility</h3>
+      <p>EMA7: <span id="ema7"></span></p>
+      <p>EMA25: <span id="ema25"></span></p>
+      <p>EMA99: <span id="ema99"></span></p>
+      <p>SMA50: <span id="sma50"></span></p>
+      <p>SMA200: <span id="sma200"></span></p>
+      <p>ATR(14): <span id="atr"></span></p>
+    </div>
+    <!-- Middle Panel -->
+    <div class="middle-panel">
+      <h3>Market Status</h3>
+      <p>Bollinger Upper: <span id="bb-upper"></span></p>
+      <p>Bollinger Middle: <span id="bb-middle"></span></p>
+      <p>Bollinger Lower: <span id="bb-lower"></span></p>
+      <p>PSAR: <span id="psar"></span> (<span id="psar-pos"></span>)</p>
+      <p>Candlestick: <span id="candle-pattern"></span></p>
+      <!-- Add small chart here later if needed (e.g., via Chart.js) -->
+    </div>
+    <!-- Right Panel -->
+    <div class="right-panel">
+      <h3>Liquidity & Volume</h3>
+      <p>Buy Wall: <span id="buy-wall"></span></p>
+      <p>Sell Wall: <span id="sell-wall"></span></p>
+      <p>Ratio: <span id="ratio"></span></p>
+      <p>Last 5 Volumes: <span id="volumes"></span></p>
+    </div>
+    <!-- Bottom Panel -->
+    <div class="bottom-panel">
+      <h3>Signals</h3>
+      <p>1H Trend: <span id="trend1h"></span></p>
+      <p>4H Trend: <span id="trend4h"></span></p>
+      <p>Recommendation: <span id="signal"></span></p>
+      <p>Notes: <span id="notes"></span></p>
+    </div>
+  </div>
+  <script src="script.js"></script>
+</body>
+</html>
