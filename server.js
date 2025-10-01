@@ -86,7 +86,7 @@ async function getData() {
     // Volatility (ATR)
     const atrInput = { high: highs, low: lows, close: closes, period: 14 };
     const atr = TI.ATR.calculate(atrInput).pop();
-    const avgAtr = TI.Average.calculate({ period: 14, values: TI.ATR.calculate(atrInput) }).pop(); // Avg ATR for thresholds
+    const avgAtr = TI.SMA.calculate({ period: 14, values: TI.ATR.calculate(atrInput) }).pop(); // Fixed: Use SMA for average
 
     // Bollinger Bands
     const bbInput = { period: 20, values: closes, stdDev: 2 };
