@@ -9,17 +9,17 @@ app.use(express.static('public'));
 
 // Function to detect candle pattern (single or two-candle) - added bearish patterns
 function detectCandlePattern(opens, highs, lows, closes, index) {
-  const open = opens[index];
-  const high = highs[index];
-  const low = lows[index];
-  const close = closes[index];
+  const sliceOpens = opens.slice(0, index + 1);
+  const sliceHighs = highs.slice(0, index + 1);
+  const sliceLows = lows.slice(0, index + 1);
+  const sliceCloses = closes.slice(0, index + 1);
   let pattern = 'Neutral';
 
   // Single-candle patterns with try-catch for data issues
   try {
-    if (TI.bullishhammerstick({ open: [open], high: [high], low: [low], close: [close] })) pattern = 'Hammer';
-    else if (TI.doji({ open: [open], high: [high], low: [low], close: [close] })) pattern = 'Doji';
-    else if (TI.shootingstar({ open: [open], high: [high], low: [low], close: [close] })) pattern = 'Shooting Star'; // Fixed bearish
+    if (TI.bullishhammerstick({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Hammer';
+    else if (TI.doji({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Doji';
+    else if (TI.shootingstar({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Shooting Star'; // Fixed bearish
   } catch (err) {
     console.log('Pattern detection warning (ignored):', err.message);
     // Continue with 'Neutral'
@@ -27,13 +27,9 @@ function detectCandlePattern(opens, highs, lows, closes, index) {
 
   // Two-candle patterns (if not first candle) with try-catch
   if (index > 0) {
-    const prevOpen = opens[index - 1];
-    const prevHigh = highs[index - 1];
-    const prevLow = lows[index - 1];
-    const prevClose = closes[index - 1];
     try {
-      if (TI.bullishengulfingpattern({ open: [prevOpen, open], high: [prevHigh, high], low: [prevLow, low], close: [prevClose, close] })) pattern = 'Bullish Engulfing';
-      else if (TI.bearishengulfingpattern({ open: [prevOpen, open], high: [prevHigh, high], low: [prevLow, low], close: [prevClose, close] })) pattern = 'Bearish Engulfing'; // New bearish
+      if (TI.bullishengulfingpattern({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Bullish Engulfing';
+      else if (TI.bearishengulfingpattern({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Bearish Engulfing'; // New bearish
     } catch (err) {
       console.log('Pattern detection warning (ignored):', err.message);
       // Continue with current pattern
