@@ -1,25 +1,50 @@
 const express = require('express');
 const Binance = require('binance-api-node').default;
 const TI = require('technicalindicators');
+const axios = require('axios');
+require('dotenv').config(); // Load .env
 
 const app = express();
 const client = Binance(); // Public client, no auth needed
 
 app.use(express.static('public'));
 
+let previousSignal = ''; // Track last signal to avoid duplicate notifications
+
+// Function to send Telegram notification
+async function sendTelegramNotification(message) {
+  const BOT_TOKEN = process.env.BOT_TOKEN;
+  const CHAT_ID = process.env.CHAT_ID;
+  if (!BOT_TOKEN || !CHAT_ID) {
+    console.error('Telegram BOT_TOKEN or CHAT_ID not set in .env');
+    return;
+  }
+
+  try {
+    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      chat_id: CHAT_ID,
+      text: message,
+      parse_mode: 'Markdown' // Optional for formatting
+    });
+    console.log('Telegram notification sent:', message);
+  } catch (error) {
+    console.error('Telegram send error:', error.message);
+  }
+}
+
 // Function to detect candle pattern (single or two-candle) - added bearish patterns
 function detectCandlePattern(opens, highs, lows, closes, index) {
-  const sliceOpens = opens.slice(0, index + 1);
-  const sliceHighs = highs.slice(0, index + 1);
-  const sliceLows = lows.slice(0, index + 1);
-  const sliceCloses = closes.slice(0, index + 1);
+  const open = opens[index];
+  const high = highs[index];
+  const low = lows[index];
+  const close = closes[index];
   let pattern = 'Neutral';
 
   // Single-candle patterns with try-catch for data issues
   try {
-    if (TI.bullishhammerstick({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Hammer';
-    else if (TI.doji({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Doji';
-    else if (TI.shootingstar({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Shooting Star'; // Fixed bearish
+    if (TI.bullishhammerstick({ open: [open], high: [high], low: [low], close: [close] })) pattern = 'Hammer';
+    else if (TI.doji({ open: [open], high: [high], low: [low], close: [close] })) pattern = 'Doji';
+    else if (TI.shootingstar({ open: [open], high: [high], low: [low], close: [close] })) pattern = 'Shooting Star'; // Fixed bearish
   } catch (err) {
     console.log('Pattern detection warning (ignored):', err.message);
     // Continue with 'Neutral'
@@ -27,9 +52,13 @@ function detectCandlePattern(opens, highs, lows, closes, index) {
 
   // Two-candle patterns (if not first candle) with try-catch
   if (index > 0) {
+    const prevOpen = opens[index - 1];
+    const prevHigh = highs[index - 1];
+    const prevLow = lows[index - 1];
+    const prevClose = closes[index - 1];
     try {
-      if (TI.bullishengulfingpattern({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Bullish Engulfing';
-      else if (TI.bearishengulfingpattern({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Bearish Engulfing'; // New bearish
+      if (TI.bullishengulfingpattern({ open: [prevOpen, open], high: [prevHigh, high], low: [prevLow, low], close: [prevClose, close] })) pattern = 'Bullish Engulfing';
+      else if (TI.bearishengulfingpattern({ open: [prevOpen, open], high: [prevHigh, high], low: [prevLow, low], close: [prevClose, close] })) pattern = 'Bearish Engulfing'; // New bearish
     } catch (err) {
       console.log('Pattern detection warning (ignored):', err.message);
       // Continue with current pattern
@@ -200,6 +229,15 @@ async function getData() {
       notes = 'Mixed or indecisive signals: Low volatility, indecision pattern, or potential overbought/oversold. Suggestion: Wait for breakout beyond BB or EMA crossover; monitor volume for confirmation.';
     } else {
       notes += ' Suggestion: Review higher TFs for bias and wait for alignment with volume and patterns.';
+    }
+
+    // Send Telegram notification if new entry signal
+    if (signal.startsWith('✅ Enter') && signal !== previousSignal) {
+      const notification = `New Entry Signal: ${signal}\nNotes: ${notes}`;
+      await sendTelegramNotification(notification);
+      previousSignal = signal;
+    } else if (!signal.startsWith('✅ Enter')) {
+      previousSignal = signal; // Reset if no entry
     }
 
     return {
