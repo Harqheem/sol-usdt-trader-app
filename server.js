@@ -15,19 +15,29 @@ function detectCandlePattern(opens, highs, lows, closes, index) {
   const close = closes[index];
   let pattern = 'Neutral';
 
-  // Single-candle patterns
-  if (TI.bullishhammerstick({ open: [open], high: [high], low: [low], close: [close] })) pattern = 'Hammer';
-  else if (TI.doji({ open: [open], high: [high], low: [low], close: [close] })) pattern = 'Doji';
-  else if (TI.shootingstar({ open: [open], high: [high], low: [low], close: [close] })) pattern = 'Shooting Star'; // Fixed bearish
+  // Single-candle patterns with try-catch for data issues
+  try {
+    if (TI.bullishhammerstick({ open: [open], high: [high], low: [low], close: [close] })) pattern = 'Hammer';
+    else if (TI.doji({ open: [open], high: [high], low: [low], close: [close] })) pattern = 'Doji';
+    else if (TI.shootingstar({ open: [open], high: [high], low: [low], close: [close] })) pattern = 'Shooting Star'; // Fixed bearish
+  } catch (err) {
+    console.log('Pattern detection warning (ignored):', err.message);
+    // Continue with 'Neutral'
+  }
 
-  // Two-candle patterns (if not first candle)
+  // Two-candle patterns (if not first candle) with try-catch
   if (index > 0) {
     const prevOpen = opens[index - 1];
     const prevHigh = highs[index - 1];
     const prevLow = lows[index - 1];
     const prevClose = closes[index - 1];
-    if (TI.bullishengulfingpattern({ open: [prevOpen, open], high: [prevHigh, high], low: [prevLow, low], close: [prevClose, close] })) pattern = 'Bullish Engulfing';
-    else if (TI.bearishengulfingpattern({ open: [prevOpen, open], high: [prevHigh, high], low: [prevLow, low], close: [prevClose, close] })) pattern = 'Bearish Engulfing'; // New bearish
+    try {
+      if (TI.bullishengulfingpattern({ open: [prevOpen, open], high: [prevHigh, high], low: [prevLow, low], close: [prevClose, close] })) pattern = 'Bullish Engulfing';
+      else if (TI.bearishengulfingpattern({ open: [prevOpen, open], high: [prevHigh, high], low: [prevLow, low], close: [prevClose, close] })) pattern = 'Bearish Engulfing'; // New bearish
+    } catch (err) {
+      console.log('Pattern detection warning (ignored):', err.message);
+      // Continue with current pattern
+    }
   }
 
   return pattern;
@@ -166,8 +176,8 @@ async function getData() {
     let entry = 'N/A';
     let tp = 'N/A';
     let sl = 'N/A';
-    const isBullish = bullishScore >= 7; // Less strict threshold (out of 14)
-    const isBearish = bearishScore >= 7;
+    const isBullish = bullishScore >= 11; // Increased minimum
+    const isBearish = bearishScore >= 11; // Increased minimum
     if (isBullish || isBearish) {
       entry = currentPrice.toFixed(2);
       const recentLows = last5Candles.map(c => c.ohlc.low);
