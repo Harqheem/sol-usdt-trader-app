@@ -7,7 +7,7 @@ const client = Binance(); // Public client, no auth needed
 
 app.use(express.static('public'));
 
-// Function to detect candle pattern (single or two-candle)
+// Function to detect candle pattern (single or two-candle) - added bearish patterns
 function detectCandlePattern(opens, highs, lows, closes, index) {
   const open = opens[index];
   const high = highs[index];
@@ -18,6 +18,7 @@ function detectCandlePattern(opens, highs, lows, closes, index) {
   // Single-candle patterns
   if (TI.bullishhammerstick({ open: [open], high: [high], low: [low], close: [close] })) pattern = 'Hammer';
   else if (TI.doji({ open: [open], high: [high], low: [low], close: [close] })) pattern = 'Doji';
+  else if (TI.bearishshootingstarstick({ open: [open], high: [high], low: [low], close: [close] })) pattern = 'Shooting Star'; // New bearish
 
   // Two-candle patterns (if not first candle)
   if (index > 0) {
@@ -26,6 +27,7 @@ function detectCandlePattern(opens, highs, lows, closes, index) {
     const prevLow = lows[index - 1];
     const prevClose = closes[index - 1];
     if (TI.bullishengulfingpattern({ open: [prevOpen, open], high: [prevHigh, high], low: [prevLow, low], close: [prevClose, close] })) pattern = 'Bullish Engulfing';
+    else if (TI.bearishengulfingpattern({ open: [prevOpen, open], high: [prevHigh, high], low: [prevLow, low], close: [prevClose, close] })) pattern = 'Bearish Engulfing'; // New bearish
   }
 
   return pattern;
@@ -84,6 +86,7 @@ async function getData() {
     // Volatility (ATR)
     const atrInput = { high: highs, low: lows, close: closes, period: 14 };
     const atr = TI.ATR.calculate(atrInput).pop();
+    const avgAtr = TI.Average.calculate({ period: 14, values: TI.ATR.calculate(atrInput) }).pop(); // Avg ATR for thresholds
 
     // Bollinger Bands
     const bbInput = { period: 20, values: closes, stdDev: 2 };
@@ -114,16 +117,40 @@ async function getData() {
     const ema99_4h = TI.EMA.calculate({ period: 99, values: closes4h }).pop();
     const trend4h = currentPrice > ema99_4h ? 'Above' : 'Below';
 
-    // System Signals (simple logic - customize as needed)
+    // Improved System Signals with more confirmation
     let signal = '❌ No Trade';
-    let notes = 'Conflicting signals.';
-    const isBullish = currentPrice > ema7 && currentPrice > ema25 && last5Candles[last5Candles.length - 1].volume > avgVolume && ratio > 1 && psarPosition === 'Below' && ['Hammer', 'Bullish Engulfing'].includes(last5Candles[last5Candles.length - 1].pattern);
+    let notes = 'Conflicting signals. Suggestion: Monitor for clearer trends.';
+    
+    // Check if volume is increasing (for confirmation)
+    const isVolumeIncreasing = last5Candles.slice(-3).every((c, idx) => idx === 0 || c.volume > last5Candles[last5Candles.length - idx - 2].volume);
+    
+    // Bullish conditions
+    const isBullish = currentPrice > ema7 && currentPrice > ema25 && currentPrice > ema99 &&
+                      last5Candles[last5Candles.length - 1].volume > avgVolume && ratio > 1 &&
+                      psarPosition === 'Below' && ['Hammer', 'Bullish Engulfing'].includes(last5Candles[last5Candles.length - 1].pattern) &&
+                      currentPrice < bb.upper * 0.98 && // Not overbought
+                      atr > avgAtr * 0.8 && // Sufficient volatility
+                      isVolumeIncreasing; // Volume confirmation
+    
+    // Bearish conditions (symmetric)
+    const isBearish = currentPrice < ema7 && currentPrice < ema25 && currentPrice < ema99 &&
+                      last5Candles[last5Candles.length - 1].volume > avgVolume && ratio < 1 &&
+                      psarPosition === 'Above' && ['Shooting Star', 'Bearish Engulfing'].includes(last5Candles[last5Candles.length - 1].pattern) &&
+                      currentPrice > bb.lower * 1.02 && // Not oversold
+                      atr > avgAtr * 0.8 && // Sufficient volatility
+                      isVolumeIncreasing; // Volume confirmation (for downside strength)
+    
     if (isBullish && trend1h === 'Above' && trend4h === 'Above') {
-      signal = '✅ Enter Now';
-      notes = 'All trends align, strong buy wall, bullish candle.';
-    } else if (atr < 0.5 || last5Candles[last5Candles.length - 1].pattern === 'Doji') { // Example thresholds
+      signal = '✅ Enter Long';
+      notes = 'Strong bullish alignment: Price above key EMAs, supportive higher TFs, bullish pattern, increasing volume, and sufficient volatility. Suggestion: Enter long with stop below recent low; target next resistance.';
+    } else if (isBearish && trend1h === 'Below' && trend4h === 'Below') {
+      signal = '✅ Enter Short';
+      notes = 'Strong bearish alignment: Price below key EMAs, unsupportive higher TFs, bearish pattern, increasing volume, and sufficient volatility. Suggestion: Enter short with stop above recent high; target next support.';
+    } else if (atr < avgAtr * 0.5 || last5Candles[last5Candles.length - 1].pattern === 'Doji' || (currentPrice > bb.upper || currentPrice < bb.lower)) {
       signal = '⏸ Wait for Confirmation';
-      notes = 'Low volatility or indecision candle.';
+      notes = 'Mixed or indecisive signals: Low volatility, indecision pattern, or potential overbought/oversold. Suggestion: Wait for breakout beyond BB or EMA crossover; monitor volume for confirmation.';
+    } else {
+      notes += ' Suggestion: Review higher TFs for bias and wait for alignment with volume and patterns.';
     }
 
     return {
