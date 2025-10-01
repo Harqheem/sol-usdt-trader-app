@@ -33,8 +33,12 @@ function detectCandlePattern(opens, highs, lows, closes, index) {
 
 async function getData() {
   try {
-    // Fetch 300 recent 15m klines (for calculations, covers ~75 hours)
-    const klines15m = await client.candles({ symbol: 'SOLUSDT', interval: '15m', limit: 300 });
+    // Fetch 500 recent 15m klines (increased for robustness)
+    const klines15m = await client.candles({ symbol: 'SOLUSDT', interval: '15m', limit: 500 });
+    if (klines15m.length < 200) {
+      console.error('Insufficient klines data:', klines15m.length);
+      return { error: 'Insufficient historical data from Binance' };
+    }
     const lastCandle = klines15m[klines15m.length - 1];
     const closes = klines15m.map(c => parseFloat(c.close));
     const highs = klines15m.map(c => parseFloat(c.high));
@@ -42,9 +46,10 @@ async function getData() {
     const opens = klines15m.map(c => parseFloat(c.open));
     const volumes = klines15m.map(c => parseFloat(c.volume));
 
-    // Last 5 candles data
+    // Last 5 candles data (fallback if fewer than 5)
     const last5Candles = [];
-    for (let i = klines15m.length - 5; i < klines15m.length; i++) {
+    const startIndex = Math.max(0, klines15m.length - 5);
+    for (let i = startIndex; i < klines15m.length; i++) {
       const ohlc = {
         open: opens[i],
         high: highs[i],
@@ -63,12 +68,18 @@ async function getData() {
     const ohlc = { open: parseFloat(lastCandle.open), high: parseFloat(lastCandle.high), low: parseFloat(lastCandle.low), close: currentPrice };
     const timestamp = new Date(lastCandle.closeTime).toLocaleString();
 
-    // Moving Averages
-    const ema7 = TI.EMA.calculate({ period: 7, values: closes }).pop();
-    const ema25 = TI.EMA.calculate({ period: 25, values: closes }).pop();
-    const ema99 = TI.EMA.calculate({ period: 99, values: closes }).pop();
-    const sma50 = TI.SMA.calculate({ period: 50, values: closes }).pop();
-    const sma200 = TI.SMA.calculate({ period: 200, values: closes }).pop();
+    // Moving Averages (with try-catch for safety)
+    let ema7, ema25, ema99, sma50, sma200;
+    try {
+      ema7 = TI.EMA.calculate({ period: 7, values: closes }).pop();
+      ema25 = TI.EMA.calculate({ period: 25, values: closes }).pop();
+      ema99 = TI.EMA.calculate({ period: 99, values: closes }).pop();
+      sma50 = TI.SMA.calculate({ period: 50, values: closes }).pop();
+      sma200 = TI.SMA.calculate({ period: 200, values: closes }).pop();
+    } catch (err) {
+      console.error('Indicator calculation error:', err);
+      return { error: 'Failed to calculate indicators' };
+    }
 
     // Volatility (ATR)
     const atrInput = { high: highs, low: lows, close: closes, period: 14 };
@@ -84,7 +95,7 @@ async function getData() {
     const psarPosition = psar > currentPrice ? 'Above' : 'Below';
 
     // Volume avg (over last 5)
-    const avgVolume = last5Candles.reduce((sum, c) => sum + c.volume, 0) / 5;
+    const avgVolume = last5Candles.reduce((sum, c) => sum + c.volume, 0) / last5Candles.length || 0;
 
     // Order Book Snapshot
     const depth = await client.book({ symbol: 'SOLUSDT', limit: 5 });
@@ -129,7 +140,7 @@ async function getData() {
       signals: { signal, notes }
     };
   } catch (error) {
-    console.error(error);
+    console.error('getData error:', error.message);
     return { error: 'Failed to fetch data' };
   }
 }
@@ -139,7 +150,7 @@ app.get('/data', async (req, res) => {
   res.json(data);
 });
 
-// New: Lightweight price endpoint
+// Lightweight price endpoint
 app.get('/price', async (req, res) => {
   try {
     const ticker = await client.avgPrice({ symbol: 'SOLUSDT' });

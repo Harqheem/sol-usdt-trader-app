@@ -2,27 +2,31 @@ let currentData = {};
 let previousPrice = null; // For arrow comparison
 
 function updateUI(data) {
-  if (data.error) return;
+  if (data.error) {
+    console.error('Data error:', data.error);
+    alert('Failed to load data: ' + data.error); // User notification
+    return;
+  }
   // Core (price updated separately)
   document.getElementById('timestamp').textContent = `Last Close: ${data.core.timestamp}`;
   // MAs (with arrows)
-  document.getElementById('ema7').textContent = `${data.movingAverages.ema7} ${data.core.currentPrice > data.movingAverages.ema7 ? '↑' : '↓'}`;
-  document.getElementById('ema25').textContent = `${data.movingAverages.ema25} ${data.core.currentPrice > data.movingAverages.ema25 ? '↑' : '↓'}`;
-  document.getElementById('ema99').textContent = `${data.movingAverages.ema99} ${data.core.currentPrice > data.movingAverages.ema99 ? '↑' : '↓'}`;
-  document.getElementById('sma50').textContent = data.movingAverages.sma50;
-  document.getElementById('sma200').textContent = data.movingAverages.sma200;
+  document.getElementById('ema7').textContent = `${data.movingAverages.ema7.toFixed(2)} ${data.core.currentPrice > data.movingAverages.ema7 ? '↑' : '↓'}`;
+  document.getElementById('ema25').textContent = `${data.movingAverages.ema25.toFixed(2)} ${data.core.currentPrice > data.movingAverages.ema25 ? '↑' : '↓'}`;
+  document.getElementById('ema99').textContent = `${data.movingAverages.ema99.toFixed(2)} ${data.core.currentPrice > data.movingAverages.ema99 ? '↑' : '↓'}`;
+  document.getElementById('sma50').textContent = data.movingAverages.sma50.toFixed(2);
+  document.getElementById('sma200').textContent = data.movingAverages.sma200.toFixed(2);
   // Volatility
   const atrEl = document.getElementById('atr');
-  atrEl.textContent = data.volatility.atr;
+  atrEl.textContent = data.volatility.atr.toFixed(2);
   if (data.volatility.atr > 2) atrEl.style.color = 'green'; // Breakout
   else if (data.volatility.atr < 0.5) atrEl.style.color = 'red'; // Low
   else atrEl.style.color = 'orange';
   // BB
-  document.getElementById('bb-upper').textContent = data.bollinger.upper;
-  document.getElementById('bb-middle').textContent = data.bollinger.middle;
-  document.getElementById('bb-lower').textContent = data.bollinger.lower;
+  document.getElementById('bb-upper').textContent = data.bollinger.upper.toFixed(2);
+  document.getElementById('bb-middle').textContent = data.bollinger.middle.toFixed(2);
+  document.getElementById('bb-lower').textContent = data.bollinger.lower.toFixed(2);
   // PSAR
-  document.getElementById('psar').textContent = data.psar.value;
+  document.getElementById('psar').textContent = data.psar.value.toFixed(2);
   document.getElementById('psar-pos').textContent = data.psar.position;
   // Candle (last one)
   document.getElementById('candle-pattern').textContent = data.candlePattern;
@@ -51,37 +55,45 @@ function updateUI(data) {
 
 // Separate price update function
 async function fetchPrice() {
-  const res = await fetch('/price');
-  const data = await res.json();
-  if (data.error) return;
+  try {
+    const res = await fetch('/price');
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
 
-  const priceEl = document.getElementById('current-price');
-  const newPrice = data.currentPrice;
-  let arrow = '';
-  if (previousPrice !== null) {
-    if (newPrice > previousPrice) {
-      arrow = ' ↑';
-      priceEl.style.color = 'green';
-    } else if (newPrice < previousPrice) {
-      arrow = ' ↓';
-      priceEl.style.color = 'red';
+    const priceEl = document.getElementById('current-price');
+    const newPrice = data.currentPrice;
+    let arrow = '';
+    if (previousPrice !== null) {
+      if (newPrice > previousPrice) {
+        arrow = ' ↑';
+        priceEl.style.color = 'green';
+      } else if (newPrice < previousPrice) {
+        arrow = ' ↓';
+        priceEl.style.color = 'red';
+      } else {
+        priceEl.style.color = 'black';
+      }
     } else {
       priceEl.style.color = 'black';
     }
-  } else {
-    priceEl.style.color = 'black';
+    priceEl.textContent = `Current Price: ${newPrice.toFixed(2)}${arrow}`;
+    document.getElementById('current-time').textContent = `Current Time: ${new Date().toLocaleTimeString()}`; // Moving time
+    previousPrice = newPrice;
+  } catch (err) {
+    console.error('Price fetch error:', err);
   }
-  priceEl.textContent = `Current Price: ${newPrice.toFixed(2)}${arrow}`;
-  document.getElementById('current-time').textContent = `Current Time: ${new Date().toLocaleTimeString()}`; // New: Moving time
-  previousPrice = newPrice;
 }
 
 async function fetchData() {
-  const res = await fetch('/data');
-  const data = await res.json();
-  updateUI(data);
-  // Also update price from full data
-  fetchPrice(); // Sync price
+  try {
+    const res = await fetch('/data');
+    const data = await res.json();
+    updateUI(data);
+    // Sync price
+    fetchPrice();
+  } catch (err) {
+    console.error('Data fetch error:', err);
+  }
 }
 
 // Full data every 15 min
