@@ -7,6 +7,30 @@ const client = Binance(); // Public client, no auth needed
 
 app.use(express.static('public'));
 
+// Function to detect candle pattern (single or two-candle)
+function detectCandlePattern(opens, highs, lows, closes, index) {
+  const open = opens[index];
+  const high = highs[index];
+  const low = lows[index];
+  const close = closes[index];
+  let pattern = 'Neutral';
+
+  // Single-candle patterns
+  if (TI.bullishhammerstick({ open: [open], high: [high], low: [low], close: [close] })) pattern = 'Hammer';
+  else if (TI.doji({ open: [open], high: [high], low: [low], close: [close] })) pattern = 'Doji';
+
+  // Two-candle patterns (if not first candle)
+  if (index > 0) {
+    const prevOpen = opens[index - 1];
+    const prevHigh = highs[index - 1];
+    const prevLow = lows[index - 1];
+    const prevClose = closes[index - 1];
+    if (TI.bullishengulfingpattern({ open: [prevOpen, open], high: [prevHigh, high], low: [prevLow, low], close: [prevClose, close] })) pattern = 'Bullish Engulfing';
+  }
+
+  return pattern;
+}
+
 async function getData() {
   try {
     // Fetch 200 recent 1m klines (for calculations)
@@ -16,7 +40,21 @@ async function getData() {
     const highs = klines1m.map(c => parseFloat(c.high));
     const lows = klines1m.map(c => parseFloat(c.low));
     const opens = klines1m.map(c => parseFloat(c.open));
-    const volumes = klines1m.map(c => parseFloat(c.volume)).slice(-5); // Last 5 volumes
+    const volumes = klines1m.map(c => parseFloat(c.volume));
+
+    // Last 5 candles data (slice -5 to -1 for closed ones, but include latest)
+    const last5Candles = [];
+    for (let i = klines1m.length - 5; i < klines1m.length; i++) {
+      const ohlc = {
+        open: opens[i],
+        high: highs[i],
+        low: lows[i],
+        close: closes[i]
+      };
+      const volume = volumes[i];
+      const pattern = detectCandlePattern(opens, highs, lows, closes, i);
+      last5Candles.push({ ohlc, volume, pattern });
+    }
 
     // Core Price Info
     const currentPrice = parseFloat(lastCandle.close);
@@ -43,19 +81,8 @@ async function getData() {
     const psar = TI.PSAR.calculate(psarInput).pop();
     const psarPosition = psar > currentPrice ? 'Above' : 'Below';
 
-    // Volume
-    const avgVolume = volumes.reduce((a, b) => a + b, 0) / 5;
-
-    // Candlestick Pattern (basic detection using library)
-    const lastOpen = opens[opens.length - 1];
-    const lastHigh = highs[highs.length - 1];
-    const lastLow = lows[lows.length - 1];
-    const lastClose = closes[closes.length - 1];
-    let candlePattern = 'Neutral';
-    if (TI.bullishhammerstick({ open: [lastOpen], high: [lastHigh], low: [lastLow], close: [lastClose] })) candlePattern = 'Hammer';
-    else if (TI.doji({ open: [lastOpen], high: [lastHigh], low: [lastLow], close: [lastClose] })) candlePattern = 'Doji';
-    else if (TI.bullishengulfingpattern({ open: opens.slice(-2), high: highs.slice(-2), low: lows.slice(-2), close: closes.slice(-2) })) candlePattern = 'Bullish Engulfing';
-    // Add more patterns as needed
+    // Volume avg (over last 5)
+    const avgVolume = last5Candles.reduce((sum, c) => sum + c.volume, 0) / 5;
 
     // Order Book Snapshot
     const depth = await client.book({ symbol: 'SOLUSDT', limit: 5 });
@@ -75,11 +102,11 @@ async function getData() {
     // System Signals (simple logic - customize as needed)
     let signal = '❌ No Trade';
     let notes = 'Conflicting signals.';
-    const isBullish = currentPrice > ema7 && currentPrice > ema25 && volumes[4] > avgVolume && ratio > 1 && psarPosition === 'Below' && ['Hammer', 'Bullish Engulfing'].includes(candlePattern);
+    const isBullish = currentPrice > ema7 && currentPrice > ema25 && last5Candles[last5Candles.length - 1].volume > avgVolume && ratio > 1 && psarPosition === 'Below' && ['Hammer', 'Bullish Engulfing'].includes(last5Candles[last5Candles.length - 1].pattern);
     if (isBullish && trend1h === 'Above' && trend4h === 'Above') {
       signal = '✅ Enter Now';
       notes = 'All trends align, strong buy wall, bullish candle.';
-    } else if (atr < 0.5 || candlePattern === 'Doji') { // Example thresholds
+    } else if (atr < 0.5 || last5Candles[last5Candles.length - 1].pattern === 'Doji') { // Example thresholds
       signal = '⏸ Wait for Confirmation';
       notes = 'Low volatility or indecision candle.';
     }
@@ -90,8 +117,9 @@ async function getData() {
       volatility: { atr },
       bollinger: { upper: bb.upper, middle: bb.middle, lower: bb.lower },
       psar: { value: psar, position: psarPosition },
-      volume: { last5: volumes, avg: avgVolume },
-      candlePattern,
+      last5Candles, // New: array of {ohlc, volume, pattern}
+      avgVolume,
+      candlePattern: last5Candles[last5Candles.length - 1].pattern, // Keep for middle panel (last one)
       orderBook: { buyWall: { price: biggestBuy[0], size: biggestBuy[1] }, sellWall: { price: biggestSell[0], size: biggestSell[1] }, ratio },
       higherTF: { trend1h, trend4h },
       signals: { signal, notes }
@@ -105,6 +133,17 @@ async function getData() {
 app.get('/data', async (req, res) => {
   const data = await getData();
   res.json(data);
+});
+
+// New: Lightweight price endpoint
+app.get('/price', async (req, res) => {
+  try {
+    const ticker = await client.avgPrice({ symbol: 'SOLUSDT' });
+    res.json({ currentPrice: parseFloat(ticker.price) });
+  } catch (error) {
+    console.error(error);
+    res.json({ error: 'Failed to fetch price' });
+  }
 });
 
 app.listen(3000, () => console.log('Server running on http://localhost:3000'));

@@ -14,3 +14,11 @@
 .bottom-panel { grid-area: bottom; background: #e0ffe0; padding: 10px; }
 #atr { color: orange; } /* Default; JS will change */
 #copy-btn { float: right; }
+#last5-candles {
+  list-style-type: none;
+  padding: 0;
+}
+#last5-candles li {
+  margin-bottom: 10px;
+  border-bottom: 1px solid #ccc;
+}
