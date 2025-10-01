@@ -140,12 +140,31 @@ async function getData() {
                       atr > avgAtr * 0.8 && // Sufficient volatility
                       isVolumeIncreasing; // Volume confirmation (for downside strength)
     
+    // Calculate Trade Levels
+    let entry = 'N/A';
+    let tp = 'N/A';
+    let sl = 'N/A';
+    if (isBullish || isBearish) {
+      entry = currentPrice.toFixed(2);
+      const recentLows = last5Candles.map(c => c.ohlc.low);
+      const recentHighs = last5Candles.map(c => c.ohlc.high);
+      const minLow = Math.min(...recentLows);
+      const maxHigh = Math.max(...recentHighs);
+      if (isBullish) {
+        sl = (minLow - atr * 0.5).toFixed(2);
+        tp = (currentPrice + atr * 2).toFixed(2); // 1:2 RR
+      } else if (isBearish) {
+        sl = (maxHigh + atr * 0.5).toFixed(2);
+        tp = (currentPrice - atr * 2).toFixed(2);
+      }
+    }
+
     if (isBullish && trend1h === 'Above' && trend4h === 'Above') {
       signal = '✅ Enter Long';
-      notes = 'Strong bullish alignment: Price above key EMAs, supportive higher TFs, bullish pattern, increasing volume, and sufficient volatility. Suggestion: Enter long with stop below recent low; target next resistance.';
+      notes = `Strong bullish alignment: Price above key EMAs, supportive higher TFs, bullish pattern, increasing volume, and sufficient volatility. Suggestion: Enter long with stop below recent low; target next resistance. Entry: ${entry}, TP: ${tp}, SL: ${sl}`;
     } else if (isBearish && trend1h === 'Below' && trend4h === 'Below') {
       signal = '✅ Enter Short';
-      notes = 'Strong bearish alignment: Price below key EMAs, unsupportive higher TFs, bearish pattern, increasing volume, and sufficient volatility. Suggestion: Enter short with stop above recent high; target next support.';
+      notes = `Strong bearish alignment: Price below key EMAs, unsupportive higher TFs, bearish pattern, increasing volume, and sufficient volatility. Suggestion: Enter short with stop above recent high; target next support. Entry: ${entry}, TP: ${tp}, SL: ${sl}`;
     } else if (atr < avgAtr * 0.5 || last5Candles[last5Candles.length - 1].pattern === 'Doji' || (currentPrice > bb.upper || currentPrice < bb.lower)) {
       signal = '⏸ Wait for Confirmation';
       notes = 'Mixed or indecisive signals: Low volatility, indecision pattern, or potential overbought/oversold. Suggestion: Wait for breakout beyond BB or EMA crossover; monitor volume for confirmation.';
@@ -164,7 +183,7 @@ async function getData() {
       candlePattern: last5Candles[last5Candles.length - 1].pattern, // Last one
       orderBook: { buyWall: { price: biggestBuy[0], size: biggestBuy[1] }, sellWall: { price: biggestSell[0], size: biggestSell[1] }, ratio },
       higherTF: { trend1h, trend4h },
-      signals: { signal, notes }
+      signals: { signal, notes, entry, tp, sl } // Added trade levels
     };
   } catch (error) {
     console.error('getData error:', error.message);

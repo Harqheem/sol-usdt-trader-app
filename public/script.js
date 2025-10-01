@@ -46,6 +46,10 @@ function updateUI(data) {
   // Signals
   document.getElementById('signal').textContent = data.signals.signal;
   document.getElementById('notes').textContent = data.signals.notes;
+  // New Trade Levels
+  document.getElementById('entry').textContent = data.signals.entry;
+  document.getElementById('tp').textContent = data.signals.tp;
+  document.getElementById('sl').textContent = data.signals.sl;
 
   currentData = data;
 }
