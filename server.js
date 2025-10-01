@@ -53,7 +53,7 @@ async function getData() {
     const lastClose = closes[closes.length - 1];
     let candlePattern = 'Neutral';
     if (TI.bullishhammerstick({ open: [lastOpen], high: [lastHigh], low: [lastLow], close: [lastClose] })) candlePattern = 'Hammer';
-    else if (TI.dojistick({ open: [lastOpen], high: [lastHigh], low: [lastLow], close: [lastClose] })) candlePattern = 'Doji';
+    else if (TI.doji({ open: [lastOpen], high: [lastHigh], low: [lastLow], close: [lastClose] })) candlePattern = 'Doji';
     else if (TI.bullishengulfingpattern({ open: opens.slice(-2), high: highs.slice(-2), low: lows.slice(-2), close: closes.slice(-2) })) candlePattern = 'Bullish Engulfing';
     // Add more patterns as needed
 
