@@ -130,6 +130,10 @@ async function getData() {
     const rsiInput = { values: closes, period: 14 };
     const rsi = TI.RSI.calculate(rsiInput).pop();
 
+    // ADX (new for trend strength)
+    const adxInput = { high: highs, low: lows, close: closes, period: 14 };
+    const adx = TI.ADX.calculate(adxInput).pop().adx; // Get ADX value
+
     // Volume avg (over last 5) - keeping in data but not displaying
     const avgVolume = last5Candles.reduce((sum, c) => sum + c.volume, 0) / last5Candles.length || 0;
 
@@ -173,6 +177,7 @@ async function getData() {
     if (trend4h === 'Above') bullishScore += 1;
     if (rsi < 70) bullishScore += 1; // New: Not overbought
     if (currentPrice > sma50) bullishScore += 1; // New: Above medium-term SMA
+    if (adx > 25) bullishScore += 1; // New: Strong trend
     
     // Bearish score (symmetric)
     let bearishScore = 0;
@@ -190,6 +195,7 @@ async function getData() {
     if (trend4h === 'Below') bearishScore += 1;
     if (rsi > 30) bearishScore += 1; // New: Not oversold
     if (currentPrice < sma50) bearishScore += 1; // New: Below medium-term SMA
+    if (adx > 25) bearishScore += 1; // New: Strong trend
     
     // Calculate Trade Levels if signal triggers
     let entry = 'N/A';
@@ -204,20 +210,23 @@ async function getData() {
       const minLow = Math.min(...recentLows);
       const maxHigh = Math.max(...recentHighs);
       if (isBullish) {
-        sl = (minLow - atr * 0.5).toFixed(2);
+        sl = (minLow - atr * 1).toFixed(2); // Increased buffer
         tp = (currentPrice + atr * 2).toFixed(2); // 1:2 RR
+        notes += ' Trail SL to entry after 1 ATR profit.';
       } else if (isBearish) {
-        sl = (maxHigh + atr * 0.5).toFixed(2);
+        sl = (maxHigh + atr * 1).toFixed(2); // Increased buffer
         tp = (currentPrice - atr * 2).toFixed(2);
+        notes += ' Trail SL to entry after 1 ATR profit.';
       }
+      notes += ' Risk 1% of capital; hedge with options if available.';
     }
 
     if (isBullish) {
       signal = '✅ Enter Long';
-      notes = `Bullish score: ${bullishScore}/14 - Sufficient alignment for entry. Price trends positive, supportive indicators. Suggestion: Enter long with stop below recent low; target next resistance. Entry: ${entry}, TP: ${tp}, SL: ${sl}`;
+      notes = `Bullish score: ${bullishScore}/15 - Sufficient alignment for entry. Price trends positive, supportive indicators. Suggestion: Enter long with stop below recent low; target next resistance. Entry: ${entry}, TP: ${tp}, SL: ${sl}.` + notes;
     } else if (isBearish) {
       signal = '✅ Enter Short';
-      notes = `Bearish score: ${bearishScore}/14 - Sufficient alignment for entry. Price trends negative, supportive indicators. Suggestion: Enter short with stop above recent high; target next support. Entry: ${entry}, TP: ${tp}, SL: ${sl}`;
+      notes = `Bearish score: ${bearishScore}/15 - Sufficient alignment for entry. Price trends negative, supportive indicators. Suggestion: Enter short with stop above recent high; target next support. Entry: ${entry}, TP: ${tp}, SL: ${sl}.` + notes;
     } else if (atr < avgAtr * 0.5 || last5Candles[last5Candles.length - 1].pattern === 'Doji' || (currentPrice > bb.upper || currentPrice < bb.lower)) {
       signal = '⏸ Wait for Confirmation';
       notes = 'Mixed or indecisive signals: Low volatility, indecision pattern, or potential overbought/oversold. Suggestion: Wait for breakout beyond BB or EMA crossover; monitor volume for confirmation.';
