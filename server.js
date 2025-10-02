@@ -201,8 +201,8 @@ async function getData() {
     let entry = 'N/A';
     let tp = 'N/A';
     let sl = 'N/A';
-    const isBullish = bullishScore >= 11; // Increased minimum
-    const isBearish = bearishScore >= 11; // Increased minimum
+    const isBullish = bullishScore >= 12; // Increased to 12
+    const isBearish = bearishScore >= 12; // Increased to 12
     if (isBullish || isBearish) {
       entry = currentPrice.toFixed(2);
       const recentLows = last5Candles.map(c => c.ohlc.low);
@@ -210,28 +210,25 @@ async function getData() {
       const minLow = Math.min(...recentLows);
       const maxHigh = Math.max(...recentHighs);
       if (isBullish) {
-        sl = (minLow - atr * 1).toFixed(2); // Increased buffer
+        sl = (minLow - atr * 1).toFixed(2); // Increased buffer for volatility
         tp = (currentPrice + atr * 2).toFixed(2); // 1:2 RR
-        notes += ' Trail SL to entry after 1 ATR profit.';
       } else if (isBearish) {
-        sl = (maxHigh + atr * 1).toFixed(2); // Increased buffer
+        sl = (maxHigh + atr * 1).toFixed(2); // Increased buffer for volatility
         tp = (currentPrice - atr * 2).toFixed(2);
-        notes += ' Trail SL to entry after 1 ATR profit.';
       }
-      notes += ' Risk 1% of capital; hedge with options if available.';
     }
 
     if (isBullish) {
       signal = '✅ Enter Long';
-      notes = `Bullish score: ${bullishScore}/15 - Sufficient alignment for entry. Price trends positive, supportive indicators. Suggestion: Enter long with stop below recent low; target next resistance. Entry: ${entry}, TP: ${tp}, SL: ${sl}.` + notes;
+      notes = `Bullish score: ${bullishScore}/15. Key reasons: Price above EMAs, strong trend (ADX >25), supportive volume. Enter long; trail SL after 1 ATR profit. Entry: ${entry}, TP: ${tp}, SL: ${sl}. Risk 1% capital; hedge if volatile.`;
     } else if (isBearish) {
       signal = '✅ Enter Short';
-      notes = `Bearish score: ${bearishScore}/15 - Sufficient alignment for entry. Price trends negative, supportive indicators. Suggestion: Enter short with stop above recent high; target next support. Entry: ${entry}, TP: ${tp}, SL: ${sl}.` + notes;
+      notes = `Bearish score: ${bearishScore}/15. Key reasons: Price below EMAs, strong trend (ADX >25), supportive volume. Enter short; trail SL after 1 ATR profit. Entry: ${entry}, TP: ${tp}, SL: ${sl}. Risk 1% capital; hedge if volatile.`;
     } else if (atr < avgAtr * 0.5 || last5Candles[last5Candles.length - 1].pattern === 'Doji' || (currentPrice > bb.upper || currentPrice < bb.lower)) {
       signal = '⏸ Wait for Confirmation';
-      notes = 'Mixed or indecisive signals: Low volatility, indecision pattern, or potential overbought/oversold. Suggestion: Wait for breakout beyond BB or EMA crossover; monitor volume for confirmation.';
+      notes = 'Mixed signals: Low volatility or indecision. Wait for breakout or EMA crossover.';
     } else {
-      notes += ' Suggestion: Review higher TFs for bias and wait for alignment with volume and patterns.';
+      notes += ' No strong alignment. Monitor TFs and backtest recent data.';
     }
 
     // Send Telegram notification if new entry signal
