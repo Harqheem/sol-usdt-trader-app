@@ -10,13 +10,6 @@ const client = Binance(); // Public client, no auth needed
 app.use(express.static('public'));
 
 let previousSignal = ''; // Track last signal to avoid duplicate notifications
-let cachedData = null; // Cache for data
-
-// Background refresh every 30 seconds
-setInterval(async () => {
-  cachedData = await calculateData(); // Refresh cache
-  console.log('Data cache refreshed at', new Date().toLocaleString());
-}, 30000); // 30 * 1000
 
 // Function to send Telegram notification
 async function sendTelegramNotification(message) {
@@ -69,8 +62,8 @@ function detectCandlePattern(opens, highs, lows, closes, index) {
   return pattern;
 }
 
-// Core calculation function (used for caching)
-async function calculateData() {
+// Main data calculation function
+async function getData() {
   try {
     // Fetch 500 recent 15m klines (increased for robustness)
     const klines15m = await client.candles({ symbol: 'SOLUSDT', interval: '15m', limit: 500 });
@@ -248,6 +241,19 @@ async function calculateData() {
       previousSignal = signal; // Reset if no entry
     }
 
+    // Structured logging for entries (JSON with timestamp)
+    if (signal.startsWith('✅ Enter')) {
+      const log = {
+        timestamp: new Date().toLocaleString(),
+        signal,
+        bullishScore,
+        bearishScore,
+        reasons: { adx: adx.toFixed(2), rsi: rsi.toFixed(2), atr: atr.toFixed(2) },
+        levels: { entry, tp, sl }
+      };
+      console.log('Entry Log:', JSON.stringify(log, null, 2));
+    }
+
     return {
       core: { currentPrice, ohlc, timestamp },
       movingAverages: { ema7, ema25, ema99, sma50, sma200 },
@@ -267,9 +273,17 @@ async function calculateData() {
   }
 }
 
-app.get('/data', async (req, res) => {
-  const data = await getData();
-  res.json(data);
+// Background cache update
+setInterval(async () => {
+  cachedData = await getData();
+}, 30000); // Refresh cache every 30 seconds
+
+app.get('/data', (req, res) => {
+  if (cachedData) {
+    res.json(cachedData);
+  } else {
+    res.status(503).json({ error: 'Data not ready yet' });
+  }
 });
 
 // Lightweight price endpoint
