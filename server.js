@@ -10,7 +10,7 @@ const client = Binance(); // Public client, no auth needed
 app.use(express.static('public'));
 
 let previousSignal = ''; // Track last signal to avoid duplicate notifications
-let cachedData = null; // Cache for data (defined here at top level)
+let cachedData = null; // Cache for data
 
 // Function to send Telegram notification
 async function sendTelegramNotification(message) {
@@ -63,8 +63,8 @@ function detectCandlePattern(opens, highs, lows, closes, index) {
   return pattern;
 }
 
-// Core calculation function (used for caching)
-async function calculateData() {
+// Main data calculation function
+async function getData() {
   try {
     // Fetch 500 recent 15m klines (increased for robustness)
     const klines15m = await client.candles({ symbol: 'SOLUSDT', interval: '15m', limit: 500 });
@@ -203,8 +203,8 @@ async function calculateData() {
     let entry = 'N/A';
     let tp = 'N/A';
     let sl = 'N/A';
-    const isBullish = bullishScore >= 12; // Increased to 12
-    const isBearish = bearishScore >= 12; // Increased to 12
+    const isBullish = bullishScore >= 11; // Increased minimum
+    const isBearish = bearishScore >= 11; // Increased minimum
     if (isBullish || isBearish) {
       entry = currentPrice.toFixed(2);
       const recentLows = last5Candles.map(c => c.ohlc.low);
@@ -222,24 +222,28 @@ async function calculateData() {
 
     if (isBullish) {
       signal = '✅ Enter Long';
-      notes = `Score: ${bullishScore}/15. Reasons: Uptrend (EMAs aligned), strong ADX (${adx.toFixed(2)}), increasing volume. Suggestion: Enter long, trail SL after 1 ATR profit. Entry: ${entry}, TP: ${tp}, SL: ${sl}. Risk 1%; hedge if volatile.`;
+      notes = `Bullish score: ${bullishScore}/15. Key reasons: Price above EMAs, strong ADX (${adx.toFixed(2)} >25), high volume. Enter long; trail SL after 1 ATR profit. Entry: ${entry}, TP: ${tp}, SL: ${sl}. Risk 1% capital; hedge if volatile.`;
     } else if (isBearish) {
       signal = '✅ Enter Short';
-      notes = `Score: ${bearishScore}/15. Reasons: Downtrend (EMAs aligned), strong ADX (${adx.toFixed(2)}), increasing volume. Suggestion: Enter short, trail SL after 1 ATR profit. Entry: ${entry}, TP: ${tp}, SL: ${sl}. Risk 1%; hedge if volatile.`;
+      notes = `Bearish score: ${bearishScore}/15. Key reasons: Price below EMAs, strong ADX (${adx.toFixed(2)} >25), high volume. Enter short; trail SL after 1 ATR profit. Entry: ${entry}, TP: ${tp}, SL: ${sl}. Risk 1% capital; hedge if volatile.`;
     } else if (atr < avgAtr * 0.5 || last5Candles[last5Candles.length - 1].pattern === 'Doji' || (currentPrice > bb.upper || currentPrice < bb.lower)) {
       signal = '⏸ Wait for Confirmation';
       notes = 'Mixed signals: Low volatility or indecision. Wait for breakout.';
     } else {
-      notes += ' No strong alignment. Backtest recent data.';
+      notes += ' No entry. Backtest recent data.';
     }
 
-    // Send Telegram notification if new entry signal
-    if (signal.startsWith('✅ Enter') && signal !== previousSignal) {
-      const notification = `SOL/USDT\nLEVERAGE 20\nEntry Price: ${entry}\nTake Profit: ${tp}\nStop loss: ${sl}\n\nNotes: ${notes}`;
-      await sendTelegramNotification(notification);
-      previousSignal = signal;
-    } else if (!signal.startsWith('✅ Enter')) {
-      previousSignal = signal; // Reset if no entry
+    // Structured logging for entries (JSON with timestamp)
+    if (signal.startsWith('✅ Enter')) {
+      const log = {
+        timestamp: new Date().toLocaleString(),
+        signal,
+        bullishScore,
+        bearishScore,
+        reasons: { adx: adx.toFixed(2), rsi: rsi.toFixed(2), atr: atr.toFixed(2) },
+        levels: { entry, tp, sl }
+      };
+      console.log('Entry Log:', JSON.stringify(log, null, 2));
     }
 
     return {
@@ -261,9 +265,23 @@ async function calculateData() {
   }
 }
 
-app.get('/data', async (req, res) => {
-  const data = await getData();
-  res.json(data);
+// Background cache update
+setInterval(async () => {
+  cachedData = await getData();
+}, 30000); // Refresh cache every 30 seconds
+
+// Initial cache fill on startup
+getData().then(data => {
+  cachedData = data;
+  console.log('Initial data cache filled');
+});
+
+app.get('/data', (req, res) => {
+  if (cachedData) {
+    res.json(cachedData);
+  } else {
+    res.status(503).json({ error: 'Data not ready yet' });
+  }
 });
 
 // Lightweight price endpoint
