@@ -233,6 +233,15 @@ async function getData() {
       notes += ' No entry. Backtest recent data.';
     }
 
+    // Send Telegram notification if new entry signal
+    if (signal.startsWith('✅ Enter') && signal !== previousSignal) {
+      const notification = `SOL/USDT\nLEVERAGE: 20\nEntry Price: ${entry}\nTake Profit: ${tp}\nStop loss: ${sl}\n\nSuggestion: ${entry > psar ? 'short' : 'long'}\nNotes: ${notes}`;
+      await sendTelegramNotification(notification);
+      previousSignal = signal;
+    } else if (!signal.startsWith('✅ Enter')) {
+      previousSignal = signal; // Reset if no entry
+    }
+
     // Structured logging for entries (JSON with timestamp)
     if (signal.startsWith('✅ Enter')) {
       const log = {
