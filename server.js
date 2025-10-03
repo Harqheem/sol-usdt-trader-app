@@ -10,6 +10,13 @@ const client = Binance(); // Public client, no auth needed
 app.use(express.static('public'));
 
 let previousSignal = ''; // Track last signal to avoid duplicate notifications
+let cachedData = null; // Cache for data
+
+// Background refresh every 30 seconds
+setInterval(async () => {
+  cachedData = await calculateData(); // Refresh cache
+  console.log('Data cache refreshed at', new Date().toLocaleString());
+}, 30000); // 30 * 1000
 
 // Function to send Telegram notification
 async function sendTelegramNotification(message) {
@@ -62,7 +69,8 @@ function detectCandlePattern(opens, highs, lows, closes, index) {
   return pattern;
 }
 
-async function getData() {
+// Core calculation function (used for caching)
+async function calculateData() {
   try {
     // Fetch 500 recent 15m klines (increased for robustness)
     const klines15m = await client.candles({ symbol: 'SOLUSDT', interval: '15m', limit: 500 });
@@ -178,7 +186,6 @@ async function getData() {
     if (rsi < 70) bullishScore += 1; // New: Not overbought
     if (currentPrice > sma50) bullishScore += 1; // New: Above medium-term SMA
     if (adx > 25) bullishScore += 1; // New: Strong trend
-    if (currentPrice > sma200) bullishScore += 1; // New: Above long-term SMA for stronger bias
     
     // Bearish score (symmetric)
     let bearishScore = 0;
@@ -197,14 +204,13 @@ async function getData() {
     if (rsi > 30) bearishScore += 1; // New: Not oversold
     if (currentPrice < sma50) bearishScore += 1; // New: Below medium-term SMA
     if (adx > 25) bearishScore += 1; // New: Strong trend
-    if (currentPrice < sma200) bearishScore += 1; // New: Below long-term SMA for stronger bias
     
     // Calculate Trade Levels if signal triggers
     let entry = 'N/A';
     let tp = 'N/A';
     let sl = 'N/A';
-    const isBullish = bullishScore >= 12; // Increased to 12
-    const isBearish = bearishScore >= 12; // Increased to 12
+    const isBullish = bullishScore >= 11; // Increased minimum
+    const isBearish = bearishScore >= 11; // Increased minimum
     if (isBullish || isBearish) {
       entry = currentPrice.toFixed(2);
       const recentLows = last5Candles.map(c => c.ohlc.low);
@@ -222,10 +228,10 @@ async function getData() {
 
     if (isBullish) {
       signal = '✅ Enter Long';
-      notes = `Score: ${bullishScore}/16. Reasons: Price above EMAs (uptrend), strong ADX (${adx.toFixed(2)} >25), high volume. Enter long; trail SL after 1 ATR profit. Entry: ${entry}, TP: ${tp}, SL: ${sl}. Risk 1%; hedge if volatile.`;
+      notes = `Bullish score: ${bullishScore}/15. Key reasons: Price above EMAs, strong ADX (${adx.toFixed(2)} >25), high volume. Enter long; trail SL after 1 ATR profit. Entry: ${entry}, TP: ${tp}, SL: ${sl}. Risk 1% capital; hedge if volatile.`;
     } else if (isBearish) {
       signal = '✅ Enter Short';
-      notes = `Score: ${bearishScore}/16. Reasons: Price below EMAs (downtrend), strong ADX (${adx.toFixed(2)} >25), high volume. Enter short; trail SL after 1 ATR profit. Entry: ${entry}, TP: ${tp}, SL: ${sl}. Risk 1%; hedge if volatile.`;
+      notes = `Bearish score: ${bearishScore}/15. Key reasons: Price below EMAs, strong ADX (${adx.toFixed(2)} >25), high volume. Enter short; trail SL after 1 ATR profit. Entry: ${entry}, TP: ${tp}, SL: ${sl}. Risk 1% capital; hedge if volatile.`;
     } else if (atr < avgAtr * 0.5 || last5Candles[last5Candles.length - 1].pattern === 'Doji' || (currentPrice > bb.upper || currentPrice < bb.lower)) {
       signal = '⏸ Wait for Confirmation';
       notes = 'Mixed signals: Low volatility (ATR ${atr.toFixed(2)}), indecision pattern. Wait for breakout.';
