@@ -178,6 +178,7 @@ async function getData() {
     if (rsi < 70) bullishScore += 1; // New: Not overbought
     if (currentPrice > sma50) bullishScore += 1; // New: Above medium-term SMA
     if (adx > 25) bullishScore += 1; // New: Strong trend
+    if (currentPrice > sma200) bullishScore += 1; // New: Above long-term SMA for stronger bias
     
     // Bearish score (symmetric)
     let bearishScore = 0;
@@ -196,6 +197,7 @@ async function getData() {
     if (rsi > 30) bearishScore += 1; // New: Not oversold
     if (currentPrice < sma50) bearishScore += 1; // New: Below medium-term SMA
     if (adx > 25) bearishScore += 1; // New: Strong trend
+    if (currentPrice < sma200) bearishScore += 1; // New: Below long-term SMA for stronger bias
     
     // Calculate Trade Levels if signal triggers
     let entry = 'N/A';
@@ -210,25 +212,25 @@ async function getData() {
       const minLow = Math.min(...recentLows);
       const maxHigh = Math.max(...recentHighs);
       if (isBullish) {
-        sl = (minLow - atr * 1).toFixed(2); // Increased buffer for volatility
+        sl = (minLow - atr * 1).toFixed(2); // Increased buffer
         tp = (currentPrice + atr * 2).toFixed(2); // 1:2 RR
       } else if (isBearish) {
-        sl = (maxHigh + atr * 1).toFixed(2); // Increased buffer for volatility
+        sl = (maxHigh + atr * 1).toFixed(2); // Increased buffer
         tp = (currentPrice - atr * 2).toFixed(2);
       }
     }
 
     if (isBullish) {
       signal = '✅ Enter Long';
-      notes = `Bullish score: ${bullishScore}/15. Key reasons: Price above EMAs, strong trend (ADX >25), supportive volume. Enter long; trail SL after 1 ATR profit. Entry: ${entry}, TP: ${tp}, SL: ${sl}. Risk 1% capital; hedge if volatile.`;
+      notes = `Score: ${bullishScore}/16. Reasons: Price above EMAs (uptrend), strong ADX (${adx.toFixed(2)} >25), high volume. Enter long; trail SL after 1 ATR profit. Entry: ${entry}, TP: ${tp}, SL: ${sl}. Risk 1%; hedge if volatile.`;
     } else if (isBearish) {
       signal = '✅ Enter Short';
-      notes = `Bearish score: ${bearishScore}/15. Key reasons: Price below EMAs, strong trend (ADX >25), supportive volume. Enter short; trail SL after 1 ATR profit. Entry: ${entry}, TP: ${tp}, SL: ${sl}. Risk 1% capital; hedge if volatile.`;
+      notes = `Score: ${bearishScore}/16. Reasons: Price below EMAs (downtrend), strong ADX (${adx.toFixed(2)} >25), high volume. Enter short; trail SL after 1 ATR profit. Entry: ${entry}, TP: ${tp}, SL: ${sl}. Risk 1%; hedge if volatile.`;
     } else if (atr < avgAtr * 0.5 || last5Candles[last5Candles.length - 1].pattern === 'Doji' || (currentPrice > bb.upper || currentPrice < bb.lower)) {
       signal = '⏸ Wait for Confirmation';
-      notes = 'Mixed signals: Low volatility or indecision. Wait for breakout or EMA crossover.';
+      notes = 'Mixed signals: Low volatility (ATR ${atr.toFixed(2)}), indecision pattern. Wait for breakout.';
     } else {
-      notes += ' No strong alignment. Monitor TFs and backtest recent data.';
+      notes += ' No entry. Backtest and monitor TFs.';
     }
 
     // Send Telegram notification if new entry signal
