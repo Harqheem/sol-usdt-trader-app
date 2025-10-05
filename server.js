@@ -53,8 +53,8 @@ async function sendTelegramNotification(message) {
   }
 }
 
-// Function to detect candle pattern
-function detectCandlePattern(opens, highs, lows, closes, index) {
+// Function to detect candle pattern for the last candle
+function detectCandlePattern(opens, highs, lows, closes, volumes, index) {
   const sliceOpens = opens.slice(0, index + 1);
   const sliceHighs = highs.slice(0, index + 1);
   const sliceLows = lows.slice(0, index + 1);
@@ -62,12 +62,75 @@ function detectCandlePattern(opens, highs, lows, closes, index) {
   let pattern = 'Neutral';
 
   try {
-    if (TI.bullishhammerstick && TI.bullishhammerstick({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Hammer';
-    else if (TI.doji && TI.doji({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Doji';
-    else if (TI.shootingstar && TI.shootingstar({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Shooting Star';
-    if (index > 0) {
-      if (TI.bullishengulfingpattern && TI.bullishengulfingpattern({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Bullish Engulfing';
-      else if (TI.bearishengulfingpattern && TI.bearishengulfingpattern({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Bearish Engulfing';
+    // Single-candle patterns (supported by technicalindicators)
+    if (TI.bullishhammerstick && TI.bullishhammerstick({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+      pattern = 'Hammer';
+    } else if (TI.doji && TI.doji({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+      pattern = 'Doji';
+    } else if (TI.shootingstar && TI.shootingstar({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+      pattern = 'Shooting Star';
+    } else if (TI.bullishmarubozu && TI.bullishmarubozu({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+      pattern = 'Bullish Marubozu';
+    } else if (TI.bearishmarubozu && TI.bearishmarubozu({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+      pattern = 'Bearish Marubozu';
+    } else if (TI.bullishspinningtop && TI.bullishspinningtop({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+      pattern = 'Spinning Top';
+    } else if (TI.bearishspinningtop && TI.bearishspinningtop({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+      pattern = 'Spinning Top';
+    }
+
+    // Multi-candle patterns (supported by technicalindicators)
+    if (index >= 1) {
+      if (TI.bullishengulfingpattern && TI.bullishengulfingpattern({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+        pattern = 'Bullish Engulfing';
+      } else if (TI.bearishengulfingpattern && TI.bearishengulfingpattern({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+        pattern = 'Bearish Engulfing';
+      } else if (TI.piercingline && TI.piercingline({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+        pattern = 'Piercing Line';
+      } else if (TI.darkcloudcover && TI.darkcloudcover({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+        pattern = 'Dark Cloud Cover';
+      }
+    }
+
+    // Multi-candle patterns (custom logic for Three White Soldiers, Three Black Crows, Morning Star, Evening Star)
+    if (index >= 2) {
+      const last3Candles = [
+        { open: opens[index - 2], high: highs[index - 2], low: lows[index - 2], close: closes[index - 2] },
+        { open: opens[index - 1], high: highs[index - 1], low: lows[index - 1], close: closes[index - 1] },
+        { open: opens[index], high: highs[index], low: lows[index], close: closes[index] }
+      ];
+
+      // Three White Soldiers (bullish)
+      const isThreeWhiteSoldiers =
+        last3Candles.every(c => c.close > c.open) && // Three bullish candles
+        last3Candles[1].close > last3Candles[0].close && // Increasing closes
+        last3Candles[2].close > last3Candles[1].close &&
+        last3Candles.every(c => (c.high - c.low) > 0.5 * (c.close - c.open)); // Significant body size
+      if (isThreeWhiteSoldiers) pattern = 'Three White Soldiers';
+
+      // Three Black Crows (bearish)
+      const isThreeBlackCrows =
+        last3Candles.every(c => c.close < c.open) && // Three bearish candles
+        last3Candles[1].close < last3Candles[0].close && // Decreasing closes
+        last3Candles[2].close < last3Candles[1].close &&
+        last3Candles.every(c => (c.high - c.low) > 0.5 * (c.open - c.close)); // Significant body size
+      if (isThreeBlackCrows) pattern = 'Three Black Crows';
+
+      // Morning Star (bullish)
+      const isMorningStar =
+        last3Candles[0].close < last3Candles[0].open && // Bearish first candle
+        Math.abs(last3Candles[1].close - last3Candles[1].open) < 0.3 * (last3Candles[1].high - last3Candles[1].low) && // Small body (indecision)
+        last3Candles[2].close > last3Candles[2].open && // Bullish third candle
+        last3Candles[2].close > (last3Candles[0].open + last3Candles[0].close) / 2; // Closes above midpoint of first candle
+      if (isMorningStar) pattern = 'Morning Star';
+
+      // Evening Star (bearish)
+      const isEveningStar =
+        last3Candles[0].close > last3Candles[0].open && // Bullish first candle
+        Math.abs(last3Candles[1].close - last3Candles[1].open) < 0.3 * (last3Candles[1].high - last3Candles[1].low) && // Small body (indecision)
+        last3Candles[2].close < last3Candles[2].open && // Bearish third candle
+        last3Candles[2].close < (last3Candles[0].open + last3Candles[0].close) / 2; // Closes below midpoint of first candle
+      if (isEveningStar) pattern = 'Evening Star';
     }
   } catch (err) {
     console.log('Pattern detection warning (ignored):', err.message);
@@ -112,7 +175,7 @@ async function getData() {
         close: closes[i]
       };
       const volume = volumes[i];
-      const pattern = detectCandlePattern(opens, highs, lows, closes, i);
+      const pattern = detectCandlePattern(opens, highs, lows, closes, volumes, i);
       const startTime = new Date(klines15m[i].openTime).toLocaleTimeString();
       const endTime = new Date(klines15m[i].closeTime).toLocaleTimeString();
       last5Candles.push({ ohlc, volume, pattern, startTime, endTime });
@@ -250,35 +313,45 @@ async function getData() {
     let bearishScore = 0;
     let bullishReasons = [];
     let bearishReasons = [];
+    let nonAligningIndicators = [];
 
     // Trend Alignment (+3 if all TFs align)
     if (currentPrice > ema99 && trend1h === 'Above' && trend4h === 'Above') {
       bullishScore += 3;
       bullishReasons.push('Trend aligned across 15m, 1h, 4h');
-    }
-    if (currentPrice < ema99 && trend1h === 'Below' && trend4h === 'Below') {
+    } else if (currentPrice < ema99 && trend1h === 'Below' && trend4h === 'Below') {
       bearishScore += 3;
       bearishReasons.push('Trend aligned across 15m, 1h, 4h');
+    } else {
+      nonAligningIndicators.push('Trend not fully aligned across 15m, 1h, 4h, suggesting mixed signals');
     }
 
     // Directional ADX (+3 if ADX > 25 and DI aligns with trend)
     if (adx && adx > 25 && plusDI > minusDI && currentPrice > ema99) {
       bullishScore += 3;
       bullishReasons.push(`Strong ADX (${adx.toFixed(2)})`);
-    }
-    if (adx && adx > 25 && minusDI > plusDI && currentPrice < ema99) {
+    } else if (adx && adx > 25 && minusDI > plusDI && currentPrice < ema99) {
       bearishScore += 3;
       bearishReasons.push(`Strong ADX (${adx.toFixed(2)})`);
+    } else {
+      if (adx && adx > 25 && plusDI < minusDI) {
+        nonAligningIndicators.push(`ADX (${adx.toFixed(2)}) shows stronger -DI, suggesting bearish momentum`);
+      } else if (adx && adx > 25 && minusDI < plusDI) {
+        nonAligningIndicators.push(`ADX (${adx.toFixed(2)}) shows stronger +DI, suggesting bullish momentum`);
+      } else {
+        nonAligningIndicators.push(`ADX (${adx ? adx.toFixed(2) : 'N/A'}) is weak or not aligned, indicating low trend strength`);
+      }
     }
 
     // EMA Stack Alignment (+2 if EMA7 > EMA25 > EMA99 or inverse)
     if (ema7 > ema25 && ema25 > ema99) {
       bullishScore += 2;
       bullishReasons.push('EMA stack bullish');
-    }
-    if (ema7 < ema25 && ema25 < ema99) {
+    } else if (ema7 < ema25 && ema25 < ema99) {
       bearishScore += 2;
       bearishReasons.push('EMA stack bearish');
+    } else {
+      nonAligningIndicators.push('EMA stack not aligned, suggesting indecision or trend conflict');
     }
 
     // RSI Confirmation (+2 if 40-60)
@@ -287,6 +360,14 @@ async function getData() {
       bearishScore += 2;
       bullishReasons.push(`Neutral RSI (${rsi.toFixed(2)})`);
       bearishReasons.push(`Neutral RSI (${rsi.toFixed(2)})`);
+    } else {
+      if (rsi && rsi > 70) {
+        nonAligningIndicators.push(`RSI (${rsi.toFixed(2)}) is > 70 and signalling overbought, meaning price may reverse`);
+      } else if (rsi && rsi < 30) {
+        nonAligningIndicators.push(`RSI (${rsi.toFixed(2)}) is < 30 and signalling oversold, meaning price may reverse`);
+      } else {
+        nonAligningIndicators.push(`RSI (${rsi ? rsi.toFixed(2) : 'N/A'}) is outside 40-60, indicating potential overbought/oversold conditions`);
+      }
     }
 
     // ATR Volatility (+2 if ATR > avgAtr)
@@ -295,37 +376,44 @@ async function getData() {
       bearishScore += 2;
       bullishReasons.push(`High volatility (ATR ${atr.toFixed(2)})`);
       bearishReasons.push(`High volatility (ATR ${atr.toFixed(2)})`);
+    } else {
+      nonAligningIndicators.push(`ATR (${atr ? atr.toFixed(2) : 'N/A'}) is low, suggesting limited price movement potential`);
     }
 
     // CMF Volume (+2 if CMF > 0 for bullish, < 0 for bearish)
     if (cmf && cmf > 0) {
       bullishScore += 2;
       bullishReasons.push(`Positive CMF (${cmf.toFixed(2)})`);
-    }
-    if (cmf && cmf < 0) {
+    } else if (cmf && cmf < 0) {
       bearishScore += 2;
       bearishReasons.push(`Negative CMF (${cmf.toFixed(2)})`);
+    } else {
+      nonAligningIndicators.push(`CMF (${cmf ? cmf.toFixed(2) : 'N/A'}) is neutral, indicating no strong volume direction`);
     }
 
     // Candlestick Pattern (+1 for strong patterns)
     const candlePattern = last5Candles[last5Candles.length - 1].pattern;
-    if (['Hammer', 'Bullish Engulfing'].includes(candlePattern)) {
+    const bullishPatterns = ['Hammer', 'Bullish Engulfing', 'Piercing Line', 'Morning Star', 'Three White Soldiers', 'Bullish Marubozu'];
+    const bearishPatterns = ['Shooting Star', 'Bearish Engulfing', 'Dark Cloud Cover', 'Evening Star', 'Three Black Crows', 'Bearish Marubozu'];
+    if (bullishPatterns.includes(candlePattern)) {
       bullishScore += 1;
       bullishReasons.push(`Bullish pattern (${candlePattern})`);
-    }
-    if (['Shooting Star', 'Bearish Engulfing'].includes(candlePattern)) {
+    } else if (bearishPatterns.includes(candlePattern)) {
       bearishScore += 1;
       bearishReasons.push(`Bearish pattern (${candlePattern})`);
+    } else {
+      nonAligningIndicators.push(`Candlestick pattern (${candlePattern}) is neutral, indicating indecision`);
     }
 
     // MACD (+1 if MACD > signal for bullish, < signal for bearish)
     if (macd && typeof macd.MACD === 'number' && typeof macd.signal === 'number' && macd.MACD > macd.signal) {
       bullishScore += 1;
       bullishReasons.push('MACD bullish crossover');
-    }
-    if (macd && typeof macd.MACD === 'number' && typeof macd.signal === 'number' && macd.MACD < macd.signal) {
+    } else if (macd && typeof macd.MACD === 'number' && typeof macd.signal === 'number' && macd.MACD < macd.signal) {
       bearishScore += 1;
       bearishReasons.push('MACD bearish crossover');
+    } else {
+      nonAligningIndicators.push(`MACD (${macd && typeof macd.MACD === 'number' ? macd.MACD.toFixed(2) : 'N/A'}) is not showing a clear crossover, suggesting indecision`);
     }
 
     // Calculate Trade Levels
@@ -366,6 +454,7 @@ async function getData() {
     let signal = '❌ No Trade';
     let notes = 'Mixed signals: Low volatility or indecision. Wait for breakout.';
     let suggestion = entry !== 'N/A' && parseFloat(entry) > psar ? 'long' : 'short'; // Reversed PSAR logic
+    let candleDirection = bullishPatterns.includes(candlePattern) ? 'bullish' : bearishPatterns.includes(candlePattern) ? 'bearish' : 'neutral';
 
     if (isBullish) {
       signal = '✅ Enter Long';
@@ -377,7 +466,8 @@ async function getData() {
 
     // Send Telegram notification if new entry signal
     if (signal.startsWith('✅ Enter') && signal !== previousSignal) {
-      const notification = `SOL/USDT\nLEVERAGE: 20\nEntry Price: ${entry}\nTake Profit 1: ${tp1}\nTake Profit 2: ${tp2}\nStop Loss: ${sl}\n\nSuggestion: ${suggestion}\nNotes: ${notes}`;
+      const nonAligningText = nonAligningIndicators.length > 0 ? `\nNon-aligning indicators:\n- ${nonAligningIndicators.join('\n- ')}` : '';
+      const notification = `SOL/USDT\nLEVERAGE: 20\nEntry Price: ${entry}\nTake Profit 1: ${tp1}\nTake Profit 2: ${tp2}\nStop Loss: ${sl}\nLast candle shape: ${candlePattern} is signalling ${candleDirection}\n\nPSAR Suggestion: ${suggestion}\nNotes: ${notes}${nonAligningText}`;
       await sendTelegramNotification(notification);
       previousSignal = signal; // Reset after TP/SL (no cooldown)
     } else if (!signal.startsWith('✅ Enter')) {
