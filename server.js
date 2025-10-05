@@ -312,6 +312,9 @@ async function getData() {
     let tp2 = 'N/A';
     let sl = 'N/A';
     let positionSize = 'N/A';
+    const accountBalance = 1000; // Assumed balance
+    const riskPercent = 0.01; // 1% risk per trade
+    const riskAmount = accountBalance * riskPercent; // Define riskAmount here
     const isBullish = bullishScore >= 12;
     const isBearish = bearishScore >= 12;
 
@@ -321,9 +324,6 @@ async function getData() {
       const recentHighs = last5Candles.map(c => c.ohlc.high);
       const minLow = Math.min(...recentLows);
       const maxHigh = Math.max(...recentHighs);
-      const accountBalance = 1000; // Assumed balance
-      const riskPercent = 0.01; // 1% risk per trade
-      const riskAmount = accountBalance * riskPercent;
 
       if (isBullish) {
         sl = (minLow - atr * 1).toFixed(2);
