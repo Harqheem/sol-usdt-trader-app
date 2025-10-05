@@ -326,17 +326,17 @@ async function getData() {
       const maxHigh = Math.max(...recentHighs);
 
       if (isBullish) {
-        sl = (minLow - atr * 1).toFixed(2); // SL below entry for long
+        sl = Math.min(minLow, parseFloat(entry) - atr * 1).toFixed(2); // Ensure SL is below entry
         tp1 = (parseFloat(entry) + atr * 1).toFixed(2); // 50% at 1 ATR
         tp2 = (parseFloat(entry) + atr * 2).toFixed(2); // 50% at 2 ATR
         const riskPerUnit = parseFloat(entry) - parseFloat(sl);
-        positionSize = riskPerUnit > 0 ? (riskAmount / riskPerUnit).toFixed(2) : 'N/A';
+        positionSize = riskPerUnit > 0 ? (riskAmount / riskPerUnit).toFixed(2) : 'Invalid due to SL placement';
       } else if (isBearish) {
         sl = (maxHigh + atr * 1).toFixed(2); // SL above entry for short
         tp1 = (parseFloat(entry) - atr * 1).toFixed(2); // 50% at 1 ATR
         tp2 = (parseFloat(entry) - atr * 2).toFixed(2); // 50% at 2 ATR
         const riskPerUnit = parseFloat(sl) - parseFloat(entry);
-        positionSize = riskPerUnit > 0 ? (riskAmount / riskPerUnit).toFixed(2) : 'N/A';
+        positionSize = riskPerUnit > 0 ? (riskAmount / riskPerUnit).toFixed(2) : 'Invalid due to SL placement';
       }
     }
 
