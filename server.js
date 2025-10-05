@@ -189,9 +189,9 @@ async function getData() {
     // MACD
     let macd = null;
     try {
-      if (closes.length >= 26) { // Ensure enough data for MACD (slow EMA period)
+      if (closes.length >= 35) { // Ensure enough data for MACD (slow EMA period + signal period)
         macd = TI.MACD.calculate({ values: closes, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 }).pop();
-        if (!macd || typeof macd.macd !== 'number' || typeof macd.signal !== 'number') {
+        if (!macd || typeof macd.MACD !== 'number' || typeof macd.signal !== 'number') {
           console.warn('Invalid MACD result:', macd);
           macd = null;
         }
@@ -319,11 +319,11 @@ async function getData() {
     }
 
     // MACD (+1 if MACD > signal for bullish, < signal for bearish)
-    if (macd && typeof macd.macd === 'number' && typeof macd.signal === 'number' && macd.macd > macd.signal) {
+    if (macd && typeof macd.MACD === 'number' && typeof macd.signal === 'number' && macd.MACD > macd.signal) {
       bullishScore += 1;
       bullishReasons.push('MACD bullish crossover');
     }
-    if (macd && typeof macd.macd === 'number' && typeof macd.signal === 'number' && macd.macd < macd.signal) {
+    if (macd && typeof macd.MACD === 'number' && typeof macd.signal === 'number' && macd.MACD < macd.signal) {
       bearishScore += 1;
       bearishReasons.push('MACD bearish crossover');
     }
@@ -396,7 +396,7 @@ async function getData() {
           rsi: rsi ? rsi.toFixed(2) : 'N/A',
           atr: atr ? atr.toFixed(2) : 'N/A',
           cmf: cmf ? cmf.toFixed(2) : 'N/A',
-          macd: macd && typeof macd.macd === 'number' ? macd.macd.toFixed(2) : 'N/A'
+          macd: macd && typeof macd.MACD === 'number' ? macd.MACD.toFixed(2) : 'N/A'
         },
         levels: { entry, tp1, tp2, sl, positionSize }
       };
