@@ -42,12 +42,12 @@ function detectCandlePattern(opens, highs, lows, closes, index) {
   let pattern = 'Neutral';
 
   try {
-    if (TI.bullishhammerstick({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Hammer';
-    else if (TI.doji({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Doji';
-    else if (TI.shootingstar({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Shooting Star';
+    if (TI.bullishhammerstick && TI.bullishhammerstick({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Hammer';
+    else if (TI.doji && TI.doji({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Doji';
+    else if (TI.shootingstar && TI.shootingstar({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Shooting Star';
     if (index > 0) {
-      if (TI.bullishengulfingpattern({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Bullish Engulfing';
-      else if (TI.bearishengulfingpattern({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Bearish Engulfing';
+      if (TI.bullishengulfingpattern && TI.bullishengulfingpattern({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Bullish Engulfing';
+      else if (TI.bearishengulfingpattern && TI.bearishengulfingpattern({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Bearish Engulfing';
     }
   } catch (err) {
     console.log('Pattern detection warning (ignored):', err.message);
@@ -59,6 +59,15 @@ function detectCandlePattern(opens, highs, lows, closes, index) {
 // Main data calculation function
 async function getData() {
   try {
+    // Check if TI methods are defined
+    const requiredIndicators = ['EMA', 'ATR', 'SMA', 'BollingerBands', 'PSAR', 'RSI', 'ADX', 'MACD', 'CMF'];
+    for (const indicator of requiredIndicators) {
+      if (!TI[indicator] || typeof TI[indicator].calculate !== 'function') {
+        console.error(`Indicator ${indicator}.calculate is undefined`);
+        return { error: `Indicator ${indicator} not available in technicalindicators` };
+      }
+    }
+
     // Fetch 500 recent 15m klines
     const klines15m = await client.candles({ symbol: 'SOLUSDT', interval: '15m', limit: 500 });
     if (klines15m.length < 200) {
@@ -103,53 +112,95 @@ async function getData() {
       sma50 = TI.SMA.calculate({ period: 50, values: closes }).pop();
       sma200 = TI.SMA.calculate({ period: 200, values: closes }).pop();
     } catch (err) {
-      console.error('Indicator calculation error:', err);
-      return { error: 'Failed to calculate indicators' };
+      console.error('Moving averages calculation error:', err);
+      return { error: 'Failed to calculate moving averages' };
     }
 
     // Volatility (ATR)
     const atrInput = { high: highs, low: lows, close: closes, period: 14 };
-    const atr = TI.ATR.calculate(atrInput).pop();
-    const avgAtr = TI.SMA.calculate({ period: 14, values: TI.ATR.calculate(atrInput) }).pop();
+    let atr, avgAtr;
+    try {
+      atr = TI.ATR.calculate(atrInput).pop();
+      avgAtr = TI.SMA.calculate({ period: 14, values: TI.ATR.calculate(atrInput) }).pop();
+    } catch (err) {
+      console.error('ATR calculation error:', err);
+      return { error: 'Failed to calculate ATR' };
+    }
 
     // Bollinger Bands
-    const bbInput = { period: 20, values: closes, stdDev: 2 };
-    const bb = TI.BollingerBands.calculate(bbInput).pop();
+    let bb;
+    try {
+      bb = TI.BollingerBands.calculate({ period: 20, values: closes, stdDev: 2 }).pop();
+    } catch (err) {
+      console.error('Bollinger Bands calculation error:', err);
+      return { error: 'Failed to calculate Bollinger Bands' };
+    }
 
     // Parabolic SAR
-    const psarInput = { high: highs, low: lows, step: 0.015, max: 0.15 };
-    const psar = TI.PSAR.calculate(psarInput).pop();
-    const psarPosition = psar > currentPrice ? 'Above' : 'Below';
+    let psar, psarPosition;
+    try {
+      psar = TI.PSAR.calculate({ high: highs, low: lows, step: 0.015, max: 0.15 }).pop();
+      psarPosition = psar > currentPrice ? 'Above' : 'Below';
+    } catch (err) {
+      console.error('PSAR calculation error:', err);
+      return { error: 'Failed to calculate PSAR' };
+    }
 
     // RSI
-    const rsiInput = { values: closes, period: 14 };
-    const rsi = TI.RSI.calculate(rsiInput).pop();
+    let rsi;
+    try {
+      rsi = TI.RSI.calculate({ values: closes, period: 14 }).pop();
+    } catch (err) {
+      console.error('RSI calculation error:', err);
+      return { error: 'Failed to calculate RSI' };
+    }
 
     // ADX with +DI/-DI
-    const adxInput = { high: highs, low: lows, close: closes, period: 14 };
-    const adxResult = TI.ADX.calculate(adxInput).pop();
-    const adx = adxResult.adx;
-    const plusDI = adxResult.pdi;
-    const minusDI = adxResult.mdi;
+    let adx, plusDI, minusDI;
+    try {
+      const adxResult = TI.ADX.calculate({ high: highs, low: lows, close: closes, period: 14 }).pop();
+      adx = adxResult.adx;
+      plusDI = adxResult.pdi;
+      minusDI = adxResult.mdi;
+    } catch (err) {
+      console.error('ADX calculation error:', err);
+      return { error: 'Failed to calculate ADX' };
+    }
 
     // MACD
-    const macdInput = { values: closes, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 };
-    const macd = TI.MACD.calculate(macdInput).pop();
+    let macd;
+    try {
+      macd = TI.MACD.calculate({ values: closes, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 }).pop();
+    } catch (err) {
+      console.error('MACD calculation error:', err);
+      return { error: 'Failed to calculate MACD' };
+    }
 
     // Chaikin Money Flow (CMF)
-    const cmfInput = { high: highs.slice(-20), low: lows.slice(-20), close: closes.slice(-20), volume: volumes.slice(-20), period: 20 };
-    const cmf = TI.CMF.calculate(cmfInput).pop();
+    let cmf;
+    try {
+      cmf = TI.CMF.calculate({ high: highs.slice(-20), low: lows.slice(-20), close: closes.slice(-20), volume: volumes.slice(-20), period: 20 }).pop();
+    } catch (err) {
+      console.error('CMF calculation error:', err);
+      return { error: 'Failed to calculate CMF' };
+    }
 
     // Higher Timeframe Check
-    const klines1h = await client.candles({ symbol: 'SOLUSDT', interval: '1h', limit: 100 });
-    const closes1h = klines1h.map(c => parseFloat(c.close));
-    const ema99_1h = TI.EMA.calculate({ period: 99, values: closes1h }).pop();
-    const trend1h = currentPrice > ema99_1h ? 'Above' : 'Below';
+    let trend1h, trend4h;
+    try {
+      const klines1h = await client.candles({ symbol: 'SOLUSDT', interval: '1h', limit: 100 });
+      const closes1h = klines1h.map(c => parseFloat(c.close));
+      const ema99_1h = TI.EMA.calculate({ period: 99, values: closes1h }).pop();
+      trend1h = currentPrice > ema99_1h ? 'Above' : 'Below';
 
-    const klines4h = await client.candles({ symbol: 'SOLUSDT', interval: '4h', limit: 100 });
-    const closes4h = klines4h.map(c => parseFloat(c.close));
-    const ema99_4h = TI.EMA.calculate({ period: 99, values: closes4h }).pop();
-    const trend4h = currentPrice > ema99_4h ? 'Above' : 'Below';
+      const klines4h = await client.candles({ symbol: 'SOLUSDT', interval: '4h', limit: 100 });
+      const closes4h = klines4h.map(c => parseFloat(c.close));
+      const ema99_4h = TI.EMA.calculate({ period: 99, values: closes4h }).pop();
+      trend4h = currentPrice > ema99_4h ? 'Above' : 'Below';
+    } catch (err) {
+      console.error('Higher timeframe calculation error:', err);
+      return { error: 'Failed to calculate higher timeframe trends' };
+    }
 
     // Optimal Entry Price (average of last 5 closes or nearest EMA if trending)
     let optimalEntry = currentPrice;
