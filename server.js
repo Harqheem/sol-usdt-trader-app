@@ -326,13 +326,13 @@ async function getData() {
       const maxHigh = Math.max(...recentHighs);
 
       if (isBullish) {
-        sl = (minLow - atr * 1).toFixed(2);
+        sl = (minLow - atr * 1).toFixed(2); // SL below entry for long
         tp1 = (parseFloat(entry) + atr * 1).toFixed(2); // 50% at 1 ATR
         tp2 = (parseFloat(entry) + atr * 2).toFixed(2); // 50% at 2 ATR
         const riskPerUnit = parseFloat(entry) - parseFloat(sl);
         positionSize = riskPerUnit > 0 ? (riskAmount / riskPerUnit).toFixed(2) : 'N/A';
       } else if (isBearish) {
-        sl = (maxHigh + atr * 1).toFixed(2);
+        sl = (maxHigh + atr * 1).toFixed(2); // SL above entry for short
         tp1 = (parseFloat(entry) - atr * 1).toFixed(2); // 50% at 1 ATR
         tp2 = (parseFloat(entry) - atr * 2).toFixed(2); // 50% at 2 ATR
         const riskPerUnit = parseFloat(sl) - parseFloat(entry);
