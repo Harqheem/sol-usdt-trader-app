@@ -12,6 +12,20 @@ app.use(express.static('public'));
 let previousSignal = ''; // Track last signal to avoid duplicates
 let cachedData = null; // Cache for data
 
+// Custom CMF function (since technicalindicators doesn't support it)
+function calculateCMF(highs, lows, closes, volumes, period = 20) {
+  const n = Math.min(highs.length, period);
+  let sumMFV = 0;
+  let sumVol = 0;
+  for (let i = highs.length - n; i < highs.length; i++) {
+    const mfm = ((closes[i] - lows[i]) - (highs[i] - closes[i])) / (highs[i] - lows[i]) || 0; // Avoid division by zero
+    const mfv = mfm * volumes[i];
+    sumMFV += mfv;
+    sumVol += volumes[i];
+  }
+  return sumVol > 0 ? sumMFV / sumVol : 0;
+}
+
 // Function to send Telegram notification
 async function sendTelegramNotification(message) {
   const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -66,10 +80,6 @@ async function getData() {
         console.error(`Indicator ${indicator}.calculate is undefined`);
         return { error: `Indicator ${indicator} not available in technicalindicators` };
       }
-    }
-    const cmfAvailable = TI.CMF && typeof TI.CMF.calculate === 'function';
-    if (!cmfAvailable) {
-      console.error('Indicator CMF.calculate is undefined. Proceeding without CMF.');
     }
 
     // Fetch 500 recent 15m klines
@@ -180,14 +190,12 @@ async function getData() {
     }
 
     // Chaikin Money Flow (CMF)
-    let cmf = 0; // Default to neutral if CMF fails
-    if (cmfAvailable) {
-      try {
-        cmf = TI.CMF.calculate({ high: highs.slice(-20), low: lows.slice(-20), close: closes.slice(-20), volume: volumes.slice(-20), period: 20 }).pop();
-      } catch (err) {
-        console.error('CMF calculation failed:', err.message);
-        cmfAvailable = false;
-      }
+    let cmf;
+    try {
+      cmf = calculateCMF(highs, lows, closes, volumes, 20);
+    } catch (err) {
+      console.error('Custom CMF calculation error:', err);
+      return { error: 'Failed to calculate custom CMF' };
     }
 
     // Higher Timeframe Check
@@ -268,11 +276,11 @@ async function getData() {
     }
 
     // CMF Volume (+2 if CMF > 0 for bullish, < 0 for bearish)
-    if (cmfAvailable && cmf > 0) {
+    if (cmf > 0) {
       bullishScore += 2;
       bullishReasons.push(`Positive CMF (${cmf.toFixed(2)})`);
     }
-    if (cmfAvailable && cmf < 0) {
+    if (cmf < 0) {
       bearishScore += 2;
       bearishReasons.push(`Negative CMF (${cmf.toFixed(2)})`);
     }
@@ -304,10 +312,8 @@ async function getData() {
     let tp2 = 'N/A';
     let sl = 'N/A';
     let positionSize = 'N/A';
-    const maxScore = cmfAvailable ? 16 : 14; // Adjust max score if CMF is unavailable
-    const scoreThreshold = cmfAvailable ? 12 : 11; // Lower threshold if CMF is missing
-    const isBullish = bullishScore >= scoreThreshold;
-    const isBearish = bearishScore >= scoreThreshold;
+    const isBullish = bullishScore >= 12;
+    const isBearish = bearishScore >= 12;
 
     if (isBullish || isBearish) {
       entry = optimalEntry; // Use optimal entry
@@ -341,10 +347,10 @@ async function getData() {
 
     if (isBullish) {
       signal = '✅ Enter Long';
-      notes = `Score: ${bullishScore}/${maxScore}. Reasons: ${bullishReasons.slice(0, 3).join(', ')}. Enter long at ${entry}; trail SL to entry after 1 ATR, then 1.5x ATR below high. TP1: ${tp1} (50%), TP2: ${tp2} (50%). Risk 1% ($${riskAmount}, ${positionSize} units).${!cmfAvailable ? ' Note: CMF unavailable.' : ''}`;
+      notes = `Score: ${bullishScore}/16. Reasons: ${bullishReasons.slice(0, 3).join(', ')}. Enter long at ${entry}; trail SL to entry after 1 ATR, then 1.5x ATR below high. TP1: ${tp1} (50%), TP2: ${tp2} (50%). Risk 1% ($${riskAmount}, ${positionSize} units).`;
     } else if (isBearish) {
       signal = '✅ Enter Short';
-      notes = `Score: ${bearishScore}/${maxScore}. Reasons: ${bearishReasons.slice(0, 3).join(', ')}. Enter short at ${entry}; trail SL to entry after 1 ATR, then 1.5x ATR above low. TP1: ${tp1} (50%), TP2: ${tp2} (50%). Risk 1% ($${riskAmount}, ${positionSize} units).${!cmfAvailable ? ' Note: CMF unavailable.' : ''}`;
+      notes = `Score: ${bearishScore}/16. Reasons: ${bearishReasons.slice(0, 3).join(', ')}. Enter short at ${entry}; trail SL to entry after 1 ATR, then 1.5x ATR above low. TP1: ${tp1} (50%), TP2: ${tp2} (50%). Risk 1% ($${riskAmount}, ${positionSize} units).`;
     }
 
     // Send Telegram notification if new entry signal
@@ -363,7 +369,7 @@ async function getData() {
         signal,
         bullishScore,
         bearishScore,
-        reasons: { adx: adx.toFixed(2), rsi: rsi.toFixed(2), atr: atr.toFixed(2), cmf: cmfAvailable ? cmf.toFixed(2) : 'N/A', macd: macd.macd.toFixed(2) },
+        reasons: { adx: adx.toFixed(2), rsi: rsi.toFixed(2), atr: atr.toFixed(2), cmf: cmf.toFixed(2), macd: macd.macd.toFixed(2) },
         levels: { entry, tp1, tp2, sl, positionSize }
       };
       console.log('Entry Log:', JSON.stringify(log, null, 2));
