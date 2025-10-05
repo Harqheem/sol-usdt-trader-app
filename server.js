@@ -53,7 +53,7 @@ async function sendTelegramNotification(message) {
   }
 }
 
-// Function to detect candle pattern for a given candle
+// Function to detect candle pattern for the last candle
 function detectCandlePattern(opens, highs, lows, closes, volumes, index) {
   const sliceOpens = opens.slice(0, index + 1);
   const sliceHighs = highs.slice(0, index + 1);
@@ -164,9 +164,9 @@ async function getData() {
     const opens = klines15m.map(c => parseFloat(c.open));
     const volumes = klines15m.map(c => parseFloat(c.volume));
 
-    // Last 15 candles data
-    const last15Candles = [];
-    const startIndex = Math.max(0, klines15m.length - 15);
+    // Last 5 candles data
+    const last5Candles = [];
+    const startIndex = Math.max(0, klines15m.length - 5);
     for (let i = startIndex; i < klines15m.length; i++) {
       const ohlc = {
         open: opens[i],
@@ -178,20 +178,8 @@ async function getData() {
       const pattern = detectCandlePattern(opens, highs, lows, closes, volumes, i);
       const startTime = new Date(klines15m[i].openTime).toLocaleTimeString();
       const endTime = new Date(klines15m[i].closeTime).toLocaleTimeString();
-      last15Candles.push({ ohlc, volume, pattern, startTime, endTime });
+      last5Candles.push({ ohlc, volume, pattern, startTime, endTime });
     }
-
-    // Analyze last 15 candles
-    const bullishPatterns = ['Hammer', 'Bullish Engulfing', 'Piercing Line', 'Morning Star', 'Three White Soldiers', 'Bullish Marubozu'];
-    const bearishPatterns = ['Shooting Star', 'Bearish Engulfing', 'Dark Cloud Cover', 'Evening Star', 'Three Black Crows', 'Bearish Marubozu'];
-    const candleAnalysis = last15Candles.map((candle, idx) => {
-      const direction = bullishPatterns.includes(candle.pattern) ? 'bullish' : bearishPatterns.includes(candle.pattern) ? 'bearish' : 'neutral';
-      return `Candle ${15 - idx}: ${candle.pattern} (${direction})`;
-    }).reverse(); // Reverse to show most recent first
-    const bullishCount = last15Candles.filter(c => bullishPatterns.includes(c.pattern)).length;
-    const bearishCount = last15Candles.filter(c => bearishPatterns.includes(c.pattern)).length;
-    const neutralCount = last15Candles.length - bullishCount - bearishCount;
-    const trendSummary = `${bullishCount} bullish, ${bearishCount} bearish, ${neutralCount} neutral patterns, suggesting a ${bullishCount > bearishCount ? 'bullish' : bearishCount > bullishCount ? 'bearish' : 'mixed'} trend`;
 
     // Core Price Info
     const currentPrice = parseFloat(lastCandle.close);
@@ -314,7 +302,7 @@ async function getData() {
 
     // Optimal Entry Price (average of last 5 closes or nearest EMA if trending)
     let optimalEntry = currentPrice;
-    const last5Closes = last15Candles.slice(-5).map(c => c.ohlc.close);
+    const last5Closes = last5Candles.map(c => c.ohlc.close);
     const avgLast5 = last5Closes.reduce((sum, val) => sum + val, 0) / last5Closes.length;
     if (currentPrice > ema25 && ema7 > ema25) optimalEntry = Math.min(avgLast5, ema25); // Pullback to EMA25 for bullish
     else if (currentPrice < ema25 && ema7 < ema25) optimalEntry = Math.max(avgLast5, ema25); // Pullback to EMA25 for bearish
@@ -404,7 +392,7 @@ async function getData() {
     }
 
     // Candlestick Pattern (+1 for strong patterns)
-    const candlePattern = last15Candles[last15Candles.length - 1].pattern;
+    const candlePattern = last5Candles[last5Candles.length - 1].pattern;
     const bullishPatterns = ['Hammer', 'Bullish Engulfing', 'Piercing Line', 'Morning Star', 'Three White Soldiers', 'Bullish Marubozu'];
     const bearishPatterns = ['Shooting Star', 'Bearish Engulfing', 'Dark Cloud Cover', 'Evening Star', 'Three Black Crows', 'Bearish Marubozu'];
     if (bullishPatterns.includes(candlePattern)) {
@@ -442,8 +430,8 @@ async function getData() {
 
     if (isBullish || isBearish) {
       entry = optimalEntry; // Use optimal entry
-      const recentLows = last15Candles.map(c => c.ohlc.low);
-      const recentHighs = last15Candles.map(c => c.ohlc.high);
+      const recentLows = last5Candles.map(c => c.ohlc.low);
+      const recentHighs = last5Candles.map(c => c.ohlc.high);
       const minLow = Math.min(...recentLows);
       const maxHigh = Math.max(...recentHighs);
 
@@ -479,8 +467,7 @@ async function getData() {
     // Send Telegram notification if new entry signal
     if (signal.startsWith('✅ Enter') && signal !== previousSignal) {
       const nonAligningText = nonAligningIndicators.length > 0 ? `\nNon-aligning indicators:\n- ${nonAligningIndicators.join('\n- ')}` : '';
-      const candleAnalysisText = `\nLast 15 Candles Analysis:\n- ${candleAnalysis.join('\n- ')}\nSummary: ${trendSummary}`;
-      const notification = `SOL/USDT\nLEVERAGE: 20\nEntry Price: ${entry}\nTake Profit 1: ${tp1}\nTake Profit 2: ${tp2}\nStop Loss: ${sl}\nLast candle shape: ${candlePattern} is signalling ${candleDirection}\n\nPSAR Suggestion: ${suggestion}\nNotes: ${notes}${nonAligningText}${candleAnalysisText}`;
+      const notification = `SOL/USDT\nLEVERAGE: 20\nEntry Price: ${entry}\nTake Profit 1: ${tp1}\nTake Profit 2: ${tp2}\nStop Loss: ${sl}\nLast candle shape: ${candlePattern} is signalling ${candleDirection}\n\nPSAR Suggestion: ${suggestion}\nNotes: ${notes}${nonAligningText}`;
       await sendTelegramNotification(notification);
       previousSignal = signal; // Reset after TP/SL (no cooldown)
     } else if (!signal.startsWith('✅ Enter')) {
@@ -501,8 +488,7 @@ async function getData() {
           cmf: cmf ? cmf.toFixed(2) : 'N/A',
           macd: macd && typeof macd.MACD === 'number' ? macd.MACD.toFixed(2) : 'N/A'
         },
-        levels: { entry, tp1, tp2, sl, positionSize },
-        candleAnalysis: { patterns: candleAnalysis, summary: trendSummary }
+        levels: { entry, tp1, tp2, sl, positionSize }
       };
       console.log('Entry Log:', JSON.stringify(log, null, 2));
     }
@@ -513,9 +499,9 @@ async function getData() {
       volatility: { atr },
       bollinger: { upper: bb.upper, middle: bb.middle, lower: bb.lower },
       psar: { value: psar, position: psarPosition },
-      last15Candles,
-      avgVolume: last15Candles.reduce((sum, c) => sum + c.volume, 0) / last15Candles.length || 0,
-      candlePattern: last15Candles[last15Candles.length - 1].pattern,
+      last5Candles,
+      avgVolume: last5Candles.reduce((sum, c) => sum + c.volume, 0) / last5Candles.length || 0,
+      candlePattern: last5Candles[last5Candles.length - 1].pattern,
       higherTF: { trend1h, trend4h },
       signals: { signal, notes, entry, tp1, tp2, sl, positionSize }
     };
