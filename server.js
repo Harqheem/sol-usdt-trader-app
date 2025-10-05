@@ -14,16 +14,22 @@ let cachedData = null; // Cache for data
 
 // Custom CMF function (since technicalindicators doesn't support it)
 function calculateCMF(highs, lows, closes, volumes, period = 20) {
-  const n = Math.min(highs.length, period);
-  let sumMFV = 0;
-  let sumVol = 0;
-  for (let i = highs.length - n; i < highs.length; i++) {
-    const mfm = ((closes[i] - lows[i]) - (highs[i] - closes[i])) / (highs[i] - lows[i]) || 0; // Avoid division by zero
-    const mfv = mfm * volumes[i];
-    sumMFV += mfv;
-    sumVol += volumes[i];
+  try {
+    const n = Math.min(highs.length, period);
+    let sumMFV = 0;
+    let sumVol = 0;
+    for (let i = highs.length - n; i < highs.length; i++) {
+      const range = highs[i] - lows[i];
+      const mfm = range !== 0 ? ((closes[i] - lows[i]) - (highs[i] - closes[i])) / range : 0; // Handle equal high/low
+      const mfv = mfm * volumes[i];
+      sumMFV += mfv;
+      sumVol += volumes[i];
+    }
+    return sumVol > 0 ? sumMFV / sumVol : 0; // Handle zero volume
+  } catch (err) {
+    console.error('Custom CMF calculation error:', err.message);
+    return 0; // Fallback to neutral
   }
-  return sumVol > 0 ? sumMFV / sumVol : 0;
 }
 
 // Function to send Telegram notification
@@ -84,9 +90,9 @@ async function getData() {
 
     // Fetch 500 recent 15m klines
     const klines15m = await client.candles({ symbol: 'SOLUSDT', interval: '15m', limit: 500 });
-    if (klines15m.length < 200) {
-      console.error('Insufficient klines data:', klines15m.length);
-      return { error: 'Insufficient historical data from Binance' };
+    if (klines15m.length < 200 || klines15m.some(k => !k.close || !k.high || !k.low || !k.volume)) {
+      console.error('Invalid or insufficient klines data:', klines15m.length);
+      return { error: 'Insufficient or invalid historical data from Binance' };
     }
     const lastCandle = klines15m[klines15m.length - 1];
     const closes = klines15m.map(c => parseFloat(c.close));
@@ -202,11 +208,19 @@ async function getData() {
     let trend1h, trend4h;
     try {
       const klines1h = await client.candles({ symbol: 'SOLUSDT', interval: '1h', limit: 100 });
+      if (klines1h.length < 100 || klines1h.some(k => !k.close)) {
+        console.error('Invalid 1h klines data:', klines1h.length);
+        return { error: 'Insufficient or invalid 1h data from Binance' };
+      }
       const closes1h = klines1h.map(c => parseFloat(c.close));
       const ema99_1h = TI.EMA.calculate({ period: 99, values: closes1h }).pop();
       trend1h = currentPrice > ema99_1h ? 'Above' : 'Below';
 
       const klines4h = await client.candles({ symbol: 'SOLUSDT', interval: '4h', limit: 100 });
+      if (klines4h.length < 100 || klines4h.some(k => !k.close)) {
+        console.error('Invalid 4h klines data:', klines4h.length);
+        return { error: 'Insufficient or invalid 4h data from Binance' };
+      }
       const closes4h = klines4h.map(c => parseFloat(c.close));
       const ema99_4h = TI.EMA.calculate({ period: 99, values: closes4h }).pop();
       trend4h = currentPrice > ema99_4h ? 'Above' : 'Below';
@@ -297,11 +311,11 @@ async function getData() {
     }
 
     // MACD (+1 if MACD > signal for bullish, < signal for bearish)
-    if (macd.macd > macd.signal) {
+    if (macd && macd.macd > macd.signal) {
       bullishScore += 1;
       bullishReasons.push('MACD bullish crossover');
     }
-    if (macd.macd < macd.signal) {
+    if (macd && macd.macd < macd.signal) {
       bearishScore += 1;
       bearishReasons.push('MACD bearish crossover');
     }
@@ -326,7 +340,7 @@ async function getData() {
       const maxHigh = Math.max(...recentHighs);
 
       if (isBullish) {
-        sl = Math.min(minLow, parseFloat(entry) - atr * 1).toFixed(2); // Ensure SL is below entry
+        sl = Math.min(parseFloat(entry) - atr, minLow - atr).toFixed(2); // Ensure SL is below entry
         tp1 = (parseFloat(entry) + atr * 1).toFixed(2); // 50% at 1 ATR
         tp2 = (parseFloat(entry) + atr * 2).toFixed(2); // 50% at 2 ATR
         const riskPerUnit = parseFloat(entry) - parseFloat(sl);
@@ -369,7 +383,13 @@ async function getData() {
         signal,
         bullishScore,
         bearishScore,
-        reasons: { adx: adx.toFixed(2), rsi: rsi.toFixed(2), atr: atr.toFixed(2), cmf: cmf.toFixed(2), macd: macd.macd.toFixed(2) },
+        reasons: {
+          adx: adx ? adx.toFixed(2) : 'N/A',
+          rsi: rsi ? rsi.toFixed(2) : 'N/A',
+          atr: atr ? atr.toFixed(2) : 'N/A',
+          cmf: cmf ? cmf.toFixed(2) : 'N/A',
+          macd: macd && macd.macd ? macd.macd.toFixed(2) : 'N/A'
+        },
         levels: { entry, tp1, tp2, sl, positionSize }
       };
       console.log('Entry Log:', JSON.stringify(log, null, 2));
