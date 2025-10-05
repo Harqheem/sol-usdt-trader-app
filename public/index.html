@@ -10,7 +10,7 @@
     <!-- Top Bar -->
     <div class="top-bar">
       <span id="current-price"></span>
-      <span id="current-time"></span> <!-- Live time -->
+      <span id="current-time"></span>
       <span id="timestamp"></span>
       <button id="copy-btn">Copy Data</button>
     </div>
@@ -32,9 +32,8 @@
       <p>Bollinger Lower: <span id="bb-lower"></span></p>
       <p>PSAR: <span id="psar"></span> (<span id="psar-pos"></span>)</p>
       <p>Candlestick: <span id="candle-pattern"></span></p>
-      <!-- Add small chart here later if needed (e.g., via Chart.js) -->
     </div>
-    <!-- Right Panel (only candles now) -->
+    <!-- Right Panel -->
     <div class="right-panel">
       <h3>Volume</h3>
       <h4>Last 5 Candles (Candle 1=most recent):</h4>
@@ -47,10 +46,12 @@
       <p>4H Trend: <span id="trend4h"></span></p>
       <p>Recommendation: <span id="signal"></span></p>
       <p>Notes: <span id="notes"></span></p>
-      <h3>Trade Levels</h3> <!-- New section -->
+      <h3>Trade Levels</h3>
       <p>Entry Price: <span id="entry"></span></p>
-      <p>Take Profit: <span id="tp"></span></p>
+      <p>Take Profit 1: <span id="tp1"></span></p>
+      <p>Take Profit 2: <span id="tp2"></span></p>
       <p>Stop Loss: <span id="sl"></span></p>
+      <p>Position Size: <span id="positionSize"></span></p>
     </div>
   </div>
   <script src="script.js"></script>

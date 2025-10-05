@@ -9,7 +9,7 @@ const client = Binance(); // Public client, no auth needed
 
 app.use(express.static('public'));
 
-let previousSignal = ''; // Track last signal to avoid duplicate notifications
+let previousSignal = ''; // Track last signal to avoid duplicates
 let cachedData = null; // Cache for data
 
 // Function to send Telegram notification
@@ -25,7 +25,7 @@ async function sendTelegramNotification(message) {
     await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       chat_id: CHAT_ID,
       text: message,
-      parse_mode: 'Markdown' // Optional for formatting
+      parse_mode: 'Markdown'
     });
     console.log('Telegram notification sent:', message);
   } catch (error) {
@@ -33,7 +33,7 @@ async function sendTelegramNotification(message) {
   }
 }
 
-// Function to detect candle pattern (single or two-candle)
+// Function to detect candle pattern
 function detectCandlePattern(opens, highs, lows, closes, index) {
   const sliceOpens = opens.slice(0, index + 1);
   const sliceHighs = highs.slice(0, index + 1);
@@ -41,23 +41,16 @@ function detectCandlePattern(opens, highs, lows, closes, index) {
   const sliceCloses = closes.slice(0, index + 1);
   let pattern = 'Neutral';
 
-  // Single-candle patterns with try-catch for data issues
   try {
     if (TI.bullishhammerstick({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Hammer';
     else if (TI.doji({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Doji';
     else if (TI.shootingstar({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Shooting Star';
-  } catch (err) {
-    console.log('Pattern detection warning (ignored):', err.message);
-  }
-
-  // Two-candle patterns (if not first candle) with try-catch
-  if (index > 0) {
-    try {
+    if (index > 0) {
       if (TI.bullishengulfingpattern({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Bullish Engulfing';
       else if (TI.bearishengulfingpattern({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) pattern = 'Bearish Engulfing';
-    } catch (err) {
-      console.log('Pattern detection warning (ignored):', err.message);
     }
+  } catch (err) {
+    console.log('Pattern detection warning (ignored):', err.message);
   }
 
   return pattern;
@@ -66,7 +59,7 @@ function detectCandlePattern(opens, highs, lows, closes, index) {
 // Main data calculation function
 async function getData() {
   try {
-    // Fetch 500 recent 15m klines (increased for robustness)
+    // Fetch 500 recent 15m klines
     const klines15m = await client.candles({ symbol: 'SOLUSDT', interval: '15m', limit: 500 });
     if (klines15m.length < 200) {
       console.error('Insufficient klines data:', klines15m.length);
@@ -79,7 +72,7 @@ async function getData() {
     const opens = klines15m.map(c => parseFloat(c.open));
     const volumes = klines15m.map(c => parseFloat(c.volume));
 
-    // Last 5 candles data (fallback if fewer than 5)
+    // Last 5 candles data
     const last5Candles = [];
     const startIndex = Math.max(0, klines15m.length - 5);
     for (let i = startIndex; i < klines15m.length; i++) {
@@ -101,7 +94,7 @@ async function getData() {
     const ohlc = { open: parseFloat(lastCandle.open), high: parseFloat(lastCandle.high), low: parseFloat(lastCandle.low), close: currentPrice };
     const timestamp = new Date(lastCandle.closeTime).toLocaleString();
 
-    // Moving Averages (with try-catch for safety)
+    // Moving Averages
     let ema7, ema25, ema99, sma50, sma200;
     try {
       ema7 = TI.EMA.calculate({ period: 7, values: closes }).pop();
@@ -117,7 +110,7 @@ async function getData() {
     // Volatility (ATR)
     const atrInput = { high: highs, low: lows, close: closes, period: 14 };
     const atr = TI.ATR.calculate(atrInput).pop();
-    const avgAtr = TI.SMA.calculate({ period: 14, values: TI.ATR.calculate(atrInput) }).pop(); // Fixed: Use SMA for average
+    const avgAtr = TI.SMA.calculate({ period: 14, values: TI.ATR.calculate(atrInput) }).pop();
 
     // Bollinger Bands
     const bbInput = { period: 20, values: closes, stdDev: 2 };
@@ -128,24 +121,26 @@ async function getData() {
     const psar = TI.PSAR.calculate(psarInput).pop();
     const psarPosition = psar > currentPrice ? 'Above' : 'Below';
 
-    // RSI (new for additional rule)
+    // RSI
     const rsiInput = { values: closes, period: 14 };
     const rsi = TI.RSI.calculate(rsiInput).pop();
 
-    // ADX (new for trend strength)
+    // ADX with +DI/-DI
     const adxInput = { high: highs, low: lows, close: closes, period: 14 };
-    const adx = TI.ADX.calculate(adxInput).pop().adx; // Get ADX value
+    const adxResult = TI.ADX.calculate(adxInput).pop();
+    const adx = adxResult.adx;
+    const plusDI = adxResult.pdi;
+    const minusDI = adxResult.mdi;
 
-    // Volume avg (over last 5) - keeping in data but not displaying
-    const avgVolume = last5Candles.reduce((sum, c) => sum + c.volume, 0) / last5Candles.length || 0;
+    // MACD
+    const macdInput = { values: closes, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 };
+    const macd = TI.MACD.calculate(macdInput).pop();
 
-    // Order Book Snapshot - keeping but not displaying
-    const depth = await client.book({ symbol: 'SOLUSDT', limit: 5 });
-    const biggestBuy = depth.bids[0]; // [price, size]
-    const biggestSell = depth.asks[0];
-    const ratio = parseFloat(biggestBuy[1]) / parseFloat(biggestSell[1]);
+    // Chaikin Money Flow (CMF)
+    const cmfInput = { high: highs.slice(-20), low: lows.slice(-20), close: closes.slice(-20), volume: volumes.slice(-20), period: 20 };
+    const cmf = TI.CMF.calculate(cmfInput).pop();
 
-    // Higher Timeframe Check (adjust fetch limits accordingly)
+    // Higher Timeframe Check
     const klines1h = await client.candles({ symbol: 'SOLUSDT', interval: '1h', limit: 100 });
     const closes1h = klines1h.map(c => parseFloat(c.close));
     const ema99_1h = TI.EMA.calculate({ period: 99, values: closes1h }).pop();
@@ -156,101 +151,162 @@ async function getData() {
     const ema99_4h = TI.EMA.calculate({ period: 99, values: closes4h }).pop();
     const trend4h = currentPrice > ema99_4h ? 'Above' : 'Below';
 
-    // Improved System Signals with scoring for less strict entry
-    let signal = '❌ No Trade';
-    let notes = 'Conflicting signals. Suggestion: Monitor for clearer trends.';
-    
-    // Check if volume is increasing (relaxed to last 2 candles)
-    const isVolumeIncreasing = last5Candles.slice(-2).every((c, idx) => idx === 0 || c.volume > last5Candles[last5Candles.length - idx - 2].volume);
-    
-    // Bullish score (add more rules, less strict threshold)
+    // Optimal Entry Price (average of last 5 closes or nearest EMA if trending)
+    let optimalEntry = currentPrice;
+    const last5Closes = last5Candles.map(c => c.ohlc.close);
+    const avgLast5 = last5Closes.reduce((sum, val) => sum + val, 0) / last5Closes.length;
+    if (currentPrice > ema25 && ema7 > ema25) optimalEntry = Math.min(avgLast5, ema25); // Pullback to EMA25 for bullish
+    else if (currentPrice < ema25 && ema7 < ema25) optimalEntry = Math.max(avgLast5, ema25); // Pullback to EMA25 for bearish
+    optimalEntry = optimalEntry.toFixed(2);
+
+    // Weighted Scoring System
     let bullishScore = 0;
-    if (currentPrice > ema7) bullishScore += 1;
-    if (currentPrice > ema25) bullishScore += 1;
-    if (currentPrice > ema99) bullishScore += 1;
-    if (last5Candles[last5Candles.length - 1].volume > avgVolume * 0.8) bullishScore += 1; // Relaxed
-    if (ratio > 0.9) bullishScore += 1; // Relaxed
-    if (psarPosition === 'Below') bullishScore += 1;
-    if (['Hammer', 'Bullish Engulfing'].includes(last5Candles[last5Candles.length - 1].pattern)) bullishScore += 1;
-    if (currentPrice < bb.upper) bullishScore += 1; // Relaxed (no *0.98)
-    if (atr > avgAtr * 0.5) bullishScore += 1; // Relaxed volatility
-    if (isVolumeIncreasing) bullishScore += 1;
-    if (trend1h === 'Above') bullishScore += 1;
-    if (trend4h === 'Above') bullishScore += 1;
-    if (rsi < 70) bullishScore += 1; // New: Not overbought
-    if (currentPrice > sma50) bullishScore += 1; // New: Above medium-term SMA
-    if (adx > 25) bullishScore += 1; // New: Strong trend
-    
-    // Bearish score (symmetric)
     let bearishScore = 0;
-    if (currentPrice < ema7) bearishScore += 1;
-    if (currentPrice < ema25) bearishScore += 1;
-    if (currentPrice < ema99) bearishScore += 1;
-    if (last5Candles[last5Candles.length - 1].volume > avgVolume * 0.8) bearishScore += 1; // Relaxed
-    if (ratio < 1.1) bearishScore += 1; // Relaxed
-    if (psarPosition === 'Above') bearishScore += 1;
-    if (['Shooting Star', 'Bearish Engulfing'].includes(last5Candles[last5Candles.length - 1].pattern)) bearishScore += 1;
-    if (currentPrice > bb.lower) bearishScore += 1; // Relaxed (no *1.02)
-    if (atr > avgAtr * 0.5) bearishScore += 1; // Relaxed volatility
-    if (isVolumeIncreasing) bearishScore += 1;
-    if (trend1h === 'Below') bearishScore += 1;
-    if (trend4h === 'Below') bearishScore += 1;
-    if (rsi > 30) bearishScore += 1; // New: Not oversold
-    if (currentPrice < sma50) bearishScore += 1; // New: Below medium-term SMA
-    if (adx > 25) bearishScore += 1; // New: Strong trend
-    
-    // Calculate Trade Levels if signal triggers
+    let bullishReasons = [];
+    let bearishReasons = [];
+
+    // Trend Alignment (+3 if all TFs align)
+    if (currentPrice > ema99 && trend1h === 'Above' && trend4h === 'Above') {
+      bullishScore += 3;
+      bullishReasons.push('Trend aligned across 15m, 1h, 4h');
+    }
+    if (currentPrice < ema99 && trend1h === 'Below' && trend4h === 'Below') {
+      bearishScore += 3;
+      bearishReasons.push('Trend aligned across 15m, 1h, 4h');
+    }
+
+    // Directional ADX (+3 if ADX > 25 and DI aligns with trend)
+    if (adx > 25 && plusDI > minusDI && currentPrice > ema99) {
+      bullishScore += 3;
+      bullishReasons.push(`Strong ADX (${adx.toFixed(2)})`);
+    }
+    if (adx > 25 && minusDI > plusDI && currentPrice < ema99) {
+      bearishScore += 3;
+      bearishReasons.push(`Strong ADX (${adx.toFixed(2)})`);
+    }
+
+    // EMA Stack Alignment (+2 if EMA7 > EMA25 > EMA99 or inverse)
+    if (ema7 > ema25 && ema25 > ema99) {
+      bullishScore += 2;
+      bullishReasons.push('EMA stack bullish');
+    }
+    if (ema7 < ema25 && ema25 < ema99) {
+      bearishScore += 2;
+      bearishReasons.push('EMA stack bearish');
+    }
+
+    // RSI Confirmation (+2 if 40-60)
+    if (rsi >= 40 && rsi <= 60) {
+      bullishScore += 2;
+      bearishScore += 2;
+      bullishReasons.push(`Neutral RSI (${rsi.toFixed(2)})`);
+      bearishReasons.push(`Neutral RSI (${rsi.toFixed(2)})`);
+    }
+
+    // ATR Volatility (+2 if ATR > avgAtr)
+    if (atr > avgAtr) {
+      bullishScore += 2;
+      bearishScore += 2;
+      bullishReasons.push(`High volatility (ATR ${atr.toFixed(2)})`);
+      bearishReasons.push(`High volatility (ATR ${atr.toFixed(2)})`);
+    }
+
+    // CMF Volume (+2 if CMF > 0 for bullish, < 0 for bearish)
+    if (cmf > 0) {
+      bullishScore += 2;
+      bullishReasons.push(`Positive CMF (${cmf.toFixed(2)})`);
+    }
+    if (cmf < 0) {
+      bearishScore += 2;
+      bearishReasons.push(`Negative CMF (${cmf.toFixed(2)})`);
+    }
+
+    // Candlestick Pattern (+1 for strong patterns)
+    const candlePattern = last5Candles[last5Candles.length - 1].pattern;
+    if (['Hammer', 'Bullish Engulfing'].includes(candlePattern)) {
+      bullishScore += 1;
+      bullishReasons.push(`Bullish pattern (${candlePattern})`);
+    }
+    if (['Shooting Star', 'Bearish Engulfing'].includes(candlePattern)) {
+      bearishScore += 1;
+      bearishReasons.push(`Bearish pattern (${candlePattern})`);
+    }
+
+    // MACD (+1 if MACD > signal for bullish, < signal for bearish)
+    if (macd.macd > macd.signal) {
+      bullishScore += 1;
+      bullishReasons.push('MACD bullish crossover');
+    }
+    if (macd.macd < macd.signal) {
+      bearishScore += 1;
+      bearishReasons.push('MACD bearish crossover');
+    }
+
+    // Calculate Trade Levels
     let entry = 'N/A';
-    let tp = 'N/A';
+    let tp1 = 'N/A';
+    let tp2 = 'N/A';
     let sl = 'N/A';
-    const isBullish = bullishScore >= 11; // Increased minimum
-    const isBearish = bearishScore >= 11; // Increased minimum
+    let positionSize = 'N/A';
+    const isBullish = bullishScore >= 12;
+    const isBearish = bearishScore >= 12;
+
     if (isBullish || isBearish) {
-      entry = currentPrice.toFixed(2);
+      entry = optimalEntry; // Use optimal entry
       const recentLows = last5Candles.map(c => c.ohlc.low);
       const recentHighs = last5Candles.map(c => c.ohlc.high);
       const minLow = Math.min(...recentLows);
       const maxHigh = Math.max(...recentHighs);
+      const accountBalance = 1000; // Assumed balance
+      const riskPercent = 0.01; // 1% risk per trade
+      const riskAmount = accountBalance * riskPercent;
+
       if (isBullish) {
-        sl = (minLow - atr * 1).toFixed(2); // Increased buffer
-        tp = (currentPrice + atr * 2).toFixed(2); // 1:2 RR
+        sl = (minLow - atr * 1).toFixed(2);
+        tp1 = (parseFloat(entry) + atr * 1).toFixed(2); // 50% at 1 ATR
+        tp2 = (parseFloat(entry) + atr * 2).toFixed(2); // 50% at 2 ATR
+        const riskPerUnit = parseFloat(entry) - parseFloat(sl);
+        positionSize = riskPerUnit > 0 ? (riskAmount / riskPerUnit).toFixed(2) : 'N/A';
       } else if (isBearish) {
-        sl = (maxHigh + atr * 1).toFixed(2); // Increased buffer
-        tp = (currentPrice - atr * 2).toFixed(2);
+        sl = (maxHigh + atr * 1).toFixed(2);
+        tp1 = (parseFloat(entry) - atr * 1).toFixed(2); // 50% at 1 ATR
+        tp2 = (parseFloat(entry) - atr * 2).toFixed(2); // 50% at 2 ATR
+        const riskPerUnit = parseFloat(sl) - parseFloat(entry);
+        positionSize = riskPerUnit > 0 ? (riskAmount / riskPerUnit).toFixed(2) : 'N/A';
       }
     }
 
+    // Signal and Notes
+    let signal = '❌ No Trade';
+    let notes = 'Mixed signals: Low volatility or indecision. Wait for breakout.';
+    let suggestion = entry !== 'N/A' && parseFloat(entry) > psar ? 'long' : 'short'; // Reversed PSAR logic
+
     if (isBullish) {
       signal = '✅ Enter Long';
-      notes = `Bullish score: ${bullishScore}/15. Key reasons: Price above EMAs, strong ADX (${adx.toFixed(2)} >25), high volume. Enter long; trail SL after 1 ATR profit. Entry: ${entry}, TP: ${tp}, SL: ${sl}. Risk 1% capital; hedge if volatile.`;
+      notes = `Score: ${bullishScore}/16. Reasons: ${bullishReasons.slice(0, 3).join(', ')}. Enter long at ${entry}; trail SL to entry after 1 ATR, then 1.5x ATR below high. TP1: ${tp1} (50%), TP2: ${tp2} (50%). Risk 1% ($${riskAmount}, ${positionSize} units).`;
     } else if (isBearish) {
       signal = '✅ Enter Short';
-      notes = `Bearish score: ${bearishScore}/15. Key reasons: Price below EMAs, strong ADX (${adx.toFixed(2)} >25), high volume. Enter short; trail SL after 1 ATR profit. Entry: ${entry}, TP: ${tp}, SL: ${sl}. Risk 1% capital; hedge if volatile.`;
-    } else if (atr < avgAtr * 0.5 || last5Candles[last5Candles.length - 1].pattern === 'Doji' || (currentPrice > bb.upper || currentPrice < bb.lower)) {
-      signal = '⏸ Wait for Confirmation';
-      notes = 'Mixed signals: Low volatility or indecision. Wait for breakout.';
-    } else {
-      notes += ' No entry. Backtest recent data.';
+      notes = `Score: ${bearishScore}/16. Reasons: ${bearishReasons.slice(0, 3).join(', ')}. Enter short at ${entry}; trail SL to entry after 1 ATR, then 1.5x ATR above low. TP1: ${tp1} (50%), TP2: ${tp2} (50%). Risk 1% ($${riskAmount}, ${positionSize} units).`;
     }
 
     // Send Telegram notification if new entry signal
     if (signal.startsWith('✅ Enter') && signal !== previousSignal) {
-      const notification = `SOL/USDT\nLEVERAGE: 20\nEntry Price: ${entry}\nTake Profit: ${tp}\nStop loss: ${sl}\n\nSuggestion: ${entry > psar ? 'short' : 'long'}\nNotes: ${notes}`;
+      const notification = `SOL/USDT\nLEVERAGE: 20\nEntry Price: ${entry}\nTake Profit 1: ${tp1}\nTake Profit 2: ${tp2}\nStop Loss: ${sl}\n\nSuggestion: ${suggestion}\nNotes: ${notes}`;
       await sendTelegramNotification(notification);
-      previousSignal = signal;
+      previousSignal = signal; // Reset after TP/SL (no cooldown)
     } else if (!signal.startsWith('✅ Enter')) {
-      previousSignal = signal; // Reset if no entry
+      previousSignal = signal; // Allow immediate reset
     }
 
-    // Structured logging for entries (JSON with timestamp)
+    // Structured logging for entries
     if (signal.startsWith('✅ Enter')) {
       const log = {
         timestamp: new Date().toLocaleString(),
         signal,
         bullishScore,
         bearishScore,
-        reasons: { adx: adx.toFixed(2), rsi: rsi.toFixed(2), atr: atr.toFixed(2) },
-        levels: { entry, tp, sl }
+        reasons: { adx: adx.toFixed(2), rsi: rsi.toFixed(2), atr: atr.toFixed(2), cmf: cmf.toFixed(2), macd: macd.macd.toFixed(2) },
+        levels: { entry, tp1, tp2, sl, positionSize }
       };
       console.log('Entry Log:', JSON.stringify(log, null, 2));
     }
@@ -261,12 +317,11 @@ async function getData() {
       volatility: { atr },
       bollinger: { upper: bb.upper, middle: bb.middle, lower: bb.lower },
       psar: { value: psar, position: psarPosition },
-      last5Candles, // Updated with times
-      avgVolume,
-      candlePattern: last5Candles[last5Candles.length - 1].pattern, // Last one
-      orderBook: { buyWall: { price: biggestBuy[0], size: biggestBuy[1] }, sellWall: { price: biggestSell[0], size: biggestSell[1] }, ratio },
+      last5Candles,
+      avgVolume: last5Candles.reduce((sum, c) => sum + c.volume, 0) / last5Candles.length || 0,
+      candlePattern: last5Candles[last5Candles.length - 1].pattern,
       higherTF: { trend1h, trend4h },
-      signals: { signal, notes, entry, tp, sl } // Added trade levels
+      signals: { signal, notes, entry, tp1, tp2, sl, positionSize }
     };
   } catch (error) {
     console.error('getData error:', error.message);

@@ -12,7 +12,7 @@
 .middle-panel { grid-area: middle; background: #fafad2; padding: 10px; }
 .right-panel { grid-area: right; background: #ffe4e1; padding: 10px; }
 .bottom-panel { grid-area: bottom; background: #e0ffe0; padding: 10px; }
-#atr { color: orange; } /* Default; JS will change */
+#atr { color: orange; }
 #copy-btn { float: right; }
 #last5-candles {
   list-style-type: none;
