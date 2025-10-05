@@ -90,9 +90,9 @@ async function getData() {
 
     // Fetch 500 recent 15m klines
     const klines15m = await client.candles({ symbol: 'SOLUSDT', interval: '15m', limit: 500 });
-    if (klines15m.length < 200 || klines15m.some(k => !k.close || !k.high || !k.low || !k.volume)) {
-      console.error('Invalid or insufficient klines data:', klines15m.length);
-      return { error: 'Insufficient or invalid historical data from Binance' };
+    if (klines15m.length < 200 || klines15m.some(k => !k.close || !k.high || !k.low || !k.volume || isNaN(k.close) || isNaN(k.high) || isNaN(k.low) || isNaN(k.volume))) {
+      console.error('Invalid or insufficient 15m klines data:', klines15m.length);
+      return { error: 'Insufficient or invalid 15m data from Binance' };
     }
     const lastCandle = klines15m[klines15m.length - 1];
     const closes = klines15m.map(c => parseFloat(c.close));
@@ -187,12 +187,20 @@ async function getData() {
     }
 
     // MACD
-    let macd;
+    let macd = null;
     try {
-      macd = TI.MACD.calculate({ values: closes, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 }).pop();
+      if (closes.length >= 26) { // Ensure enough data for MACD (slow EMA period)
+        macd = TI.MACD.calculate({ values: closes, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 }).pop();
+        if (!macd || typeof macd.macd !== 'number' || typeof macd.signal !== 'number') {
+          console.warn('Invalid MACD result:', macd);
+          macd = null;
+        }
+      } else {
+        console.warn('Insufficient data for MACD calculation:', closes.length);
+      }
     } catch (err) {
       console.error('MACD calculation error:', err);
-      return { error: 'Failed to calculate MACD' };
+      macd = null;
     }
 
     // Chaikin Money Flow (CMF)
@@ -208,7 +216,7 @@ async function getData() {
     let trend1h, trend4h;
     try {
       const klines1h = await client.candles({ symbol: 'SOLUSDT', interval: '1h', limit: 100 });
-      if (klines1h.length < 100 || klines1h.some(k => !k.close)) {
+      if (klines1h.length < 100 || klines1h.some(k => !k.close || isNaN(k.close))) {
         console.error('Invalid 1h klines data:', klines1h.length);
         return { error: 'Insufficient or invalid 1h data from Binance' };
       }
@@ -217,7 +225,7 @@ async function getData() {
       trend1h = currentPrice > ema99_1h ? 'Above' : 'Below';
 
       const klines4h = await client.candles({ symbol: 'SOLUSDT', interval: '4h', limit: 100 });
-      if (klines4h.length < 100 || klines4h.some(k => !k.close)) {
+      if (klines4h.length < 100 || klines4h.some(k => !k.close || isNaN(k.close))) {
         console.error('Invalid 4h klines data:', klines4h.length);
         return { error: 'Insufficient or invalid 4h data from Binance' };
       }
@@ -254,11 +262,11 @@ async function getData() {
     }
 
     // Directional ADX (+3 if ADX > 25 and DI aligns with trend)
-    if (adx > 25 && plusDI > minusDI && currentPrice > ema99) {
+    if (adx && adx > 25 && plusDI > minusDI && currentPrice > ema99) {
       bullishScore += 3;
       bullishReasons.push(`Strong ADX (${adx.toFixed(2)})`);
     }
-    if (adx > 25 && minusDI > plusDI && currentPrice < ema99) {
+    if (adx && adx > 25 && minusDI > plusDI && currentPrice < ema99) {
       bearishScore += 3;
       bearishReasons.push(`Strong ADX (${adx.toFixed(2)})`);
     }
@@ -274,7 +282,7 @@ async function getData() {
     }
 
     // RSI Confirmation (+2 if 40-60)
-    if (rsi >= 40 && rsi <= 60) {
+    if (rsi && rsi >= 40 && rsi <= 60) {
       bullishScore += 2;
       bearishScore += 2;
       bullishReasons.push(`Neutral RSI (${rsi.toFixed(2)})`);
@@ -282,7 +290,7 @@ async function getData() {
     }
 
     // ATR Volatility (+2 if ATR > avgAtr)
-    if (atr > avgAtr) {
+    if (atr && atr > avgAtr) {
       bullishScore += 2;
       bearishScore += 2;
       bullishReasons.push(`High volatility (ATR ${atr.toFixed(2)})`);
@@ -290,11 +298,11 @@ async function getData() {
     }
 
     // CMF Volume (+2 if CMF > 0 for bullish, < 0 for bearish)
-    if (cmf > 0) {
+    if (cmf && cmf > 0) {
       bullishScore += 2;
       bullishReasons.push(`Positive CMF (${cmf.toFixed(2)})`);
     }
-    if (cmf < 0) {
+    if (cmf && cmf < 0) {
       bearishScore += 2;
       bearishReasons.push(`Negative CMF (${cmf.toFixed(2)})`);
     }
@@ -311,11 +319,11 @@ async function getData() {
     }
 
     // MACD (+1 if MACD > signal for bullish, < signal for bearish)
-    if (macd && macd.macd > macd.signal) {
+    if (macd && typeof macd.macd === 'number' && typeof macd.signal === 'number' && macd.macd > macd.signal) {
       bullishScore += 1;
       bullishReasons.push('MACD bullish crossover');
     }
-    if (macd && macd.macd < macd.signal) {
+    if (macd && typeof macd.macd === 'number' && typeof macd.signal === 'number' && macd.macd < macd.signal) {
       bearishScore += 1;
       bearishReasons.push('MACD bearish crossover');
     }
@@ -388,7 +396,7 @@ async function getData() {
           rsi: rsi ? rsi.toFixed(2) : 'N/A',
           atr: atr ? atr.toFixed(2) : 'N/A',
           cmf: cmf ? cmf.toFixed(2) : 'N/A',
-          macd: macd && macd.macd ? macd.macd.toFixed(2) : 'N/A'
+          macd: macd && typeof macd.macd === 'number' ? macd.macd.toFixed(2) : 'N/A'
         },
         levels: { entry, tp1, tp2, sl, positionSize }
       };
