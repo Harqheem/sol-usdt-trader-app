@@ -520,7 +520,7 @@ async function getData() {
       volatility: { atr },
       bollinger: { upper: bb.upper, middle: bb.middle, lower: bb.lower },
       psar: { value: psar, position: psarPosition },
-      last15Candles,
+      last5Candles: last15Candles.slice(-5),
       avgVolume: last15Candles.reduce((sum, c) => sum + c.volume, 0) / last15Candles.length || 0,
       candlePattern: last15Candles[last15Candles.length - 1].pattern,
       higherTF: { trend1h, trend4h },
