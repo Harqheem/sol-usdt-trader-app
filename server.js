@@ -12,6 +12,10 @@ app.use(express.static('public'));
 let previousSignal = ''; // Track last signal to avoid duplicates
 let cachedData = null; // Cache for data
 
+// Define candlestick patterns globally
+const bullishPatterns = ['Hammer', 'Bullish Engulfing', 'Piercing Line', 'Morning Star', 'Three White Soldiers', 'Bullish Marubozu'];
+const bearishPatterns = ['Shooting Star', 'Bearish Engulfing', 'Dark Cloud Cover', 'Evening Star', 'Three Black Crows', 'Bearish Marubozu'];
+
 // Custom CMF function (since technicalindicators doesn't support it)
 function calculateCMF(highs, lows, closes, volumes, period = 20) {
   try {
@@ -537,7 +541,6 @@ setInterval(async () => {
 getData().then(data => {
   cachedData = data;
   console.log('Initial data cache filled');
-  app.listen(3000, () => console.log('Server running on http://localhost:3000'));
 });
 
 app.get('/data', (req, res) => {
@@ -558,3 +561,5 @@ app.get('/price', async (req, res) => {
     res.json({ error: 'Failed to fetch price' });
   }
 });
+
+app.listen(3000, () => console.log('Server running on http://localhost:3000'));
