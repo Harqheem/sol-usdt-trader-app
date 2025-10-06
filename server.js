@@ -314,12 +314,19 @@ async function getData() {
       return { error: 'Failed to calculate higher timeframe trends' };
     }
 
-    // Optimal Entry Price (average of last 5 closes or nearest EMA if trending)
+    // Optimal Entry Price (hybrid: pullback if close, else current price)
     let optimalEntry = currentPrice;
     const last5Closes = last15Candles.slice(-5).map(c => c.ohlc.close);
     const avgLast5 = last5Closes.reduce((sum, val) => sum + val, 0) / last5Closes.length;
-    if (currentPrice > ema25 && ema7 > ema25) optimalEntry = Math.min(avgLast5, ema25); // Pullback to EMA25 for bullish
-    else if (currentPrice < ema25 && ema7 < ema25) optimalEntry = Math.max(avgLast5, ema25); // Pullback to EMA25 for bearish
+    let pullbackLevel;
+    if (currentPrice > ema25 && ema7 > ema25) {
+      pullbackLevel = Math.min(avgLast5, ema25); // Pullback to EMA25 for bullish
+    } else if (currentPrice < ema25 && ema7 < ema25) {
+      pullbackLevel = Math.max(avgLast5, ema25); // Pullback to EMA25 for bearish
+    }
+    if (pullbackLevel && Math.abs((currentPrice - pullbackLevel) / currentPrice) < 0.01) { // If pullback level is within 1% of current price
+      optimalEntry = pullbackLevel;
+    } // Else use currentPrice for immediate entry
     optimalEntry = optimalEntry.toFixed(2);
 
     // Weighted Scoring System
@@ -556,6 +563,3 @@ app.get('/price', async (req, res) => {
 });
 
 app.listen(3000, () => console.log('Server running on http://localhost:3000'));
-</xaiArtifact>
-
-## public/index.html (Unchanged)
