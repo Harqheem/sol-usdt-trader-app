@@ -36,8 +36,33 @@ function calculateCMF(highs, lows, closes, volumes, period = 20) {
   }
 }
 
-// Function to send Telegram notification
-async function sendTelegramNotification(message) {
+// Function to detect RSI divergence over last 3 candles
+function detectRSIDivergence(closes, rsis) {
+  if (closes.length < 3 || rsis.length < 3) return 'None';
+  
+  const recentClose = closes[closes.length - 1];
+  const prevClose = closes[closes.length - 2];
+  const prevPrevClose = closes[closes.length - 3];
+  
+  const recentRSI = rsis[rsis.length - 1];
+  const prevRSI = rsis[rsis.length - 2];
+  const prevPrevRSI = rsis[rsis.length - 3];
+  
+  // Bullish divergence: Price lower low, RSI higher low
+  if (recentClose < prevClose && prevClose < prevPrevClose && recentRSI > prevRSI && prevRSI < prevPrevRSI) {
+    return 'Bullish';
+  }
+  
+  // Bearish divergence: Price higher high, RSI lower high
+  if (recentClose > prevClose && prevClose > prevPrevClose && recentRSI < prevRSI && prevRSI > prevPrevRSI) {
+    return 'Bearish';
+  }
+  
+  return 'None';
+}
+
+// Function to send Telegram notifications (now split into two messages)
+async function sendTelegramNotification(firstMessage, secondMessage) {
   const BOT_TOKEN = process.env.BOT_TOKEN;
   const CHAT_ID = process.env.CHAT_ID;
   if (!BOT_TOKEN || !CHAT_ID) {
@@ -46,12 +71,21 @@ async function sendTelegramNotification(message) {
   }
 
   try {
+    // Send first message
     await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       chat_id: CHAT_ID,
-      text: message,
+      text: firstMessage,
       parse_mode: 'Markdown'
     });
-    console.log('Telegram notification sent:', message);
+    console.log('Telegram first notification sent:', firstMessage);
+    
+    // Send second message
+    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      chat_id: CHAT_ID,
+      text: secondMessage,
+      parse_mode: 'Markdown'
+    });
+    console.log('Telegram second notification sent:', secondMessage);
   } catch (error) {
     console.error('Telegram send error:', error.message);
   }
@@ -168,6 +202,12 @@ async function getData() {
     const opens = klines15m.map(c => parseFloat(c.open));
     const volumes = klines15m.map(c => parseFloat(c.volume));
 
+    // Calculate RSI for divergence (full array for last 3)
+    const rsis = TI.RSI.calculate({ period: 14, values: closes });
+
+    // Detect RSI divergence
+    const rsiDivergence = detectRSIDivergence(closes.slice(-3), rsis.slice(-3));
+
     // Last 15 candles data
     const last15Candles = [];
     const startIndex = Math.max(0, klines15m.length - 15);
@@ -209,127 +249,71 @@ async function getData() {
       sma50 = TI.SMA.calculate({ period: 50, values: closes }).pop();
       sma200 = TI.SMA.calculate({ period: 200, values: closes }).pop();
     } catch (err) {
-      console.error('Moving averages calculation error:', err);
+      console.error('Moving averages calculation error:', err.message);
       return { error: 'Failed to calculate moving averages' };
     }
 
-    // Volatility (ATR)
-    let atr, avgAtr;
+    // Volatility
+    let atr, avgAtr, bb;
     try {
-      atr = TI.ATR.calculate({ high: highs, low: lows, close: closes, period: 14 }).pop();
-      avgAtr = TI.SMA.calculate({ period: 14, values: TI.ATR.calculate({ high: highs, low: lows, close: closes, period: 14 }) }).pop();
-    } catch (err) {
-      console.error('ATR calculation error:', err);
-      return { error: 'Failed to calculate ATR' };
-    }
-
-    // Bollinger Bands
-    let bb;
-    try {
+      const atrValues = TI.ATR.calculate({ period: 14, high: highs, low: lows, close: closes });
+      atr = atrValues.pop();
+      avgAtr = atrValues.slice(-20).reduce((sum, v) => sum + v, 0) / Math.min(20, atrValues.length) || atr;
       bb = TI.BollingerBands.calculate({ period: 20, values: closes, stdDev: 2 }).pop();
     } catch (err) {
-      console.error('Bollinger Bands calculation error:', err);
-      return { error: 'Failed to calculate Bollinger Bands' };
+      console.error('Volatility indicators error:', err.message);
+      return { error: 'Failed to calculate volatility indicators' };
     }
 
-    // Parabolic SAR
-    let psar, psarPosition;
+    // PSAR
+    let psar;
     try {
       psar = TI.PSAR.calculate({ high: highs, low: lows, step: 0.015, max: 0.15 }).pop();
-      psarPosition = psar > currentPrice ? 'Above' : 'Below';
     } catch (err) {
-      console.error('PSAR calculation error:', err);
-      return { error: 'Failed to calculate PSAR' };
+      console.error('PSAR calculation error:', err.message);
+      psar = currentPrice; // Fallback
+    }
+    const psarPosition = currentPrice > psar ? 'Below Price (Bullish)' : 'Above Price (Bearish)';
+
+    // Higher TFs
+    let trend1h = 'N/A', trend4h = 'N/A';
+    try {
+      const klines1h = await client.candles({ symbol: 'SOLUSDT', interval: '1h', limit: 100 });
+      const closes1h = klines1h.map(c => parseFloat(c.close));
+      const ema99_1h = TI.EMA.calculate({ period: 99, values: closes1h }).pop() || closes1h[closes1h.length - 1];
+      trend1h = closes1h[closes1h.length - 1] > ema99_1h ? 'Above' : 'Below';
+
+      const klines4h = await client.candles({ symbol: 'SOLUSDT', interval: '4h', limit: 100 });
+      const closes4h = klines4h.map(c => parseFloat(c.close));
+      const ema99_4h = TI.EMA.calculate({ period: 99, values: closes4h }).pop() || closes4h[closes4h.length - 1];
+      trend4h = closes4h[closes4h.length - 1] > ema99_4h ? 'Above' : 'Below';
+    } catch (err) {
+      console.error('Higher TF trend error:', err.message);
     }
 
-    // RSI
-    let rsi;
+    // Other Indicators
+    let rsi, adx, plusDI, minusDI, macd, cmf;
     try {
-      rsi = TI.RSI.calculate({ values: closes, period: 14 }).pop();
-    } catch (err) {
-      console.error('RSI calculation error:', err);
-      return { error: 'Failed to calculate RSI' };
-    }
-
-    // ADX with +DI/-DI
-    let adx, plusDI, minusDI;
-    try {
-      const adxResult = TI.ADX.calculate({ high: highs, low: lows, close: closes, period: 14 }).pop();
+      rsi = rsis.pop();
+      const adxResult = TI.ADX.calculate({ period: 14, close: closes, high: highs, low: lows }).pop();
       adx = adxResult.adx;
       plusDI = adxResult.pdi;
       minusDI = adxResult.mdi;
+      macd = TI.MACD.calculate({ values: closes, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9, SimpleMAOscillator: false, SimpleMASignal: false }).pop();
+      cmf = calculateCMF(highs, lows, closes, volumes);
     } catch (err) {
-      console.error('ADX calculation error:', err);
-      return { error: 'Failed to calculate ADX' };
+      console.error('Other indicators error:', err.message);
     }
 
-    // MACD
-    let macd = null;
-    try {
-      if (closes.length >= 35) { // Ensure enough data for MACD (slow EMA period + signal period)
-        macd = TI.MACD.calculate({ values: closes, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 }).pop();
-        if (!macd || typeof macd.MACD !== 'number' || typeof macd.signal !== 'number') {
-          console.warn('Invalid MACD result:', macd);
-          macd = null;
-        }
-      } else {
-        console.warn('Insufficient data for MACD calculation:', closes.length);
-      }
-    } catch (err) {
-      console.error('MACD calculation error:', err);
-      macd = null;
-    }
+    // Optimal Entry (hybrid: midpoint between pullback and current)
+    const recentLows = last15Candles.map(c => c.ohlc.low);
+    const recentHighs = last15Candles.map(c => c.ohlc.high);
+    const minLow = Math.min(...recentLows);
+    const maxHigh = Math.max(...recentHighs);
+    const pullbackLevel = currentPrice > ema99 ? minLow : maxHigh;
+    const optimalEntry = ((pullbackLevel + currentPrice) / 2).toFixed(2);
 
-    // Chaikin Money Flow (CMF)
-    let cmf;
-    try {
-      cmf = calculateCMF(highs, lows, closes, volumes, 20);
-    } catch (err) {
-      console.error('Custom CMF calculation error:', err);
-      return { error: 'Failed to calculate custom CMF' };
-    }
-
-    // Higher Timeframe Check
-    let trend1h, trend4h;
-    try {
-      const klines1h = await client.candles({ symbol: 'SOLUSDT', interval: '1h', limit: 100 });
-      if (klines1h.length < 100 || klines1h.some(k => !k.close || isNaN(k.close))) {
-        console.error('Invalid 1h klines data:', klines1h.length);
-        return { error: 'Insufficient or invalid 1h data from Binance' };
-      }
-      const closes1h = klines1h.map(c => parseFloat(c.close));
-      const ema99_1h = TI.EMA.calculate({ period: 99, values: closes1h }).pop();
-      trend1h = currentPrice > ema99_1h ? 'Above' : 'Below';
-
-      const klines4h = await client.candles({ symbol: 'SOLUSDT', interval: '4h', limit: 100 });
-      if (klines4h.length < 100 || klines4h.some(k => !k.close || isNaN(k.close))) {
-        console.error('Invalid 4h klines data:', klines4h.length);
-        return { error: 'Insufficient or invalid 4h data from Binance' };
-      }
-      const closes4h = klines4h.map(c => parseFloat(c.close));
-      const ema99_4h = TI.EMA.calculate({ period: 99, values: closes4h }).pop();
-      trend4h = currentPrice > ema99_4h ? 'Above' : 'Below';
-    } catch (err) {
-      console.error('Higher timeframe calculation error:', err);
-      return { error: 'Failed to calculate higher timeframe trends' };
-    }
-
-    // Optimal Entry Price (hybrid: pullback if close, else current price)
-    let optimalEntry = currentPrice;
-    const last5Closes = last15Candles.slice(-5).map(c => c.ohlc.close);
-    const avgLast5 = last5Closes.reduce((sum, val) => sum + val, 0) / last5Closes.length;
-    let pullbackLevel;
-    if (currentPrice > ema25 && ema7 > ema25) {
-      pullbackLevel = Math.min(avgLast5, ema25); // Pullback to EMA25 for bullish
-    } else if (currentPrice < ema25 && ema7 < ema25) {
-      pullbackLevel = Math.max(avgLast5, ema25); // Pullback to EMA25 for bearish
-    }
-    if (pullbackLevel && Math.abs((currentPrice - pullbackLevel) / currentPrice) < 0.01) { // If pullback level is within 1% of current price
-      optimalEntry = pullbackLevel;
-    } // Else use currentPrice for immediate entry
-    optimalEntry = optimalEntry.toFixed(2);
-
-    // Weighted Scoring System
+    // Scoring System
     let bullishScore = 0;
     let bearishScore = 0;
     let bullishReasons = [];
@@ -435,6 +419,17 @@ async function getData() {
       nonAligningIndicators.push(`MACD (${macd && typeof macd.MACD === 'number' ? macd.MACD.toFixed(2) : 'N/A'}) is not showing a clear crossover, suggesting indecision`);
     }
 
+    // RSI Divergence (+1 if aligns with signal)
+    if (rsiDivergence === 'Bullish') {
+      bullishScore += 1;
+      bullishReasons.push('Bullish RSI divergence');
+    } else if (rsiDivergence === 'Bearish') {
+      bearishScore += 1;
+      bearishReasons.push('Bearish RSI divergence');
+    } else {
+      nonAligningIndicators.push('No RSI divergence detected, no additional momentum confirmation');
+    }
+
     // Calculate Trade Levels
     let entry = 'N/A';
     let tp1 = 'N/A';
@@ -442,15 +437,20 @@ async function getData() {
     let sl = 'N/A';
     let positionSize = 'N/A';
     const accountBalance = 1000; // Assumed balance
-    const riskPercent = 0.01; // 1% risk per trade
-    const riskAmount = accountBalance * riskPercent; // Define riskAmount here
-    const isBullish = bullishScore >= 12;
-    const isBearish = bearishScore >= 12;
+    let riskPercent = 0.01; // Default 1%
+    const isBullish = bullishScore >= 13;
+    const isBearish = bearishScore >= 13;
+    const score = isBullish ? bullishScore : bearishScore;
+
+    // Position Sizing Based on Confidence
+    if (score >= 13 && score <= 14) {
+      riskPercent = 0.005; // 0.5% for lower confidence
+    } // Else 1% for >=15
+
+    const riskAmount = accountBalance * riskPercent;
 
     if (isBullish || isBearish) {
       entry = optimalEntry; // Use optimal entry
-      const recentLows = last15Candles.map(c => c.ohlc.low);
-      const recentHighs = last15Candles.map(c => c.ohlc.high);
       const minLow = Math.min(...recentLows);
       const maxHigh = Math.max(...recentHighs);
 
@@ -474,21 +474,27 @@ async function getData() {
     let notes = 'Mixed signals: Low volatility or indecision. Wait for breakout.';
     let suggestion = entry !== 'N/A' && parseFloat(entry) > psar ? 'long' : 'short'; // Reversed PSAR logic
     let candleDirection = bullishPatterns.includes(candlePattern) ? 'bullish' : bearishPatterns.includes(candlePattern) ? 'bearish' : 'neutral';
+    let trailingLogic = isBullish ? 'Trail SL to entry after 1 ATR, then 1.5x ATR below high. After TP1, move SL to entry + 0.5 ATR.' : 'Trail SL to entry after 1 ATR, then 1.5x ATR above low. After TP1, move SL to entry - 0.5 ATR.';
+    let positionSizingNote = `Position sizing based on confidence: ${riskPercent * 100}% risk (score ${score}/17), $${riskAmount}, ${positionSize} units.`;
 
     if (isBullish) {
       signal = '✅ Enter Long';
-      notes = `Score: ${bullishScore}/16. Reasons: ${bullishReasons.slice(0, 3).join(', ')}. Enter long at ${entry}; trail SL to entry after 1 ATR, then 1.5x ATR below high. TP1: ${tp1} (50%), TP2: ${tp2} (50%). Risk 1% ($${riskAmount}, ${positionSize} units).`;
+      notes = `Score: ${bullishScore}/17. Reasons: ${bullishReasons.slice(0, 3).join(', ')}. Enter long at ${entry}; TP1: ${tp1} (50%), TP2: ${tp2} (50%).`;
     } else if (isBearish) {
       signal = '✅ Enter Short';
-      notes = `Score: ${bearishScore}/16. Reasons: ${bearishReasons.slice(0, 3).join(', ')}. Enter short at ${entry}; trail SL to entry after 1 ATR, then 1.5x ATR above low. TP1: ${tp1} (50%), TP2: ${tp2} (50%). Risk 1% ($${riskAmount}, ${positionSize} units).`;
+      notes = `Score: ${bearishScore}/17. Reasons: ${bearishReasons.slice(0, 3).join(', ')}. Enter short at ${entry}; TP1: ${tp1} (50%), TP2: ${tp2} (50%).`;
     }
 
     // Send Telegram notification if new entry signal
     if (signal.startsWith('✅ Enter') && signal !== previousSignal) {
       const nonAligningText = nonAligningIndicators.length > 0 ? `\nNon-aligning indicators:\n- ${nonAligningIndicators.join('\n- ')}` : '';
       const candleAnalysisText = `\nLast 15 Candles Analysis:\n- ${candleAnalysis.join('\n- ')}\nSummary: ${trendSummary}`;
-      const notification = `SOL/USDT\nLEVERAGE: 20\nEntry Price: ${entry}\nTake Profit 1: ${tp1}\nTake Profit 2: ${tp2}\nStop Loss: ${sl}\nLast candle shape: ${candlePattern} is signalling ${candleDirection}\n\nPSAR Suggestion: ${suggestion}\nNotes: ${notes}${nonAligningText}${candleAnalysisText}`;
-      await sendTelegramNotification(notification);
+      
+      const firstMessage = `SOL/USDT\nLEVERAGE: 20\nEntry Price: ${entry}\nTake Profit 1: ${tp1}\nTake Profit 2: ${tp2}\nStop Loss: ${sl}\nLast candle shape: ${candlePattern} is signalling ${candleDirection}\nPSAR Suggestion: ${suggestion}`;
+      
+      const secondMessage = `Notes: ${notes}${nonAligningText}${candleAnalysisText}\n${positionSizingNote}\nTrailing Logic: ${trailingLogic}`;
+      
+      await sendTelegramNotification(firstMessage, secondMessage);
       previousSignal = signal; // Reset after TP/SL (no cooldown)
     } else if (!signal.startsWith('✅ Enter')) {
       previousSignal = signal; // Allow immediate reset
@@ -501,6 +507,7 @@ async function getData() {
         signal,
         bullishScore,
         bearishScore,
+        rsiDivergence,
         reasons: {
           adx: adx ? adx.toFixed(2) : 'N/A',
           rsi: rsi ? rsi.toFixed(2) : 'N/A',
