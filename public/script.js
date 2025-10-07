@@ -96,6 +96,10 @@ setInterval(fetchPrice, 1000);
 fetchPrice(); // Initial price
 
 document.getElementById('copy-btn').addEventListener('click', () => {
-  navigator.clipboard.writeText(JSON.stringify(currentData, null, 2));
-  alert('Data copied to clipboard!');
+  navigator.clipboard.writeText(JSON.stringify(currentData, null, 2)).then(() => {
+    alert('Data copied to clipboard!');
+  }).catch(err => {
+    console.error('Clipboard error:', err);
+    alert('Failed to copy data—please try manually.');
+  });
 });
