@@ -99,3 +99,15 @@ document.getElementById('copy-btn').addEventListener('click', () => {
   navigator.clipboard.writeText(JSON.stringify(currentData, null, 2));
   alert('Data copied to clipboard!');
 });
+
+// New: Test button event listener (temporary)
+document.getElementById('test-notification-btn').addEventListener('click', async () => {
+  try {
+    const res = await fetch('/test-notification');
+    const data = await res.json();
+    alert(data.success || data.error);
+  } catch (err) {
+    console.error('Test notification error:', err);
+    alert('Failed to send test notification');
+  }
+});

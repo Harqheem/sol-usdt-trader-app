@@ -61,33 +61,50 @@ function detectRSIDivergence(closes, rsis) {
   return 'None';
 }
 
-// Function to send Telegram notifications (now split into two messages)
+// Function to send Telegram notifications (split into two; forward only first to channel)
 async function sendTelegramNotification(firstMessage, secondMessage) {
   const BOT_TOKEN = process.env.BOT_TOKEN;
   const CHAT_ID = process.env.CHAT_ID;
+  const CHANNEL_ID = process.env.CHANNEL_ID; // Channel ID from .env (e.g., -1001234567890 or @channelname)
   if (!BOT_TOKEN || !CHAT_ID) {
     console.error('Telegram BOT_TOKEN or CHAT_ID not set in .env');
     return;
   }
+  if (!CHANNEL_ID) {
+    console.error('CHANNEL_ID not set in .env; forwarding skipped');
+  }
 
   try {
-    // Send first message
-    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      chat_id: CHAT_ID,
-      text: firstMessage,
-      parse_mode: 'Markdown'
-    });
-    console.log('Telegram first notification sent:', firstMessage);
-    
-    // Send second message
-    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      chat_id: CHAT_ID,
-      text: secondMessage,
-      parse_mode: 'Markdown'
-    });
-    console.log('Telegram second notification sent:', secondMessage);
+    // Helper to send a single message and return message_id
+    const sendSingle = async (text, targetChatId = CHAT_ID) => {
+      const response = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+        chat_id: targetChatId,
+        text,
+        parse_mode: 'Markdown'
+      });
+      console.log(`Message sent to ${targetChatId}:`, text);
+      return response.data.result.message_id; // Capture message_id for forwarding
+    };
+
+    // Send first message to personal CHAT_ID and forward to channel
+    const firstMsgId = await sendSingle(firstMessage);
+    if (CHANNEL_ID) {
+      try {
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/forwardMessage`, {
+          chat_id: CHANNEL_ID,
+          from_chat_id: CHAT_ID,
+          message_id: firstMsgId
+        });
+        console.log('First message forwarded to channel:', CHANNEL_ID);
+      } catch (fwdError) {
+        console.error('Forwarding error:', fwdError.response ? fwdError.response.data : fwdError.message);
+      }
+    }
+
+    // Send second message to personal CHAT_ID only (no forward)
+    await sendSingle(secondMessage);
   } catch (error) {
-    console.error('Telegram send error:', error.message);
+    console.error('Telegram error:', error.response ? error.response.data : error.message);
   }
 }
 
@@ -566,6 +583,23 @@ app.get('/price', async (req, res) => {
   } catch (error) {
     console.error(error);
     res.json({ error: 'Failed to fetch price' });
+  }
+});
+
+// Temporary test endpoint for notification
+app.get('/test-notification', async (req, res) => {
+  try {
+    // Dummy first message
+    const firstMessage = `SOL/USDT\nLEVERAGE: 20\nEntry Price: 100.00\nTake Profit 1: 101.00\nTake Profit 2: 102.00\nStop Loss: 99.00\nLast candle shape: Hammer is signalling bullish\nPSAR Suggestion: long`;
+    
+    // Dummy second message
+    const secondMessage = `Notes: Test score: 15/17. Reasons: Trend aligned, Strong ADX, EMA stack bullish.\nNon-aligning indicators: None\nLast 15 Candles Analysis: Test analysis\nSummary: Bullish trend\nPosition sizing based on confidence: 1% risk (score 15/17), $10, 10 units.\nTrailing Logic: Trail SL to entry after 1 ATR, then 1.5x ATR below high. After TP1, move SL to entry + 0.5 ATR.`;
+    
+    await sendTelegramNotification(firstMessage, secondMessage);
+    res.json({ success: 'Test notification sent and forwarded (first message only to channel).' });
+  } catch (error) {
+    console.error('Test notification error:', error.message);
+    res.status(500).json({ error: 'Failed to send test notification' });
   }
 });
 
