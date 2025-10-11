@@ -453,14 +453,14 @@ async function getData() {
     let tp2 = 'N/A';
     let sl = 'N/A';
     let positionSize = 'N/A';
-    const accountBalance = 1000; // Assumed balance
-    let riskPercent = 0.01; // Default 1%
-    const isBullish = bullishScore >= 13;
-    const isBearish = bearishScore >= 13;
+    const accountBalance = 100; // Assumed balance
+    let riskPercent = 0.1; // Default 1%
+    const isBullish = bullishScore >= 12;
+    const isBearish = bearishScore >= 12;
     const score = isBullish ? bullishScore : bearishScore;
 
     // Position Sizing Based on Confidence
-    if (score >= 13 && score <= 14) {
+    if (score >= 12 && score <= 14) {
       riskPercent = 0.005; // 0.5% for lower confidence
     } // Else 1% for >=15
 
