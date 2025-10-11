@@ -447,22 +447,33 @@ async function getData() {
       nonAligningIndicators.push('No RSI divergence detected, no additional momentum confirmation');
     }
 
+    // Dynamic threshold based on ADX
+    let threshold = 13; // Default conservative
+    let thresholdNote = '';
+    if (adx && adx > 30) {
+      threshold = 12;
+      thresholdNote = ' (earlier entry due to strong ADX)';
+    } else if (adx && adx <= 25) {
+      threshold = 13;
+      thresholdNote = ' (conservative threshold due to weak ADX)';
+    }
+
     // Calculate Trade Levels
     let entry = 'N/A';
     let tp1 = 'N/A';
     let tp2 = 'N/A';
     let sl = 'N/A';
     let positionSize = 'N/A';
-    const accountBalance = 100; // Assumed balance
-    let riskPercent = 0.1; // Default 1%
-    const isBullish = bullishScore >= 12;
-    const isBearish = bearishScore >= 12;
+    const accountBalance = 1000; // Assumed balance
+    let riskPercent = 0.01; // Default 1%
+    const isBullish = bullishScore >= threshold;
+    const isBearish = bearishScore >= threshold;
     const score = isBullish ? bullishScore : bearishScore;
 
     // Position Sizing Based on Confidence
-    if (score >= 12 && score <= 14) {
+    if (score >= threshold && score <= threshold + 1) { // Adjust bands based on threshold
       riskPercent = 0.005; // 0.5% for lower confidence
-    } // Else 1% for >=15
+    } // Else 1% for higher
 
     const riskAmount = accountBalance * riskPercent;
 
@@ -471,14 +482,25 @@ async function getData() {
       const minLow = Math.min(...recentLows);
       const maxHigh = Math.max(...recentHighs);
 
+      // Dynamic ATR multiplier for SL based on ADX
+      let atrMultiplier = 1; // Default
+      let slNote = '';
+      if (adx && adx > 30) {
+        atrMultiplier = 0.75;
+        slNote = ' (tighter SL due to strong trend ADX >30)';
+      } else if (adx && adx < 20) {
+        atrMultiplier = 1.5;
+        slNote = ' (wider SL due to weak trend ADX <20)';
+      }
+
       if (isBullish) {
-        sl = Math.min(parseFloat(entry) - atr, minLow - atr).toFixed(2); // Ensure SL is below entry
+        sl = Math.min(parseFloat(entry) - atr * atrMultiplier, minLow - atr * atrMultiplier).toFixed(2); // Dynamic SL
         tp1 = (parseFloat(entry) + atr * 1).toFixed(2); // 50% at 1 ATR
         tp2 = (parseFloat(entry) + atr * 2).toFixed(2); // 50% at 2 ATR
         const riskPerUnit = parseFloat(entry) - parseFloat(sl);
         positionSize = riskPerUnit > 0 ? (riskAmount / riskPerUnit).toFixed(2) : 'Invalid due to SL placement';
       } else if (isBearish) {
-        sl = (maxHigh + atr * 1).toFixed(2); // SL above entry for short
+        sl = (maxHigh + atr * atrMultiplier).toFixed(2); // Dynamic SL
         tp1 = (parseFloat(entry) - atr * 1).toFixed(2); // 50% at 1 ATR
         tp2 = (parseFloat(entry) - atr * 2).toFixed(2); // 50% at 2 ATR
         const riskPerUnit = parseFloat(sl) - parseFloat(entry);
@@ -496,10 +518,10 @@ async function getData() {
 
     if (isBullish) {
       signal = '✅ Enter Long';
-      notes = `Score: ${bullishScore}/17. Reasons: ${bullishReasons.slice(0, 3).join(', ')}. Enter long at ${entry}; TP1: ${tp1} (50%), TP2: ${tp2} (50%).`;
+      notes = `Score: ${bullishScore}/17${thresholdNote}. Reasons: ${bullishReasons.slice(0, 3).join(', ')}. Enter long at ${entry}; TP1: ${tp1} (50%), TP2: ${tp2} (50%).${slNote}`;
     } else if (isBearish) {
       signal = '✅ Enter Short';
-      notes = `Score: ${bearishScore}/17. Reasons: ${bearishReasons.slice(0, 3).join(', ')}. Enter short at ${entry}; TP1: ${tp1} (50%), TP2: ${tp2} (50%).`;
+      notes = `Score: ${bearishScore}/17${thresholdNote}. Reasons: ${bearishReasons.slice(0, 3).join(', ')}. Enter short at ${entry}; TP1: ${tp1} (50%), TP2: ${tp2} (50%).${slNote}`;
     }
 
     // Send Telegram notification if new entry signal
@@ -525,6 +547,9 @@ async function getData() {
         bullishScore,
         bearishScore,
         rsiDivergence,
+        adx: adx ? adx.toFixed(2) : 'N/A',
+        thresholdUsed: threshold,
+        atrMultiplierUsed: atrMultiplier || 1,
         reasons: {
           adx: adx ? adx.toFixed(2) : 'N/A',
           rsi: rsi ? rsi.toFixed(2) : 'N/A',
