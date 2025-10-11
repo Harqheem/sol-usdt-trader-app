@@ -477,19 +477,18 @@ async function getData() {
 
     const riskAmount = accountBalance * riskPercent;
 
+    let entryNote = '';
+    let slNote = '';
+    let atrMultiplier = 1; // Default for SL
+
     if (isBullish || isBearish) {
       // Original hybrid entry as fallback
       let optimalEntry = ((pullbackLevel + currentPrice) / 2);
-      let entryNote = '';
-      let useAdjusted = true;
 
       // Check max distance cap
       if (Math.abs(currentPrice - pullbackLevel) > 2 * atr) {
-        useAdjusted = false;
         entryNote += ' (max distance cap exceeded, using original hybrid entry)';
-      }
-
-      if (useAdjusted) {
+      } else {
         // For shorts, add asymmetry—widen pullback threshold
         if (isBearish) {
           pullbackLevel += atr * 0.5; // Widen for sharper downsides
@@ -517,8 +516,6 @@ async function getData() {
       const maxHigh = Math.max(...recentHighs);
 
       // Dynamic ATR multiplier for SL based on ADX
-      let atrMultiplier = 1; // Default
-      let slNote = '';
       if (adx && adx > 30) {
         atrMultiplier = 0.75;
         slNote = ' (tighter SL due to strong trend ADX >30)';
