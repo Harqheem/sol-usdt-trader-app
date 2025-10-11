@@ -326,126 +326,10 @@ async function getData() {
     const recentLows = last15Candles.map(c => c.ohlc.low);
     const recentHighs = last15Candles.map(c => c.ohlc.high);
     const minLow = Math.min(...recentLows);
-    const maxHigh = Math.max(...recentHighs);
-    const pullbackLevel = currentPrice > ema99 ? minLow : maxHigh;
-    const optimalEntry = ((pullbackLevel + currentPrice) / 2).toFixed(2);
-
-    // Scoring System
-    let bullishScore = 0;
-    let bearishScore = 0;
-    let bullishReasons = [];
-    let bearishReasons = [];
-    let nonAligningIndicators = [];
-
-    // Trend Alignment (+3 if all TFs align)
-    if (currentPrice > ema99 && trend1h === 'Above' && trend4h === 'Above') {
-      bullishScore += 3;
-      bullishReasons.push('Trend aligned across 15m, 1h, 4h');
-    } else if (currentPrice < ema99 && trend1h === 'Below' && trend4h === 'Below') {
-      bearishScore += 3;
-      bearishReasons.push('Trend aligned across 15m, 1h, 4h');
-    } else {
-      nonAligningIndicators.push('Trend not fully aligned across 15m, 1h, 4h, suggesting mixed signals');
-    }
-
-    // Directional ADX (+3 if ADX > 25 and DI aligns with trend)
-    if (adx && adx > 25 && plusDI > minusDI && currentPrice > ema99) {
-      bullishScore += 3;
-      bullishReasons.push(`Strong ADX (${adx.toFixed(2)})`);
-    } else if (adx && adx > 25 && minusDI > plusDI && currentPrice < ema99) {
-      bearishScore += 3;
-      bearishReasons.push(`Strong ADX (${adx.toFixed(2)})`);
-    } else {
-      if (adx && adx > 25 && plusDI < minusDI) {
-        nonAligningIndicators.push(`ADX (${adx.toFixed(2)}) shows stronger -DI, suggesting bearish momentum`);
-      } else if (adx && adx > 25 && minusDI < plusDI) {
-        nonAligningIndicators.push(`ADX (${adx.toFixed(2)}) shows stronger +DI, suggesting bullish momentum`);
-      } else {
-        nonAligningIndicators.push(`ADX (${adx ? adx.toFixed(2) : 'N/A'}) is weak or not aligned, indicating low trend strength`);
-      }
-    }
-
-    // EMA Stack Alignment (+2 if EMA7 > EMA25 > EMA99 or inverse)
-    if (ema7 > ema25 && ema25 > ema99) {
-      bullishScore += 2;
-      bullishReasons.push('EMA stack bullish');
-    } else if (ema7 < ema25 && ema25 < ema99) {
-      bearishScore += 2;
-      bearishReasons.push('EMA stack bearish');
-    } else {
-      nonAligningIndicators.push('EMA stack not aligned, suggesting indecision or trend conflict');
-    }
-
-    // RSI Confirmation (+2 if 40-60)
-    if (rsi && rsi >= 40 && rsi <= 60) {
-      bullishScore += 2;
-      bearishScore += 2;
-      bullishReasons.push(`Neutral RSI (${rsi.toFixed(2)})`);
-      bearishReasons.push(`Neutral RSI (${rsi.toFixed(2)})`);
-    } else {
-      if (rsi && rsi > 70) {
-        nonAligningIndicators.push(`RSI (${rsi.toFixed(2)}) is > 70 and signalling overbought, meaning price may reverse`);
-      } else if (rsi && rsi < 30) {
-        nonAligningIndicators.push(`RSI (${rsi.toFixed(2)}) is < 30 and signalling oversold, meaning price may reverse`);
-      } else {
-        nonAligningIndicators.push(`RSI (${rsi ? rsi.toFixed(2) : 'N/A'}) is outside 40-60, indicating potential overbought/oversold conditions`);
-      }
-    }
-
-    // ATR Volatility (+2 if ATR > avgAtr)
-    if (atr && atr > avgAtr) {
-      bullishScore += 2;
-      bearishScore += 2;
-      bullishReasons.push(`High volatility (ATR ${atr.toFixed(2)})`);
-      bearishReasons.push(`High volatility (ATR ${atr.toFixed(2)})`);
-    } else {
-      nonAligningIndicators.push(`ATR (${atr ? atr.toFixed(2) : 'N/A'}) is low, suggesting limited price movement potential`);
-    }
-
-    // CMF Volume (+2 if CMF > 0 for bullish, < 0 for bearish)
-    if (cmf && cmf > 0) {
-      bullishScore += 2;
-      bullishReasons.push(`Positive CMF (${cmf.toFixed(2)})`);
-    } else if (cmf && cmf < 0) {
-      bearishScore += 2;
-      bearishReasons.push(`Negative CMF (${cmf.toFixed(2)})`);
-    } else {
-      nonAligningIndicators.push(`CMF (${cmf ? cmf.toFixed(2) : 'N/A'}) is neutral, indicating no strong volume direction`);
-    }
-
-    // Candlestick Pattern (+1 for strong patterns)
-    const candlePattern = last15Candles[last15Candles.length - 1].pattern;
-    if (bullishPatterns.includes(candlePattern)) {
-      bullishScore += 1;
-      bullishReasons.push(`Bullish pattern (${candlePattern})`);
-    } else if (bearishPatterns.includes(candlePattern)) {
-      bearishScore += 1;
-      bearishReasons.push(`Bearish pattern (${candlePattern})`);
-    } else {
-      nonAligningIndicators.push(`Candlestick pattern (${candlePattern}) is neutral, indicating indecision`);
-    }
-
-    // MACD (+1 if MACD > signal for bullish, < signal for bearish)
-    if (macd && typeof macd.MACD === 'number' && typeof macd.signal === 'number' && macd.MACD > macd.signal) {
-      bullishScore += 1;
-      bullishReasons.push('MACD bullish crossover');
-    } else if (macd && typeof macd.MACD === 'number' && typeof macd.signal === 'number' && macd.MACD < macd.signal) {
-      bearishScore += 1;
-      bearishReasons.push('MACD bearish crossover');
-    } else {
-      nonAligningIndicators.push(`MACD (${macd && typeof macd.MACD === 'number' ? macd.MACD.toFixed(2) : 'N/A'}) is not showing a clear crossover, suggesting indecision`);
-    }
-
-    // RSI Divergence (+1 if aligns with signal)
-    if (rsiDivergence === 'Bullish') {
-      bullishScore += 1;
-      bullishReasons.push('Bullish RSI divergence');
-    } else if (rsiDivergence === 'Bearish') {
-      bearishScore += 1;
-      bearishReasons.push('Bearish RSI divergence');
-    } else {
-      nonAligningIndicators.push('No RSI divergence detected, no additional momentum confirmation');
-    }
+    let maxHigh = Math.max(...recentHighs);
+    let pullbackLevel = currentPrice > ema99 ? minLow : maxHigh;
+    let entryNote = '';
+    let isInvalid = false;
 
     // Dynamic threshold based on ADX
     let threshold = 13; // Default conservative
@@ -478,7 +362,36 @@ async function getData() {
     const riskAmount = accountBalance * riskPercent;
 
     if (isBullish || isBearish) {
-      entry = optimalEntry; // Use optimal entry
+      // For shorts, widen pullback threshold for asymmetry (sharper downsides)
+      if (isBearish) {
+        maxHigh += atr * 0.5; // Add 0.5 ATR to maxHigh for wider pullback in shorts
+        pullbackLevel = maxHigh;
+        entryNote += ' (widened pullback for short asymmetry)';
+      }
+
+      // Bias toward currentPrice if ADX >30
+      let weightCurrent = 0.5; // Default 50/50
+      if (adx && adx > 30) {
+        weightCurrent = 0.7; // Bias 70% toward currentPrice in strong trends
+        entryNote += ' (biased toward current price due to strong ADX)';
+      }
+
+      // Account for volatility with ATR offset
+      const atrOffset = atr * 0.25 * (isBullish ? 1 : -1); // +0.25 ATR for longs, -0.25 for shorts
+      entryNote += ' (with ATR volatility offset)';
+
+      // Calculate weighted entry
+      let weightedEntry = (pullbackLevel * (1 - weightCurrent) + currentPrice * weightCurrent) + atrOffset;
+
+      // Max distance cap
+      if (Math.abs(currentPrice - pullbackLevel) > 2 * atr) {
+        weightedEntry = 'N/A';
+        entryNote += ' (invalidated due to excessive pullback >2*ATR)';
+        isInvalid = true;
+      }
+
+      entry = weightedEntry !== 'N/A' ? weightedEntry.toFixed(2) : 'N/A';
+
       const minLow = Math.min(...recentLows);
       const maxHigh = Math.max(...recentHighs);
 
@@ -518,10 +431,13 @@ async function getData() {
 
     if (isBullish) {
       signal = '✅ Enter Long';
-      notes = `Score: ${bullishScore}/17${thresholdNote}. Reasons: ${bullishReasons.slice(0, 3).join(', ')}. Enter long at ${entry}; TP1: ${tp1} (50%), TP2: ${tp2} (50%).${slNote}`;
+      notes = `Score: ${bullishScore}/17${thresholdNote}. Reasons: ${bullishReasons.slice(0, 3).join(', ')}. Enter long at ${entry}${entryNote}; TP1: ${tp1} (50%), TP2: ${tp2} (50%).${slNote}`;
     } else if (isBearish) {
       signal = '✅ Enter Short';
-      notes = `Score: ${bearishScore}/17${thresholdNote}. Reasons: ${bearishReasons.slice(0, 3).join(', ')}. Enter short at ${entry}; TP1: ${tp1} (50%), TP2: ${tp2} (50%).${slNote}`;
+      notes = `Score: ${bearishScore}/17${thresholdNote}. Reasons: ${bearishReasons.slice(0, 3).join(', ')}. Enter short at ${entry}${entryNote}; TP1: ${tp1} (50%), TP2: ${tp2} (50%).${slNote}`;
+    } else if (isInvalid) {
+      signal = '❌ Invalid Trade';
+      notes = 'Trade invalidated due to excessive pullback distance >2*ATR.';
     }
 
     // Send Telegram notification if new entry signal
