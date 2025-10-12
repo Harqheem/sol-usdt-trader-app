@@ -87,7 +87,7 @@ async function fetchData() {
   }
 }
 
-// Full data every 5 min
+// Full data every 5 min (adjusted comment for 30m TF, but interval remains as it's for refresh, not tied to candle close)
 setInterval(fetchData, 300000); // 5 * 60 * 1000
 fetchData(); // Initial full fetch
 
@@ -96,10 +96,6 @@ setInterval(fetchPrice, 1000);
 fetchPrice(); // Initial price
 
 document.getElementById('copy-btn').addEventListener('click', () => {
-  navigator.clipboard.writeText(JSON.stringify(currentData, null, 2)).then(() => {
-    alert('Data copied to clipboard!');
-  }).catch(err => {
-    console.error('Clipboard error:', err);
-    alert('Failed to copy data—please try manually.');
-  });
+  navigator.clipboard.writeText(JSON.stringify(currentData, null, 2));
+  alert('Data copied to clipboard!');
 });

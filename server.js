@@ -36,25 +36,27 @@ function calculateCMF(highs, lows, closes, volumes, period = 20) {
   }
 }
 
-// Function to detect RSI divergence over last 3 candles
+// Function to detect RSI divergence over last 4 candles for more robust detection on 30m TF
 function detectRSIDivergence(closes, rsis) {
-  if (closes.length < 3 || rsis.length < 3) return 'None';
+  if (closes.length < 4 || rsis.length < 4) return 'None';
   
   const recentClose = closes[closes.length - 1];
   const prevClose = closes[closes.length - 2];
   const prevPrevClose = closes[closes.length - 3];
+  const prevPrevPrevClose = closes[closes.length - 4];
   
   const recentRSI = rsis[rsis.length - 1];
   const prevRSI = rsis[rsis.length - 2];
   const prevPrevRSI = rsis[rsis.length - 3];
+  const prevPrevPrevRSI = rsis[rsis.length - 4];
   
-  // Bullish divergence: Price lower low, RSI higher low
-  if (recentClose < prevClose && prevClose < prevPrevClose && recentRSI > prevRSI && prevRSI < prevPrevRSI) {
+  // Bullish divergence: Check between recent/prev and prevPrev/prevPrevPrev for confirmation
+  if (recentClose < prevClose && prevClose < prevPrevClose && recentRSI > prevRSI && prevRSI < prevPrevRSI && prevPrevClose < prevPrevPrevClose && prevPrevRSI > prevPrevPrevRSI) {
     return 'Bullish';
   }
   
-  // Bearish divergence: Price higher high, RSI lower high
-  if (recentClose > prevClose && prevClose > prevPrevClose && recentRSI < prevRSI && prevRSI > prevPrevRSI) {
+  // Bearish divergence: Similar for bearish
+  if (recentClose > prevClose && prevClose > prevPrevClose && recentRSI < prevRSI && prevRSI > prevPrevRSI && prevPrevClose > prevPrevPrevClose && prevPrevRSI < prevPrevPrevRSI) {
     return 'Bearish';
   }
   
@@ -108,7 +110,7 @@ async function sendTelegramNotification(firstMessage, secondMessage) {
   }
 }
 
-// Function to detect candle pattern for a given candle
+// Function to detect candle pattern for a given candle with 2-candle confirmation to reduce noise
 function detectCandlePattern(opens, highs, lows, closes, volumes, index) {
   const sliceOpens = opens.slice(0, index + 1);
   const sliceHighs = highs.slice(0, index + 1);
@@ -191,6 +193,19 @@ function detectCandlePattern(opens, highs, lows, closes, volumes, index) {
     console.log('Pattern detection warning (ignored):', err.message);
   }
 
+  // 2-Candle Confirmation: Only return pattern if confirmed by direction of the current candle (for last pattern on n-1)
+  if (index >= 1 && pattern !== 'Neutral') {
+    const currentClose = sliceCloses[sliceCloses.length - 1];
+    const currentOpen = sliceOpens[sliceOpens.length - 1];
+    const isBullishPattern = bullishPatterns.includes(pattern);
+    const isBearishPattern = bearishPatterns.includes(pattern);
+    const confirmingDirection = currentClose > currentOpen ? 'bullish' : 'bearish';
+
+    if ((isBullishPattern && confirmingDirection !== 'bullish') || (isBearishPattern && confirmingDirection !== 'bearish')) {
+      pattern = 'Neutral'; // Reduce noise by requiring confirmation
+    }
+  }
+
   return pattern;
 }
 
@@ -206,18 +221,18 @@ async function getData() {
       }
     }
 
-    // Fetch 500 recent 15m klines
-    const klines15m = await client.candles({ symbol: 'SOLUSDT', interval: '15m', limit: 500 });
-    if (klines15m.length < 200 || klines15m.some(k => !k.close || !k.high || !k.low || !k.volume || isNaN(k.close) || isNaN(k.high) || isNaN(k.low) || isNaN(k.volume))) {
-      console.error('Invalid or insufficient 15m klines data:', klines15m.length);
-      return { error: 'Insufficient or invalid 15m data from Binance' };
+    // Fetch 500 recent 30m klines (updated from 15m)
+    const klines30m = await client.candles({ symbol: 'SOLUSDT', interval: '30m', limit: 500 });
+    if (klines30m.length < 200 || klines30m.some(k => !k.close || !k.high || !k.low || !k.volume || isNaN(k.close) || isNaN(k.high) || isNaN(k.low) || isNaN(k.volume))) {
+      console.error('Invalid or insufficient 30m klines data:', klines30m.length);
+      return { error: 'Insufficient or invalid 30m data from Binance' };
     }
-    const lastCandle = klines15m[klines15m.length - 1];
-    const closes = klines15m.map(c => parseFloat(c.close));
-    const highs = klines15m.map(c => parseFloat(c.high));
-    const lows = klines15m.map(c => parseFloat(c.low));
-    const opens = klines15m.map(c => parseFloat(c.open));
-    const volumes = klines15m.map(c => parseFloat(c.volume));
+    const lastCandle = klines30m[klines30m.length - 1];
+    const closes = klines30m.map(c => parseFloat(c.close));
+    const highs = klines30m.map(c => parseFloat(c.high));
+    const lows = klines30m.map(c => parseFloat(c.low));
+    const opens = klines30m.map(c => parseFloat(c.open));
+    const volumes = klines30m.map(c => parseFloat(c.volume));
 
     // Calculate RSI for divergence (full array for last 3)
     const rsis = TI.RSI.calculate({ period: 14, values: closes });
@@ -225,10 +240,10 @@ async function getData() {
     // Detect RSI divergence
     const rsiDivergence = detectRSIDivergence(closes.slice(-3), rsis.slice(-3));
 
-    // Last 15 candles data
+    // Last 15 candles data (now on 30m TF)
     const last15Candles = [];
-    const startIndex = Math.max(0, klines15m.length - 15);
-    for (let i = startIndex; i < klines15m.length; i++) {
+    const startIndex = Math.max(0, klines30m.length - 15);
+    for (let i = startIndex; i < klines30m.length; i++) {
       const ohlc = {
         open: opens[i],
         high: highs[i],
@@ -237,8 +252,8 @@ async function getData() {
       };
       const volume = volumes[i];
       const pattern = detectCandlePattern(opens, highs, lows, closes, volumes, i);
-      const startTime = new Date(klines15m[i].openTime).toLocaleTimeString();
-      const endTime = new Date(klines15m[i].closeTime).toLocaleTimeString();
+      const startTime = new Date(klines30m[i].openTime).toLocaleTimeString();
+      const endTime = new Date(klines30m[i].closeTime).toLocaleTimeString();
       last15Candles.push({ ohlc, volume, pattern, startTime, endTime });
     }
 
@@ -275,12 +290,15 @@ async function getData() {
     try {
       const atrValues = TI.ATR.calculate({ period: 14, high: highs, low: lows, close: closes });
       atr = atrValues.pop();
-      avgAtr = atrValues.slice(-20).reduce((sum, v) => sum + v, 0) / Math.min(20, atrValues.length) || atr;
+      avgAtr = atrValues.slice(-21, -1).reduce((sum, v) => sum + v, 0) / Math.min(20, atrValues.length - 1) || atr; // Exclude current candle
       bb = TI.BollingerBands.calculate({ period: 20, values: closes, stdDev: 2 }).pop();
     } catch (err) {
       console.error('Volatility indicators error:', err.message);
       return { error: 'Failed to calculate volatility indicators' };
     }
+
+    // Normalize ATR for 30m (approximate to 15m scale by dividing by sqrt(2) ~1.414)
+    const normalizedAtr = atr / Math.sqrt(2);
 
     // PSAR
     let psar;
@@ -292,18 +310,26 @@ async function getData() {
     }
     const psarPosition = currentPrice > psar ? 'Below Price (Bullish)' : 'Above Price (Bearish)';
 
-    // Higher TFs
-    let trend1h = 'N/A', trend4h = 'N/A';
+    // Higher TFs with synced EMA & ADX
+    let trend1h = 'N/A', trend4h = 'N/A', adx1h = null, adx4h = null;
     try {
       const klines1h = await client.candles({ symbol: 'SOLUSDT', interval: '1h', limit: 100 });
       const closes1h = klines1h.map(c => parseFloat(c.close));
+      const highs1h = klines1h.map(c => parseFloat(c.high));
+      const lows1h = klines1h.map(c => parseFloat(c.low));
       const ema99_1h = TI.EMA.calculate({ period: 99, values: closes1h }).pop() || closes1h[closes1h.length - 1];
-      trend1h = closes1h[closes1h.length - 1] > ema99_1h ? 'Above' : 'Below';
+      const adxResult1h = TI.ADX.calculate({ period: 14, close: closes1h, high: highs1h, low: lows1h }).pop();
+      adx1h = adxResult1h.adx;
+      trend1h = (closes1h[closes1h.length - 1] > ema99_1h && adx1h > 25) ? 'Above Strong' : (closes1h[closes1h.length - 1] > ema99_1h) ? 'Above Weak' : 'Below';
 
       const klines4h = await client.candles({ symbol: 'SOLUSDT', interval: '4h', limit: 100 });
       const closes4h = klines4h.map(c => parseFloat(c.close));
+      const highs4h = klines4h.map(c => parseFloat(c.high));
+      const lows4h = klines4h.map(c => parseFloat(c.low));
       const ema99_4h = TI.EMA.calculate({ period: 99, values: closes4h }).pop() || closes4h[closes4h.length - 1];
-      trend4h = closes4h[closes4h.length - 1] > ema99_4h ? 'Above' : 'Below';
+      const adxResult4h = TI.ADX.calculate({ period: 14, close: closes4h, high: highs4h, low: lows4h }).pop();
+      adx4h = adxResult4h.adx;
+      trend4h = (closes4h[closes4h.length - 1] > ema99_4h && adx4h > 25) ? 'Above Strong' : (closes4h[closes4h.length - 1] > ema99_4h) ? 'Above Weak' : 'Below';
     } catch (err) {
       console.error('Higher TF trend error:', err.message);
     }
@@ -338,14 +364,16 @@ async function getData() {
     let nonAligningIndicators = [];
 
     // Trend Alignment (+3 if all TFs align)
-    if (currentPrice > ema99 && trend1h === 'Above' && trend4h === 'Above') {
+    if (currentPrice > ema99 && trend1h === 'Above Strong' && trend4h === 'Above Strong') {
       bullishScore += 3;
-      bullishReasons.push('Trend aligned across 15m, 1h, 4h');
+      bullishReasons.push('Trend aligned across 30m, 1h, 4h with strong ADX');
     } else if (currentPrice < ema99 && trend1h === 'Below' && trend4h === 'Below') {
       bearishScore += 3;
-      bearishReasons.push('Trend aligned across 15m, 1h, 4h');
+      bearishReasons.push('Trend aligned across 30m, 1h, 4h');
+    } else if (trend1h.includes('Weak') || trend4h.includes('Weak')) {
+      nonAligningIndicators.push('Higher TF weak ADX, potential reversal despite 30m trend');
     } else {
-      nonAligningIndicators.push('Trend not fully aligned across 15m, 1h, 4h, suggesting mixed signals');
+      nonAligningIndicators.push('Trend not fully aligned across 30m, 1h, 4h, suggesting mixed signals');
     }
 
     // Directional ADX (+3 if ADX > 25 and DI aligns with trend)
@@ -612,10 +640,10 @@ async function getData() {
   }
 }
 
-// Background cache update
+// Background cache update (optimized to 2 minutes = 120000 ms)
 setInterval(async () => {
   cachedData = await getData();
-}, 30000); // Refresh cache every 30 seconds
+}, 120000); // Refresh cache every 2 minutes
 
 // Initial cache fill on startup
 getData().then(data => {
