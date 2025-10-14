@@ -36,27 +36,25 @@ function calculateCMF(highs, lows, closes, volumes, period = 20) {
   }
 }
 
-// Function to detect RSI divergence over last 4 candles for more robust detection on 30m TF
+// Function to detect RSI divergence over last 3 candles
 function detectRSIDivergence(closes, rsis) {
-  if (closes.length < 4 || rsis.length < 4) return 'None';
+  if (closes.length < 3 || rsis.length < 3) return 'None';
   
   const recentClose = closes[closes.length - 1];
   const prevClose = closes[closes.length - 2];
   const prevPrevClose = closes[closes.length - 3];
-  const prevPrevPrevClose = closes[closes.length - 4];
   
   const recentRSI = rsis[rsis.length - 1];
   const prevRSI = rsis[rsis.length - 2];
   const prevPrevRSI = rsis[rsis.length - 3];
-  const prevPrevPrevRSI = rsis[rsis.length - 4];
   
-  // Bullish divergence: Check between recent/prev and prevPrev/prevPrevPrev for confirmation
-  if (recentClose < prevClose && prevClose < prevPrevClose && recentRSI > prevRSI && prevRSI < prevPrevRSI && prevPrevClose < prevPrevPrevClose && prevPrevRSI > prevPrevPrevRSI) {
+  // Bullish divergence: Price lower low, RSI higher low
+  if (recentClose < prevClose && prevClose < prevPrevClose && recentRSI > prevRSI && prevRSI < prevPrevRSI) {
     return 'Bullish';
   }
   
-  // Bearish divergence: Similar for bearish
-  if (recentClose > prevClose && prevClose > prevPrevClose && recentRSI < prevRSI && prevRSI > prevPrevRSI && prevPrevClose > prevPrevPrevClose && prevPrevRSI < prevPrevPrevRSI) {
+  // Bearish divergence: Price higher high, RSI lower high
+  if (recentClose > prevClose && prevClose > prevPrevClose && recentRSI < prevRSI && prevRSI > prevPrevRSI) {
     return 'Bearish';
   }
   
@@ -110,7 +108,7 @@ async function sendTelegramNotification(firstMessage, secondMessage) {
   }
 }
 
-// Function to detect candle pattern for a given candle with 2-candle confirmation to reduce noise
+// Function to detect candle pattern for a given candle
 function detectCandlePattern(opens, highs, lows, closes, volumes, index) {
   const sliceOpens = opens.slice(0, index + 1);
   const sliceHighs = highs.slice(0, index + 1);
@@ -191,19 +189,6 @@ function detectCandlePattern(opens, highs, lows, closes, volumes, index) {
     }
   } catch (err) {
     console.log('Pattern detection warning (ignored):', err.message);
-  }
-
-  // 2-Candle Confirmation: Only return pattern if confirmed by direction of the current candle (for last pattern on n-1)
-  if (index >= 1 && pattern !== 'Neutral') {
-    const currentClose = sliceCloses[sliceCloses.length - 1];
-    const currentOpen = sliceOpens[sliceOpens.length - 1];
-    const isBullishPattern = bullishPatterns.includes(pattern);
-    const isBearishPattern = bearishPatterns.includes(pattern);
-    const confirmingDirection = currentClose > currentOpen ? 'bullish' : 'bearish';
-
-    if ((isBullishPattern && confirmingDirection !== 'bullish') || (isBearishPattern && confirmingDirection !== 'bearish')) {
-      pattern = 'Neutral'; // Reduce noise by requiring confirmation
-    }
   }
 
   return pattern;
@@ -290,15 +275,12 @@ async function getData() {
     try {
       const atrValues = TI.ATR.calculate({ period: 14, high: highs, low: lows, close: closes });
       atr = atrValues.pop();
-      avgAtr = atrValues.slice(-21, -1).reduce((sum, v) => sum + v, 0) / Math.min(20, atrValues.length - 1) || atr; // Exclude current candle
+      avgAtr = atrValues.slice(-20).reduce((sum, v) => sum + v, 0) / Math.min(20, atrValues.length) || atr;
       bb = TI.BollingerBands.calculate({ period: 20, values: closes, stdDev: 2 }).pop();
     } catch (err) {
       console.error('Volatility indicators error:', err.message);
       return { error: 'Failed to calculate volatility indicators' };
     }
-
-    // Normalize ATR for 30m (approximate to 15m scale by dividing by sqrt(2) ~1.414)
-    const normalizedAtr = atr / Math.sqrt(2);
 
     // PSAR
     let psar;
@@ -366,7 +348,7 @@ async function getData() {
     // Trend Alignment (+3 if all TFs align)
     if (currentPrice > ema99 && trend1h === 'Above Strong' && trend4h === 'Above Strong') {
       bullishScore += 3;
-      bullishReasons.push('Trend aligned across 30m, 1h, 4h');
+      bullishReasons.push('Trend aligned across 30m, 1h, 4h with strong ADX');
     } else if (currentPrice < ema99 && trend1h === 'Below' && trend4h === 'Below') {
       bearishScore += 3;
       bearishReasons.push('Trend aligned across 30m, 1h, 4h');
@@ -554,14 +536,14 @@ async function getData() {
 
       if (isBullish) {
         sl = Math.min(parseFloat(entry) - atr * atrMultiplier, minLow - atr * atrMultiplier).toFixed(2); // Dynamic SL
-        tp1 = (parseFloat(entry) + atr * 0.5).toFixed(2); // 50% at 0.5 adjusted from 1 ATR
-        tp2 = (parseFloat(entry) + atr * 1).toFixed(2); // 50% at 1 adjusted from 2 ATR
+        tp1 = (parseFloat(entry) + atr * 0.5).toFixed(2); // 50% at 0.5 ATR from 1
+        tp2 = (parseFloat(entry) + atr * 1).toFixed(2); // 50% at 1 ATR from 2
         const riskPerUnit = parseFloat(entry) - parseFloat(sl);
         positionSize = riskPerUnit > 0 ? (riskAmount / riskPerUnit).toFixed(2) : 'Invalid due to SL placement';
       } else if (isBearish) {
         sl = (maxHigh + atr * atrMultiplier).toFixed(2); // Dynamic SL
-        tp1 = (parseFloat(entry) - atr * 0.5).toFixed(2); // 50% at 0.5 adjusted from 1 ATR
-        tp2 = (parseFloat(entry) - atr * 1).toFixed(2); // 50% at 1 adjusted from 2 ATR
+        tp1 = (parseFloat(entry) - atr * 0.5).toFixed(2); // 50% at 0.5 ATR from 1
+        tp2 = (parseFloat(entry) - atr * 1).toFixed(2); // 50% at 1 ATR from 2
         const riskPerUnit = parseFloat(sl) - parseFloat(entry);
         positionSize = riskPerUnit > 0 ? (riskAmount / riskPerUnit).toFixed(2) : 'Invalid due to SL placement';
       }
@@ -640,12 +622,12 @@ async function getData() {
   }
 }
 
-// Background cache update (optimized to 2 minutes = 120000 ms)
+// Background cache update
 setInterval(async () => {
   cachedData = await getData();
-}, 120000); // Refresh cache every 2 minutes
+}, 120000); // Refresh cache every 2 minutes (optimized from 30s)
 
-// Initial cache fill on startup
+ // Initial cache fill on startup
 getData().then(data => {
   cachedData = data;
   console.log('Initial data cache filled');
