@@ -275,12 +275,15 @@ async function getData() {
     try {
       const atrValues = TI.ATR.calculate({ period: 14, high: highs, low: lows, close: closes });
       atr = atrValues.pop();
-      avgAtr = atrValues.slice(-20).reduce((sum, v) => sum + v, 0) / Math.min(20, atrValues.length) || atr;
+      avgAtr = atrValues.slice(-21, -1).reduce((sum, v) => sum + v, 0) / Math.min(20, atrValues.length - 1) || atr; // Exclude current candle
       bb = TI.BollingerBands.calculate({ period: 20, values: closes, stdDev: 2 }).pop();
     } catch (err) {
       console.error('Volatility indicators error:', err.message);
       return { error: 'Failed to calculate volatility indicators' };
     }
+
+    // Normalize ATR for 30m (divide by sqrt(2) ~1.414 to approximate 15m scale)
+    let normalizedAtr = atr / Math.sqrt(2);
 
     // PSAR
     let psar;
@@ -625,9 +628,9 @@ async function getData() {
 // Background cache update
 setInterval(async () => {
   cachedData = await getData();
-}, 120000); // Refresh cache every 2 minutes (optimized from 30s)
+}, 120000); // Refresh cache every 2 minutes
 
- // Initial cache fill on startup
+// Initial cache fill on startup
 getData().then(data => {
   cachedData = data;
   console.log('Initial data cache filled');
