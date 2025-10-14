@@ -476,13 +476,13 @@ async function getData() {
     }
 
     // Dynamic threshold based on ADX
-    let threshold = 13; // Default conservative
+    let threshold = 12; // Default conservative
     let thresholdNote = '';
     if (adx && adx > 30) {
-      threshold = 12;
+      threshold = 11;
       thresholdNote = ' (earlier entry due to strong ADX)';
     } else if (adx && adx <= 25) {
-      threshold = 13;
+      threshold = 12;
       thresholdNote = ' (conservative threshold due to weak ADX)';
     }
 
@@ -554,14 +554,14 @@ async function getData() {
 
       if (isBullish) {
         sl = Math.min(parseFloat(entry) - atr * atrMultiplier, minLow - atr * atrMultiplier).toFixed(2); // Dynamic SL
-        tp1 = (parseFloat(entry) + atr * 1).toFixed(2); // 50% at 1 ATR
-        tp2 = (parseFloat(entry) + atr * 2).toFixed(2); // 50% at 2 ATR
+        tp1 = (parseFloat(entry) + atr * 0.5).toFixed(2); // 50% at 0.5 adjusted from 1 ATR
+        tp2 = (parseFloat(entry) + atr * 1).toFixed(2); // 50% at 1 adjusted from 2 ATR
         const riskPerUnit = parseFloat(entry) - parseFloat(sl);
         positionSize = riskPerUnit > 0 ? (riskAmount / riskPerUnit).toFixed(2) : 'Invalid due to SL placement';
       } else if (isBearish) {
         sl = (maxHigh + atr * atrMultiplier).toFixed(2); // Dynamic SL
-        tp1 = (parseFloat(entry) - atr * 1).toFixed(2); // 50% at 1 ATR
-        tp2 = (parseFloat(entry) - atr * 2).toFixed(2); // 50% at 2 ATR
+        tp1 = (parseFloat(entry) - atr * 0.5).toFixed(2); // 50% at 0.5 adjusted from 1 ATR
+        tp2 = (parseFloat(entry) - atr * 1).toFixed(2); // 50% at 1 adjusted from 2 ATR
         const riskPerUnit = parseFloat(sl) - parseFloat(entry);
         positionSize = riskPerUnit > 0 ? (riskAmount / riskPerUnit).toFixed(2) : 'Invalid due to SL placement';
       }

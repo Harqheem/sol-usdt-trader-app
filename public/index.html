@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>SOL/USDT Trader App (30m Timeframe)</title>
+  <title>SOL/USDT Trader App</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -16,7 +16,7 @@
     </div>
     <!-- Left Panel -->
     <div class="left-panel">
-      <h3>Trend & Volatility (30m)</h3>
+      <h3>Trend & Volatility</h3>
       <p>EMA7: <span id="ema7"></span></p>
       <p>EMA25: <span id="ema25"></span></p>
       <p>EMA99: <span id="ema99"></span></p>
@@ -26,7 +26,7 @@
     </div>
     <!-- Middle Panel -->
     <div class="middle-panel">
-      <h3>Market Status (30m)</h3>
+      <h3>Market Status</h3>
       <p>Bollinger Upper: <span id="bb-upper"></span></p>
       <p>Bollinger Middle: <span id="bb-middle"></span></p>
       <p>Bollinger Lower: <span id="bb-lower"></span></p>
@@ -35,13 +35,13 @@
     </div>
     <!-- Right Panel -->
     <div class="right-panel">
-      <h3>Volume (30m)</h3>
+      <h3>Volume</h3>
       <h4>Last 5 Candles (Candle 1=most recent):</h4>
       <ul id="last5-candles"></ul>
     </div>
     <!-- Bottom Panel -->
     <div class="bottom-panel">
-      <h3>Signals (30m)</h3>
+      <h3>Signals</h3>
       <p>1H Trend: <span id="trend1h"></span></p>
       <p>4H Trend: <span id="trend4h"></span></p>
       <p>Recommendation: <span id="signal"></span></p>
@@ -52,6 +52,12 @@
       <p>Take Profit 2: <span id="tp2"></span></p>
       <p>Stop Loss: <span id="sl"></span></p>
       <p>Position Size: <span id="positionSize"></span></p>
+      <h3>Scoring Breakdown h3>
+      <select id="trade-direction">
+        <option value="bullish">Bullish</option>
+        <option value="bearish">Bearish</option>
+      </select>
+      <div id="scoring-column"></div>
     </div>
   </div>
   <script src="script.js"></script>
