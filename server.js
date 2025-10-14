@@ -366,7 +366,7 @@ async function getData() {
     // Trend Alignment (+3 if all TFs align)
     if (currentPrice > ema99 && trend1h === 'Above Strong' && trend4h === 'Above Strong') {
       bullishScore += 3;
-      bullishReasons.push('Trend aligned across 30m, 1h, 4h with strong ADX');
+      bullishReasons.push('Trend aligned across 30m, 1h, 4h');
     } else if (currentPrice < ema99 && trend1h === 'Below' && trend4h === 'Below') {
       bearishScore += 3;
       bearishReasons.push('Trend aligned across 30m, 1h, 4h');
