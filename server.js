@@ -338,7 +338,7 @@ async function getData() {
     const recentHighs = last15Candles.map(c => c.ohlc.high);
     const minLow = Math.min(...recentLows);
     const maxHigh = Math.max(...recentHighs);
-    const pullbackLevel = currentPrice > ema99 ? minLow : maxHigh;
+    let pullbackLevel = currentPrice > ema99 ? minLow : maxHigh;
     const optimalEntry = ((pullbackLevel + currentPrice) / 2).toFixed(2);
 
     // Scoring System
