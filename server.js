@@ -461,13 +461,13 @@ async function getData() {
     }
 
     // Dynamic threshold based on ADX
-    let threshold = 12; // Default conservative
+    let threshold = 11; // Default conservative
     let thresholdNote = '';
     if (adx && adx > 30) {
-      threshold = 11;
+      threshold = 10;
       thresholdNote = ' (earlier entry due to strong ADX)';
     } else if (adx && adx <= 25) {
-      threshold = 12;
+      threshold = 11;
       thresholdNote = ' (conservative threshold due to weak ADX)';
     }
 
@@ -540,13 +540,13 @@ async function getData() {
       if (isBullish) {
         sl = Math.min(parseFloat(entry) - atr * atrMultiplier, minLow - atr * atrMultiplier).toFixed(2); // Dynamic SL
         tp1 = (parseFloat(entry) + atr * 0.5).toFixed(2); // 50% at 0.5 ATR from 1
-        tp2 = (parseFloat(entry) + atr * 1).toFixed(2); // 50% at 1 ATR from 2
+        tp2 = (parseFloat(entry) + atr * 1.1).toFixed(2); // 50% at 1.1 ATR from 2
         const riskPerUnit = parseFloat(entry) - parseFloat(sl);
         positionSize = riskPerUnit > 0 ? (riskAmount / riskPerUnit).toFixed(2) : 'Invalid due to SL placement';
       } else if (isBearish) {
         sl = (maxHigh + atr * atrMultiplier).toFixed(2); // Dynamic SL
         tp1 = (parseFloat(entry) - atr * 0.5).toFixed(2); // 50% at 0.5 ATR from 1
-        tp2 = (parseFloat(entry) - atr * 1).toFixed(2); // 50% at 1 ATR from 2
+        tp2 = (parseFloat(entry) - atr * 1.1).toFixed(2); // 50% at 1.1 ATR from 2
         const riskPerUnit = parseFloat(sl) - parseFloat(entry);
         positionSize = riskPerUnit > 0 ? (riskAmount / riskPerUnit).toFixed(2) : 'Invalid due to SL placement';
       }
@@ -630,14 +630,14 @@ setInterval(async () => {
   cachedData = await getData();
 }, 120000); // Refresh cache every 2 minutes
 
-console.log('Starting getData fetch at ' + new Date().toISOString());
+
 
 // Initial cache fill on startup
 getData().then(data => {
   cachedData = data;
   console.log('Initial data cache filled');
 });
-console.log('getData completed successfully at ' + new Date().toISOString());
+
 
 app.get('/data', (req, res) => {
   if (cachedData) {
@@ -656,9 +656,10 @@ app.get('/price', async (req, res) => {
     console.error(error);
     res.json({ error: 'Failed to fetch price' });
   }
+  
+
 });
 
-console.log('getData failed at ' + new Date().toISOString());
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`Server running on http://localhost:${port}`));
