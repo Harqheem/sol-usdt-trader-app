@@ -630,11 +630,14 @@ setInterval(async () => {
   cachedData = await getData();
 }, 120000); // Refresh cache every 2 minutes
 
+console.log('Starting getData fetch at ' + new Date().toISOString());
+
 // Initial cache fill on startup
 getData().then(data => {
   cachedData = data;
   console.log('Initial data cache filled');
 });
+console.log('getData completed successfully at ' + new Date().toISOString());
 
 app.get('/data', (req, res) => {
   if (cachedData) {
@@ -654,6 +657,8 @@ app.get('/price', async (req, res) => {
     res.json({ error: 'Failed to fetch price' });
   }
 });
+
+console.log('getData failed at ' + new Date().toISOString());
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`Server running on http://localhost:${port}`));
