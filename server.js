@@ -220,11 +220,10 @@ async function getData(symbol) {
     const psarPosition = currentPrice > psar ? 'Below Price (Bullish)' : 'Above Price (Bearish)';
 
     // 15-candle analysis
-    const decimals = getDecimalPlaces(symbol);
     const last15Candles = klines30m.slice(-15).map((c, idx) => {
       const startTime = new Date(c.openTime).toLocaleTimeString();
       const endTime = new Date(c.closeTime).toLocaleTimeString();
-      const ohlc = { open: parseFloat(c.open).toFixed(decimals), high: parseFloat(c.high).toFixed(decimals), low: parseFloat(c.low).toFixed(decimals), close: parseFloat(c.close).toFixed(decimals) };
+      const ohlc = { open: parseFloat(c.open), high: parseFloat(c.high), low: parseFloat(c.low), close: parseFloat(c.close) };
       const volume = parseFloat(c.volume);
       const pattern = detectCandlePattern(opens.slice(-15), highs.slice(-15), lows.slice(-15), closes.slice(-15), volumes.slice(-15), idx);
       return { startTime, endTime, ohlc, volume, pattern };
@@ -393,6 +392,8 @@ async function getData(symbol) {
     let slNote = '';
     let atrMultiplier = 1;
 
+    const decimals = getDecimalPlaces(symbol);
+
     if (isBullish || isBearish) {
       let optimalEntry = ((pullbackLevel + currentPrice) / 2);
 
@@ -490,12 +491,31 @@ async function getData(symbol) {
       previousSignal[symbol] = signal;
     }
 
+    // Apply decimals to more fields
+    const movingAverages = {
+      ema7: ema7.toFixed(decimals),
+      ema25: ema25.toFixed(decimals),
+      ema99: ema99.toFixed(decimals),
+      sma50: sma50.toFixed(decimals),
+      sma200: sma200.toFixed(decimals)
+    };
+
+    const volatility = { atr: normalizedATR.toFixed(decimals) };
+
+    const bollinger = {
+      upper: bb.upper.toFixed(decimals),
+      middle: bb.middle.toFixed(decimals),
+      lower: bb.lower.toFixed(decimals)
+    };
+
+    const psarValue = psar.toFixed(decimals);
+
     return {
       core: { currentPrice: currentPrice.toFixed(decimals), ohlc, timestamp },
-      movingAverages: { ema7: ema7.toFixed(decimals), ema25: ema25.toFixed(decimals), ema99: ema99.toFixed(decimals), sma50: sma50.toFixed(decimals), sma200: sma200.toFixed(decimals) },
-      volatility: { atr: normalizedATR.toFixed(decimals) },
-      bollinger: { upper: bb.upper.toFixed(decimals), middle: bb.middle.toFixed(decimals), lower: bb.lower.toFixed(decimals) },
-      psar: { value: psar.toFixed(decimals), position: psarPosition },
+      movingAverages,
+      volatility,
+      bollinger,
+      psar: { value: psarValue, position: psarPosition },
       last5Candles: last15Candles.slice(-5),
       avgVolume: last15Candles.reduce((sum, c) => sum + c.volume, 0) / last15Candles.length || 0,
       candlePattern,
