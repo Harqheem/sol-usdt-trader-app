@@ -14,6 +14,7 @@ let cachedData = {}; // Per-symbol cache
 let lastNotificationTime = {}; // Per-symbol last notification timestamp for cooldown
 let sendCounts = {}; // Per-symbol send counts
 let pausedQueue = []; // FIFO queue for paused symbols
+let lastSignalTime = {}; // Per-symbol last signal timestamp for time-based reset
 
 const symbols = ['SOLUSDT', 'XRPUSDT', 'ADAUSDT']; // Supported symbols
 
@@ -476,6 +477,16 @@ async function getData(symbol) {
 
     // Check cooldown and limit before sending
     const now = Date.now();
+    // Time-based reset: if >18 hours since last signal for this symbol, reset count and unpause
+    if (lastSignalTime[symbol] && now - lastSignalTime[symbol] > 18 * 3600 * 1000) {
+      sendCounts[symbol] = 0;
+      const queueIndex = pausedQueue.indexOf(symbol);
+      if (queueIndex > -1) {
+        pausedQueue.splice(queueIndex, 1);
+      }
+      console.log(`Time-based reset for ${symbol}: count reset to 0`);
+    }
+
     if (signal.startsWith('✅ Enter') && signal !== previousSignal[symbol] && (!lastNotificationTime[symbol] || now - lastNotificationTime[symbol] > 300000) && sendCounts[symbol] < 6) {
       const nonAligningText = nonAligningIndicators.length > 0 ? `\nNon-aligning:\n- ${nonAligningIndicators.join('\n- ')}` : '';
       const candleAnalysisText = `\nLast 15 Candles:\n- ${candleAnalysis.join('\n- ')}\nSummary: ${trendSummary}`;
@@ -487,6 +498,7 @@ async function getData(symbol) {
       await sendTelegramNotification(firstMessage, secondMessage, symbol);
       previousSignal[symbol] = signal;
       lastNotificationTime[symbol] = now;
+      lastSignalTime[symbol] = now; // Update last signal time for this symbol
       sendCounts[symbol]++;
       console.log(`Sent signal for ${symbol}, count now ${sendCounts[symbol]}`);
 
@@ -555,6 +567,7 @@ setInterval(async () => {
     previousSignal[symbol] = '';
     lastNotificationTime[symbol] = 0;
     sendCounts[symbol] = 0;
+    lastSignalTime[symbol] = 0;
   }
   console.log('Initial cache filled for all symbols');
 })();
