@@ -113,29 +113,22 @@ function detectCandlePattern(opens, highs, lows, closes, volumes, index) {
   const sliceCloses = closes.slice(0, index + 1);
   let pattern = 'Neutral';
 
-  if (sliceOpens.length < 1) return 'Neutral';
+  if (sliceOpens.length < 2) return 'Neutral'; // Fix: Skip if insufficient data for reversal patterns like Shooting Star
 
   try {
-    // Single-candle patterns without requiring previous trend
-    if (TI.doji({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+    // Single-candle patterns
+    if (TI.bullishhammerstick({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+      pattern = 'Hammer';
+    } else if (TI.doji({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
       pattern = 'Doji';
+    } else if (TI.shootingstar({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+      pattern = 'Shooting Star';
     } else if (TI.bullishmarubozu({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
       pattern = 'Bullish Marubozu';
     } else if (TI.bearishmarubozu({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
       pattern = 'Bearish Marubozu';
-    } else if (TI.bullishspinningtop({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+    } else if (TI.bullishspinningtop({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses }) || TI.bearishspinningtop({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
       pattern = 'Spinning Top';
-    } else if (TI.bearishspinningtop({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
-      pattern = 'Spinning Top';
-    }
-
-    // Reversal single-candle patterns that require previous candle (skip if length < 2)
-    if (sliceOpens.length >= 2) {
-      if (TI.bullishhammerstick({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
-        pattern = 'Hammer';
-      } else if (TI.shootingstar({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
-        pattern = 'Shooting Star';
-      }
     }
 
     // Multi-candle patterns (2 candles)
@@ -172,7 +165,7 @@ function detectCandlePattern(opens, highs, lows, closes, volumes, index) {
       if (isEveningStar) pattern = 'Evening Star';
     }
   } catch (err) {
-    console.log('Pattern detection warning (ignored):', err.message);
+    // Silent ignore
   }
 
   return pattern;
