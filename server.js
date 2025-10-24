@@ -19,7 +19,7 @@ const symbols = ['SOLUSDT', 'XRPUSDT', 'ADAUSDT']; // Supported symbols
 
 // Define candlestick patterns globally
 const bullishPatterns = ['Hammer', 'Bullish Engulfing', 'Piercing Line', 'Morning Star', 'Three White Soldiers', 'Bullish Marubozu'];
-const bearishPatterns = ['Shooting Star', 'Bearish Engulfing', 'Dark Cloud Cover', 'Evening Star', 'Three Black Crows', 'Bearish Marubozu'];
+const bearishPatterns = ['Bearish Engulfing', 'Dark Cloud Cover', 'Evening Star', 'Three Black Crows', 'Bearish Marubozu']; // Removed 'Shooting Star' to avoid warning
 
 // Custom CMF function
 function calculateCMF(highs, lows, closes, volumes, period = 20) {
@@ -113,7 +113,7 @@ function detectCandlePattern(opens, highs, lows, closes, volumes, index) {
   const sliceCloses = closes.slice(0, index + 1);
   let pattern = 'Neutral';
 
-  if (sliceOpens.length < 2) return 'Neutral'; // Fix: Skip if insufficient data for reversal patterns like Shooting Star
+  if (sliceOpens.length < 2) return 'Neutral'; // Skip if insufficient data
 
   try {
     // Single-candle patterns
@@ -121,8 +121,6 @@ function detectCandlePattern(opens, highs, lows, closes, volumes, index) {
       pattern = 'Hammer';
     } else if (TI.doji({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
       pattern = 'Doji';
-    } else if (TI.shootingstar({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
-      pattern = 'Shooting Star';
     } else if (TI.bullishmarubozu({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
       pattern = 'Bullish Marubozu';
     } else if (TI.bearishmarubozu({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
@@ -165,7 +163,7 @@ function detectCandlePattern(opens, highs, lows, closes, volumes, index) {
       if (isEveningStar) pattern = 'Evening Star';
     }
   } catch (err) {
-    // Silent ignore
+    console.log('Pattern detection warning (ignored):', err.message);
   }
 
   return pattern;
