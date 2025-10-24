@@ -417,6 +417,19 @@ async function getData(symbol) {
         optimalEntry = pullbackLevel * (1 - weightCurrent) + currentPrice * weightCurrent + atrOffset;
       }
 
+      // Cap entry to ensure it's not above current for Long or below for Short
+      if (isBullish) {
+        if (optimalEntry > currentPrice) {
+          optimalEntry = currentPrice;
+          entryNote += ' (capped at current price)';
+        }
+      } else if (isBearish) {
+        if (optimalEntry < currentPrice) {
+          optimalEntry = currentPrice;
+          entryNote += ' (capped at current price)';
+        }
+      }
+
       entry = optimalEntry.toFixed(decimals);
 
       const minLow = Math.min(...recentLows);
