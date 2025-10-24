@@ -2,27 +2,35 @@ let currentData = {};
 let previousPrice = null;
 let selectedSymbol = 'SOLUSDT';
 
+function getDecimalPlaces(symbol) {
+  if (symbol === 'XRPUSDT' || symbol === 'ADAUSDT') {
+    return 4;
+  }
+  return 2;
+}
+
 function updateUI(data) {
   if (data.error) {
     console.error('Data error:', data.error);
     alert('Failed to load data: ' + data.error);
     return;
   }
+  const decimals = getDecimalPlaces(selectedSymbol);
   document.getElementById('timestamp').textContent = `Last Close: ${data.core.timestamp}`;
-  document.getElementById('ema7').textContent = `${data.movingAverages.ema7.toFixed(2)} ${data.core.currentPrice > data.movingAverages.ema7 ? '↑' : '↓'}`;
-  document.getElementById('ema25').textContent = `${data.movingAverages.ema25.toFixed(2)} ${data.core.currentPrice > data.movingAverages.ema25 ? '↑' : '↓'}`;
-  document.getElementById('ema99').textContent = `${data.movingAverages.ema99.toFixed(2)} ${data.core.currentPrice > data.movingAverages.ema99 ? '↑' : '↓'}`;
-  document.getElementById('sma50').textContent = data.movingAverages.sma50.toFixed(2);
-  document.getElementById('sma200').textContent = data.movingAverages.sma200.toFixed(2);
+  document.getElementById('ema7').textContent = `${data.movingAverages.ema7} ${data.core.currentPrice > parseFloat(data.movingAverages.ema7) ? '↑' : '↓'}`;
+  document.getElementById('ema25').textContent = `${data.movingAverages.ema25} ${data.core.currentPrice > parseFloat(data.movingAverages.ema25) ? '↑' : '↓'}`;
+  document.getElementById('ema99').textContent = `${data.movingAverages.ema99} ${data.core.currentPrice > parseFloat(data.movingAverages.ema99) ? '↑' : '↓'}`;
+  document.getElementById('sma50').textContent = data.movingAverages.sma50;
+  document.getElementById('sma200').textContent = data.movingAverages.sma200;
   const atrEl = document.getElementById('atr');
-  atrEl.textContent = data.volatility.atr.toFixed(2);
-  if (data.volatility.atr > 2) atrEl.style.color = 'green';
-  else if (data.volatility.atr < 0.5) atrEl.style.color = 'red';
+  atrEl.textContent = data.volatility.atr;
+  if (parseFloat(data.volatility.atr) > 2) atrEl.style.color = 'green';
+  else if (parseFloat(data.volatility.atr) < 0.5) atrEl.style.color = 'red';
   else atrEl.style.color = 'orange';
-  document.getElementById('bb-upper').textContent = data.bollinger.upper.toFixed(2);
-  document.getElementById('bb-middle').textContent = data.bollinger.middle.toFixed(2);
-  document.getElementById('bb-lower').textContent = data.bollinger.lower.toFixed(2);
-  document.getElementById('psar').textContent = data.psar.value.toFixed(2);
+  document.getElementById('bb-upper').textContent = data.bollinger.upper;
+  document.getElementById('bb-middle').textContent = data.bollinger.middle;
+  document.getElementById('bb-lower').textContent = data.bollinger.lower;
+  document.getElementById('psar').textContent = data.psar.value;
   document.getElementById('psar-pos').textContent = data.psar.position;
   document.getElementById('candle-pattern').textContent = data.candlePattern;
   const candlesList = document.getElementById('last5-candles');
@@ -30,7 +38,7 @@ function updateUI(data) {
   const reversedCandles = [...data.last5Candles].reverse();
   reversedCandles.forEach((candle, index) => {
     const li = document.createElement('li');
-    li.textContent = `Candle ${index + 1}: (${candle.startTime} - ${candle.endTime}), Open=${candle.ohlc.open.toFixed(2)}, Close=${candle.ohlc.close.toFixed(2)}, Low=${candle.ohlc.low.toFixed(2)}, High=${candle.ohlc.high.toFixed(2)}, volume=${candle.volume.toFixed(0)}`;
+    li.textContent = `Candle ${index + 1}: (${candle.startTime} - ${candle.endTime}), Open=${candle.ohlc.open.toFixed(decimals)}, Close=${candle.ohlc.close.toFixed(decimals)}, Low=${candle.ohlc.low.toFixed(decimals)}, High=${candle.ohlc.high.toFixed(decimals)}, volume=${candle.volume.toFixed(0)}`;
     candlesList.appendChild(li);
   });
   document.getElementById('trend1h').textContent = data.higherTF.trend1h;
@@ -55,6 +63,7 @@ async function fetchPrice() {
 
     const priceEl = document.getElementById('current-price');
     const newPrice = data.currentPrice;
+    const decimals = getDecimalPlaces(selectedSymbol);
     let arrow = '';
     if (previousPrice !== null) {
       if (newPrice > previousPrice) arrow = ' ↑', priceEl.style.color = 'green';
@@ -63,7 +72,7 @@ async function fetchPrice() {
     } else {
       priceEl.style.color = 'black';
     }
-    priceEl.textContent = `Current Price: ${newPrice.toFixed(2)}${arrow}`;
+    priceEl.textContent = `Current Price: ${newPrice.toFixed(decimals)}${arrow}`;
     document.getElementById('current-time').textContent = `Current Time: ${new Date().toLocaleTimeString()}`;
     previousPrice = newPrice;
   } catch (err) {
