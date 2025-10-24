@@ -220,7 +220,7 @@ async function getData(symbol) {
     const currentPrice = parseFloat(ticker.price);
     const psarPosition = currentPrice > psar ? 'Below Price (Bullish)' : 'Above Price (Bearish)';
 
-    // 15-candle analysis
+    // 15-candle analysis (kept for UI, but analysis removed from messages/logs)
     const last15Candles = klines30m.slice(-15).map((c, idx) => {
       const startTime = new Date(c.openTime).toLocaleTimeString();
       const endTime = new Date(c.closeTime).toLocaleTimeString();
@@ -229,8 +229,6 @@ async function getData(symbol) {
       const pattern = detectCandlePattern(opens.slice(-15), highs.slice(-15), lows.slice(-15), closes.slice(-15), volumes.slice(-15), idx);
       return { startTime, endTime, ohlc, volume, pattern };
     });
-    const candleAnalysis = last15Candles.map(c => `Candle: ${c.pattern}, Volume: ${c.volume.toFixed(0)}`);
-    const trendSummary = last15Candles.reduce((bull, c) => bull + (bullishPatterns.includes(c.pattern) ? 1 : bearishPatterns.includes(c.pattern) ? -1 : 0), 0) > 0 ? 'Bullish trend' : 'Bearish trend';
 
     // Higher TF trends (1h, 4h)
     const klines1h = await client.candles({ symbol, interval: '1h', limit: 50 });
@@ -489,11 +487,10 @@ async function getData(symbol) {
 
     if (signal.startsWith('✅ Enter') && signal !== previousSignal[symbol] && (!lastNotificationTime[symbol] || now - lastNotificationTime[symbol] > 300000) && sendCounts[symbol] < 6) {
       const nonAligningText = nonAligningIndicators.length > 0 ? `\nNon-aligning:\n- ${nonAligningIndicators.join('\n- ')}` : '';
-      const candleAnalysisText = `\nLast 15 Candles:\n- ${candleAnalysis.join('\n- ')}\nSummary: ${trendSummary}`;
 
       const firstMessage = `${symbol}\nLEVERAGE: 20\nEntry: ${entry}\nTP1: ${tp1}\nTP2: ${tp2}\nSL: ${sl}\nLast candle: ${candlePattern} (${candleDirection})\nPSAR: ${suggestion}`;
 
-      const secondMessage = `Notes: ${notes}${nonAligningText}${candleAnalysisText}\n${positionSizingNote}\nTrailing: ${trailingLogic}`;
+      const secondMessage = `Notes: ${notes}${nonAligningText}\n${positionSizingNote}\nTrailing: ${trailingLogic}`;
 
       await sendTelegramNotification(firstMessage, secondMessage, symbol);
       previousSignal[symbol] = signal;
@@ -514,6 +511,29 @@ async function getData(symbol) {
       console.log(`Limit reached for ${symbol}, waiting for reset.`);
     } else if (!signal.startsWith('✅ Enter')) {
       previousSignal[symbol] = signal;
+    }
+
+    // Structured logging for entries (remove candleAnalysis)
+    if (signal.startsWith('✅ Enter')) {
+      const log = {
+        timestamp: new Date().toLocaleString(),
+        signal,
+        bullishScore,
+        bearishScore,
+        rsiDivergence,
+        adx: adx.toFixed(2),
+        thresholdUsed: threshold,
+        atrMultiplierUsed: atrMultiplier,
+        reasons: {
+          adx: adx.toFixed(2),
+          rsi: rsi.toFixed(2),
+          atr: atr.toFixed(2),
+          cmf: cmf.toFixed(2),
+          macd: macd.MACD.toFixed(2)
+        },
+        levels: { entry, tp1, tp2, sl, positionSize }
+      };
+      console.log('Entry Log for ' + symbol + ':', JSON.stringify(log, null, 2));
     }
 
     // Apply decimals to more fields
