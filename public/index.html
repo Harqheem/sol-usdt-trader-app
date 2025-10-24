@@ -2,11 +2,20 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>SOL/USDT Trader App (30m Timeframe)</title>
+  <title>Multi-Symbol Trader App (30m Timeframe)</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div class="container">
+    <!-- Symbol Select -->
+    <div class="symbol-select">
+      <label for="symbol-select">Symbol:</label>
+      <select id="symbol-select">
+        <option value="SOLUSDT">SOL/USDT</option>
+        <option value="XRPUSDT">XRP/USDT</option>
+        <option value="ADAUSDT">ADA/USDT</option>
+      </select>
+    </div>
     <!-- Top Bar -->
     <div class="top-bar">
       <span id="current-price"></span>

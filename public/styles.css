@@ -1,12 +1,14 @@
 .container {
   display: grid;
   grid-template-areas:
+    "symbol symbol symbol"
     "top top top"
     "left middle right"
     "bottom bottom bottom";
   gap: 10px;
   padding: 10px;
 }
+.symbol-select { grid-area: symbol; text-align: center; padding: 5px; }
 .top-bar { grid-area: top; background: #eee; padding: 10px; text-align: center; }
 .left-panel { grid-area: left; background: #f0f8ff; padding: 10px; }
 .middle-panel { grid-area: middle; background: #fafad2; padding: 10px; }

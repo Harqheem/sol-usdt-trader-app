@@ -1,5 +1,6 @@
 let currentData = {};
-let previousPrice = null; // For arrow comparison
+let previousPrice = null;
+let selectedSymbol = 'SOLUSDT';
 
 function updateUI(data) {
   if (data.error) {
@@ -45,10 +46,10 @@ function updateUI(data) {
   currentData = data;
 }
 
-// Separate price update function
+// Fetch price
 async function fetchPrice() {
   try {
-    const res = await fetch('/price');
+    const res = await fetch(`/price?symbol=${selectedSymbol}`);
     const data = await res.json();
     if (data.error) throw new Error(data.error);
 
@@ -56,15 +57,9 @@ async function fetchPrice() {
     const newPrice = data.currentPrice;
     let arrow = '';
     if (previousPrice !== null) {
-      if (newPrice > previousPrice) {
-        arrow = ' ↑';
-        priceEl.style.color = 'green';
-      } else if (newPrice < previousPrice) {
-        arrow = ' ↓';
-        priceEl.style.color = 'red';
-      } else {
-        priceEl.style.color = 'black';
-      }
+      if (newPrice > previousPrice) arrow = ' ↑', priceEl.style.color = 'green';
+      else if (newPrice < previousPrice) arrow = ' ↓', priceEl.style.color = 'red';
+      else priceEl.style.color = 'black';
     } else {
       priceEl.style.color = 'black';
     }
@@ -76,9 +71,10 @@ async function fetchPrice() {
   }
 }
 
+// Fetch data
 async function fetchData() {
   try {
-    const res = await fetch('/data');
+    const res = await fetch(`/data?symbol=${selectedSymbol}`);
     const data = await res.json();
     updateUI(data);
     fetchPrice();
@@ -87,13 +83,17 @@ async function fetchData() {
   }
 }
 
-// Full data every 5 min (adjusted comment for 30m TF, but interval remains as it's for refresh, not tied to candle close)
-setInterval(fetchData, 300000); // 5 * 60 * 1000
-fetchData(); // Initial full fetch
+// Symbol change listener
+document.getElementById('symbol-select').addEventListener('change', (e) => {
+  selectedSymbol = e.target.value;
+  previousPrice = null;
+  fetchData();
+});
 
-// Price every 1 second
-setInterval(fetchPrice, 1000);
-fetchPrice(); // Initial price
+// Initial and intervals
+fetchData();
+setInterval(fetchData, 300000); // 5 min full refresh
+setInterval(fetchPrice, 1000); // 1 sec price
 
 document.getElementById('copy-btn').addEventListener('click', () => {
   navigator.clipboard.writeText(JSON.stringify(currentData, null, 2));
