@@ -19,7 +19,15 @@ const symbols = ['SOLUSDT', 'XRPUSDT', 'ADAUSDT']; // Supported symbols
 
 // Define candlestick patterns globally
 const bullishPatterns = ['Hammer', 'Bullish Engulfing', 'Piercing Line', 'Morning Star', 'Three White Soldiers', 'Bullish Marubozu'];
-const bearishPatterns = ['Bearish Engulfing', 'Dark Cloud Cover', 'Evening Star', 'Three Black Crows', 'Bearish Marubozu']; // Removed 'Shooting Star' to avoid warning
+const bearishPatterns = ['Bearish Engulfing', 'Dark Cloud Cover', 'Evening Star', 'Three Black Crows', 'Bearish Marubozu'];
+
+// Function to get decimal places based on symbol
+function getDecimalPlaces(symbol) {
+  if (symbol === 'XRPUSDT' || symbol === 'ADAUSDT') {
+    return 4;
+  }
+  return 2;
+}
 
 // Custom CMF function
 function calculateCMF(highs, lows, closes, volumes, period = 20) {
@@ -384,6 +392,8 @@ async function getData(symbol) {
     let slNote = '';
     let atrMultiplier = 1;
 
+    const decimals = getDecimalPlaces(symbol);
+
     if (isBullish || isBearish) {
       let optimalEntry = ((pullbackLevel + currentPrice) / 2);
 
@@ -407,7 +417,7 @@ async function getData(symbol) {
         optimalEntry = pullbackLevel * (1 - weightCurrent) + currentPrice * weightCurrent + atrOffset;
       }
 
-      entry = optimalEntry.toFixed(2);
+      entry = optimalEntry.toFixed(decimals);
 
       const minLow = Math.min(...recentLows);
       const maxHigh = Math.max(...recentHighs);
@@ -421,15 +431,15 @@ async function getData(symbol) {
       }
 
       if (isBullish) {
-        sl = Math.min(parseFloat(entry) - atr * atrMultiplier, minLow - atr * atrMultiplier).toFixed(2);
-        tp1 = (parseFloat(entry) + atr * 0.5).toFixed(2);
-        tp2 = (parseFloat(entry) + atr * 1.0).toFixed(2);
+        sl = Math.min(parseFloat(entry) - atr * atrMultiplier, minLow - atr * atrMultiplier).toFixed(decimals);
+        tp1 = (parseFloat(entry) + atr * 0.5).toFixed(decimals);
+        tp2 = (parseFloat(entry) + atr * 1.0).toFixed(decimals);
         const riskPerUnit = parseFloat(entry) - parseFloat(sl);
         positionSize = riskPerUnit > 0 ? (riskAmount / riskPerUnit).toFixed(2) : 'Invalid';
       } else if (isBearish) {
-        sl = Math.max(parseFloat(entry) + atr * atrMultiplier, maxHigh + atr * atrMultiplier).toFixed(2);
-        tp1 = (parseFloat(entry) - atr * 0.5).toFixed(2);
-        tp2 = (parseFloat(entry) - atr * 1.0).toFixed(2);
+        sl = Math.max(parseFloat(entry) + atr * atrMultiplier, maxHigh + atr * atrMultiplier).toFixed(decimals);
+        tp1 = (parseFloat(entry) - atr * 0.5).toFixed(decimals);
+        tp2 = (parseFloat(entry) - atr * 1.0).toFixed(decimals);
         const riskPerUnit = parseFloat(sl) - parseFloat(entry);
         positionSize = riskPerUnit > 0 ? (riskAmount / riskPerUnit).toFixed(2) : 'Invalid';
       }
