@@ -113,40 +113,38 @@ function detectCandlePattern(opens, highs, lows, closes, volumes, index) {
   const sliceCloses = closes.slice(0, index + 1);
   let pattern = 'Neutral';
 
-  if (sliceOpens.length < 2) return 'Neutral'; // Added to avoid insufficient data errors for reversal patterns
+  if (sliceOpens.length < 2) return 'Neutral'; // Fix: Skip if insufficient data for reversal patterns like Shooting Star
 
   try {
-    // Single-candle patterns (supported by technicalindicators)
-    if (TI.bullishhammerstick && TI.bullishhammerstick({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+    // Single-candle patterns
+    if (TI.bullishhammerstick({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
       pattern = 'Hammer';
-    } else if (TI.doji && TI.doji({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+    } else if (TI.doji({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
       pattern = 'Doji';
-    } else if (TI.shootingstar && TI.shootingstar({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+    } else if (TI.shootingstar({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
       pattern = 'Shooting Star';
-    } else if (TI.bullishmarubozu && TI.bullishmarubozu({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+    } else if (TI.bullishmarubozu({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
       pattern = 'Bullish Marubozu';
-    } else if (TI.bearishmarubozu && TI.bearishmarubozu({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+    } else if (TI.bearishmarubozu({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
       pattern = 'Bearish Marubozu';
-    } else if (TI.bullishspinningtop && TI.bullishspinningtop({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
-      pattern = 'Spinning Top';
-    } else if (TI.bearishspinningtop && TI.bearishspinningtop({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+    } else if (TI.bullishspinningtop({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses }) || TI.bearishspinningtop({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
       pattern = 'Spinning Top';
     }
 
-    // Multi-candle patterns (supported by technicalindicators)
+    // Multi-candle patterns (2 candles)
     if (index >= 1) {
-      if (TI.bullishengulfingpattern && TI.bullishengulfingpattern({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+      if (TI.bullishengulfingpattern({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
         pattern = 'Bullish Engulfing';
-      } else if (TI.bearishengulfingpattern && TI.bearishengulfingpattern({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+      } else if (TI.bearishengulfingpattern({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
         pattern = 'Bearish Engulfing';
-      } else if (TI.piercingline && TI.piercingline({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+      } else if (TI.piercingline({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
         pattern = 'Piercing Line';
-      } else if (TI.darkcloudcover && TI.darkcloudcover({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
+      } else if (TI.darkcloudcover({ open: sliceOpens, high: sliceHighs, low: sliceLows, close: sliceCloses })) {
         pattern = 'Dark Cloud Cover';
       }
     }
 
-    // Multi-candle patterns (custom logic for Three White Soldiers, Three Black Crows, Morning Star, Evening Star)
+    // Multi-candle (3 candles)
     if (index >= 2) {
       const last3Candles = [
         { open: opens[index - 2], high: highs[index - 2], low: lows[index - 2], close: closes[index - 2] },
@@ -154,36 +152,16 @@ function detectCandlePattern(opens, highs, lows, closes, volumes, index) {
         { open: opens[index], high: highs[index], low: lows[index], close: closes[index] }
       ];
 
-      // Three White Soldiers (bullish)
-      const isThreeWhiteSoldiers =
-        last3Candles.every(c => c.close > c.open) && // Three bullish candles
-        last3Candles[1].close > last3Candles[0].close && // Increasing closes
-        last3Candles[2].close > last3Candles[1].close &&
-        last3Candles.every(c => (c.high - c.low) > 0.5 * (c.close - c.open)); // Significant body size
+      const isThreeWhiteSoldiers = last3Candles.every(c => c.close > c.open) && last3Candles[1].close > last3Candles[0].close && last3Candles[2].close > last3Candles[1].close && last3Candles.every(c => (c.high - c.low) > 0.5 * (c.close - c.open));
       if (isThreeWhiteSoldiers) pattern = 'Three White Soldiers';
 
-      // Three Black Crows (bearish)
-      const isThreeBlackCrows =
-        last3Candles.every(c => c.close < c.open) && // Three bearish candles
-        last3Candles[1].close < last3Candles[0].close && // Decreasing closes
-        last3Candles[2].close < last3Candles[1].close &&
-        last3Candles.every(c => (c.high - c.low) > 0.5 * (c.open - c.close)); // Significant body size
+      const isThreeBlackCrows = last3Candles.every(c => c.close < c.open) && last3Candles[1].close < last3Candles[0].close && last3Candles[2].close < last3Candles[1].close && last3Candles.every(c => (c.high - c.low) > 0.5 * (c.open - c.close));
       if (isThreeBlackCrows) pattern = 'Three Black Crows';
 
-      // Morning Star (bullish)
-      const isMorningStar =
-        last3Candles[0].close < last3Candles[0].open && // Bearish first candle
-        Math.abs(last3Candles[1].close - last3Candles[1].open) < 0.3 * (last3Candles[1].high - last3Candles[1].low) && // Small body (indecision)
-        last3Candles[2].close > last3Candles[2].open && // Bullish third candle
-        last3Candles[2].close > (last3Candles[0].open + last3Candles[0].close) / 2; // Closes above midpoint of first candle
+      const isMorningStar = last3Candles[0].close < last3Candles[0].open && Math.abs(last3Candles[1].close - last3Candles[1].open) < 0.3 * (last3Candles[1].high - last3Candles[1].low) && last3Candles[2].close > last3Candles[2].open && last3Candles[2].close > (last3Candles[0].open + last3Candles[0].close) / 2;
       if (isMorningStar) pattern = 'Morning Star';
 
-      // Evening Star (bearish)
-      const isEveningStar =
-        last3Candles[0].close > last3Candles[0].open && // Bullish first candle
-        Math.abs(last3Candles[1].close - last3Candles[1].open) < 0.3 * (last3Candles[1].high - last3Candles[1].low) && // Small body (indecision)
-        last3Candles[2].close < last3Candles[2].open && // Bearish third candle
-        last3Candles[2].close < (last3Candles[0].open + last3Candles[0].close) / 2; // Closes below midpoint of first candle
+      const isEveningStar = last3Candles[0].close > last3Candles[0].open && Math.abs(last3Candles[1].close - last3Candles[1].open) < 0.3 * (last3Candles[1].high - last3Candles[1].low) && last3Candles[2].close < last3Candles[2].open && last3Candles[2].close < (last3Candles[0].open + last3Candles[0].close) / 2;
       if (isEveningStar) pattern = 'Evening Star';
     }
   } catch (err) {
@@ -196,20 +174,12 @@ function detectCandlePattern(opens, highs, lows, closes, volumes, index) {
 // Main data calculation function (now takes symbol)
 async function getData(symbol) {
   try {
-    // Check if TI methods are defined
-    const requiredIndicators = ['EMA', 'ATR', 'SMA', 'BollingerBands', 'PSAR', 'RSI', 'ADX', 'MACD'];
-    for (const indicator of requiredIndicators) {
-      if (!TI[indicator] || typeof TI[indicator].calculate !== 'function') {
-        console.error(`Indicator ${indicator}.calculate is undefined`);
-        return { error: `Indicator ${indicator} not available in technicalindicators` };
-      }
+    const klines30m = await client.candles({ symbol, interval: '30m', limit: 500 });
+    if (klines30m.length < 200) {
+      console.error('Insufficient 30m klines for ' + symbol);
+      return { error: 'Insufficient data' };
     }
 
-    const klines30m = await client.candles({ symbol, interval: '30m', limit: 500 });
-    if (klines30m.length < 200 || klines30m.some(k => !k.close || !k.high || !k.low || !k.volume || isNaN(k.close) || isNaN(k.high) || isNaN(k.low) || isNaN(k.volume))) {
-      console.error('Invalid or insufficient 30m klines data for ' + symbol + ':', klines30m.length);
-      return { error: 'Insufficient or invalid 30m data from Binance' };
-    }
     const lastCandle = klines30m[klines30m.length - 1];
     const closes = klines30m.map(c => parseFloat(c.close));
     const highs = klines30m.map(c => parseFloat(c.high));
@@ -217,25 +187,33 @@ async function getData(symbol) {
     const opens = klines30m.map(c => parseFloat(c.open));
     const volumes = klines30m.map(c => parseFloat(c.volume));
 
-    const ema7 = TI.EMA.calculate({ period: 7, values: closes }).pop();
-    const ema25 = TI.EMA.calculate({ period: 25, values: closes }).pop();
-    const ema99 = TI.EMA.calculate({ period: 99, values: closes }).pop();
-    const sma50 = TI.SMA.calculate({ period: 50, values: closes }).pop();
-    const sma200 = TI.SMA.calculate({ period: 200, values: closes }).pop();
-    const atr = TI.ATR.calculate({ high: highs, low: lows, close: closes, period: 14 }).pop();
-    const bb = TI.BollingerBands.calculate({ period: 20, values: closes, stdDev: 2 }).pop();
-    const psar = TI.PSAR.calculate({ step: 0.015, max: 0.15, high: highs, low: lows }).pop();
-    const rsi = TI.RSI.calculate({ period: 14, values: closes }).pop();
-    const adx = TI.ADX.calculate({ period: 14, high: highs, low: lows, close: closes }).pop().adx;
-    const macd = TI.MACD.calculate({ values: closes, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9, SimpleMAOscillator: false, SimpleMASignal: false }).pop();
+    // Calculate indicators
+    const ema7 = TI.EMA.calculate({ period: 7, values: closes })[TI.EMA.calculate({ period: 7, values: closes }).length - 1];
+    const ema25 = TI.EMA.calculate({ period: 25, values: closes })[TI.EMA.calculate({ period: 25, values: closes }).length - 1];
+    const ema99 = TI.EMA.calculate({ period: 99, values: closes })[TI.EMA.calculate({ period: 99, values: closes }).length - 1];
+    const sma50 = TI.SMA.calculate({ period: 50, values: closes })[TI.SMA.calculate({ period: 50, values: closes }).length - 1];
+    const sma200 = TI.SMA.calculate({ period: 200, values: closes })[TI.SMA.calculate({ period: 200, values: closes }).length - 1];
+    const atrInput = { high: highs, low: lows, close: closes, period: 14 };
+    const atr = TI.ATR.calculate(atrInput)[TI.ATR.calculate(atrInput).length - 1];
+    const bbInput = { period: 20, values: closes, stdDev: 2 };
+    const bb = TI.BollingerBands.calculate(bbInput)[TI.BollingerBands.calculate(bbInput).length - 1];
+    const psarInput = { step: 0.015, max: 0.15, high: highs, low: lows };
+    const psar = TI.PSAR.calculate(psarInput)[TI.PSAR.calculate(psarInput).length - 1];
+    const rsiInput = { period: 14, values: closes };
+    const rsi = TI.RSI.calculate(rsiInput)[TI.RSI.calculate(rsiInput).length - 1];
+    const adxInput = { period: 14, high: highs, low: lows, close: closes };
+    const adx = TI.ADX.calculate(adxInput)[TI.ADX.calculate(adxInput).length - 1].adx;
+    const macdInput = { values: closes, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9, SimpleMAOscillator: false, SimpleMASignal: false };
+    const macd = TI.MACD.calculate(macdInput)[TI.MACD.calculate(macdInput).length - 1];
     const cmf = calculateCMF(highs, lows, closes, volumes);
-    const rsis = TI.RSI.calculate({ period: 14, values: closes.slice(-17) }).slice(-3);
-    const rsiDivergence = detectRSIDivergence(closes.slice(-3), rsis);
+    const rsiDivergence = detectRSIDivergence(closes.slice(-3), TI.RSI.calculate({ period: 14, values: closes.slice(-17) }).slice(-3)); // Enough for 14+3
 
+    // Current price
     const ticker = await client.avgPrice({ symbol });
     const currentPrice = parseFloat(ticker.price);
     const psarPosition = currentPrice > psar ? 'Below Price (Bullish)' : 'Above Price (Bearish)';
 
+    // 15-candle analysis
     const last15Candles = klines30m.slice(-15).map((c, idx) => {
       const startTime = new Date(c.openTime).toLocaleTimeString();
       const endTime = new Date(c.closeTime).toLocaleTimeString();
@@ -247,31 +225,38 @@ async function getData(symbol) {
     const candleAnalysis = last15Candles.map(c => `Candle: ${c.pattern}, Volume: ${c.volume.toFixed(0)}`);
     const trendSummary = last15Candles.reduce((bull, c) => bull + (bullishPatterns.includes(c.pattern) ? 1 : bearishPatterns.includes(c.pattern) ? -1 : 0), 0) > 0 ? 'Bullish trend' : 'Bearish trend';
 
+    // Higher TF trends (1h, 4h)
     const klines1h = await client.candles({ symbol, interval: '1h', limit: 50 });
     const closes1h = klines1h.map(c => parseFloat(c.close));
-    const trend1h = TI.EMA.calculate({ period: 25, values: closes1h }).pop() < closes1h[closes1h.length - 1] ? 'Bullish' : 'Bearish';
+    const trend1h = TI.EMA.calculate({ period: 25, values: closes1h })[TI.EMA.calculate({ period: 25, values: closes1h }).length - 1] < closes1h[closes1h.length - 1] ? 'Bullish' : 'Bearish';
     const klines4h = await client.candles({ symbol, interval: '4h', limit: 50 });
     const closes4h = klines4h.map(c => parseFloat(c.close));
-    const trend4h = TI.EMA.calculate({ period: 25, values: closes4h }).pop() < closes4h[closes4h.length - 1] ? 'Bullish' : 'Bearish';
+    const trend4h = TI.EMA.calculate({ period: 25, values: closes4h })[TI.EMA.calculate({ period: 25, values: closes4h }).length - 1] < closes4h[closes4h.length - 1] ? 'Bullish' : 'Bearish';
 
     const timestamp = new Date(lastCandle.closeTime).toLocaleString();
     const ohlc = { open: lastCandle.open, high: lastCandle.high, low: lastCandle.low, close: lastCandle.close };
 
+    // Normalize ATR for 30m
     const normalizedATR = atr / Math.sqrt(2);
 
-    const avgATR = TI.ATR.calculate({ high: highs.slice(0, -1), low: lows.slice(0, -1), close: closes.slice(0, -1), period: 14 }).pop();
+    // Average ATR excluding current
+    const avgATR = TI.ATR.calculate({ high: highs.slice(0, -1), low: lows.slice(0, -1), close: closes.slice(0, -1), period: 14 })[TI.ATR.calculate({ high: highs.slice(0, -1), low: lows.slice(0, -1), close: closes.slice(0, -1), period: 14 }).length - 1];
 
+    // Recent lows/highs for SL
     const recentLows = lows.slice(-5);
     const recentHighs = highs.slice(-5);
 
+    // Pullback level (for hybrid entry)
     const pullbackLevel = bullishPatterns.includes(last15Candles[last15Candles.length - 1].pattern) ? Math.min(...recentLows) : Math.max(...recentHighs);
 
+    // Scoring system
     let bullishScore = 0;
     let bearishScore = 0;
     const bullishReasons = [];
     const bearishReasons = [];
     const nonAligningIndicators = [];
 
+    // Trend Alignment (+3)
     if (currentPrice > sma200) {
       bullishScore += 3;
       bullishReasons.push('Price above SMA200');
@@ -282,6 +267,7 @@ async function getData(symbol) {
       nonAligningIndicators.push('Price at SMA200, no clear trend alignment');
     }
 
+    // Directional ADX (+3)
     if (adx > 25 && currentPrice > sma50) {
       bullishScore += 3;
       bullishReasons.push('Strong ADX with price above SMA50');
@@ -292,6 +278,7 @@ async function getData(symbol) {
       nonAligningIndicators.push('ADX weak or no directional bias');
     }
 
+    // EMA Stack (+2)
     if (ema7 > ema25 && ema25 > ema99) {
       bullishScore += 2;
       bullishReasons.push('Bullish EMA stack');
@@ -302,6 +289,7 @@ async function getData(symbol) {
       nonAligningIndicators.push('EMAs not stacked, mixed trend');
     }
 
+    // RSI (+2)
     if (rsi > 50) {
       bullishScore += 2;
       bullishReasons.push('RSI above 50');
@@ -312,6 +300,7 @@ async function getData(symbol) {
       nonAligningIndicators.push('RSI at 50, neutral momentum');
     }
 
+    // ATR (+2)
     if (atr > avgATR) {
       bullishScore += 2;
       bullishReasons.push('High ATR for potential movement');
@@ -319,6 +308,7 @@ async function getData(symbol) {
       nonAligningIndicators.push('Low ATR, limited price movement potential');
     }
 
+    // CMF (+2)
     if (cmf > 0) {
       bullishScore += 2;
       bullishReasons.push(`Positive CMF (${cmf.toFixed(2)})`);
@@ -329,6 +319,7 @@ async function getData(symbol) {
       nonAligningIndicators.push('CMF neutral');
     }
 
+    // Candlestick (+1)
     const candlePattern = last15Candles[last15Candles.length - 1].pattern;
     if (bullishPatterns.includes(candlePattern)) {
       bullishScore += 1;
@@ -340,6 +331,7 @@ async function getData(symbol) {
       nonAligningIndicators.push(`Neutral pattern (${candlePattern})`);
     }
 
+    // MACD (+1)
     if (macd.MACD > macd.signal) {
       bullishScore += 1;
       bullishReasons.push('MACD bullish crossover');
@@ -350,6 +342,7 @@ async function getData(symbol) {
       nonAligningIndicators.push('MACD neutral');
     }
 
+    // RSI Divergence (+1)
     if (rsiDivergence === 'Bullish') {
       bullishScore += 1;
       bullishReasons.push('Bullish RSI divergence');
@@ -360,7 +353,8 @@ async function getData(symbol) {
       nonAligningIndicators.push('No RSI divergence');
     }
 
-    let threshold = 13;
+    // Dynamic threshold
+    let threshold = 13; // Base for 17 max
     let thresholdNote = '';
     if (adx > 30) {
       threshold = 12;
@@ -370,6 +364,7 @@ async function getData(symbol) {
       thresholdNote = ' (higher due to weak ADX)';
     }
 
+    // Trade levels
     let entry = 'N/A';
     let tp1 = 'N/A';
     let tp2 = 'N/A';
@@ -442,9 +437,10 @@ async function getData(symbol) {
       }
     }
 
+    // Signal and notes
     let signal = '❌ No Trade';
     let notes = 'Mixed signals. Wait for breakout.';
-    let suggestion = entry !== 'N/A' ? (parseFloat(entry) > psar ? 'long' : 'short') : 'N/A';
+    let suggestion = parseFloat(entry) > psar ? 'long' : 'short';
     let candleDirection = bullishPatterns.includes(candlePattern) ? 'bullish' : bearishPatterns.includes(candlePattern) ? 'bearish' : 'neutral';
     let trailingLogic = isBullish ? 'Trail SL to entry after 1 ATR, then 1.5x ATR below high. After TP1, SL to entry + 0.5 ATR.' : 'Trail SL to entry after 1 ATR, then 1.5x ATR above low. After TP1, SL to entry - 0.5 ATR.';
     let positionSizingNote = `Position: ${riskPercent * 100}% risk (score ${score}/17), $${riskAmount}, ${positionSize} units.`;
@@ -457,6 +453,7 @@ async function getData(symbol) {
       notes = `Score: ${bearishScore}/17${thresholdNote}. Reasons: ${bearishReasons.slice(0, 3).join(', ')}. Enter at ${entry}${entryNote}; TP1: ${tp1}, TP2: ${tp2}.${slNote}`;
     }
 
+    // Check cooldown and limit before sending
     const now = Date.now();
     if (signal.startsWith('✅ Enter') && signal !== previousSignal[symbol] && (!lastNotificationTime[symbol] || now - lastNotificationTime[symbol] > 300000) && sendCounts[symbol] < 6) {
       const nonAligningText = nonAligningIndicators.length > 0 ? `\nNon-aligning:\n- ${nonAligningIndicators.join('\n- ')}` : '';
@@ -486,30 +483,6 @@ async function getData(symbol) {
       previousSignal[symbol] = signal;
     }
 
-    // Structured logging for entries
-    if (signal.startsWith('✅ Enter')) {
-      const log = {
-        timestamp: new Date().toLocaleString(),
-        signal,
-        bullishScore,
-        bearishScore,
-        rsiDivergence,
-        adx: adx.toFixed(2),
-        thresholdUsed: threshold,
-        atrMultiplierUsed: atrMultiplier,
-        reasons: {
-          adx: adx.toFixed(2),
-          rsi: rsi.toFixed(2),
-          atr: atr.toFixed(2),
-          cmf: cmf.toFixed(2),
-          macd: macd.MACD.toFixed(2)
-        },
-        levels: { entry, tp1, tp2, sl, positionSize },
-        candleAnalysis: { patterns: candleAnalysis, summary: trendSummary }
-      };
-      console.log('Entry Log for ' + symbol + ':', JSON.stringify(log, null, 2));
-    }
-
     return {
       core: { currentPrice, ohlc, timestamp },
       movingAverages: { ema7, ema25, ema99, sma50, sma200 },
@@ -523,19 +496,19 @@ async function getData(symbol) {
       signals: { signal, notes, entry, tp1, tp2, sl, positionSize }
     };
   } catch (error) {
-    console.error('getData error for ' + symbol + ':', error.message);
+    console.error(`getData error for ${symbol}:`, error.message);
     return { error: 'Failed to fetch data' };
   }
 }
 
-// Background cache update
+// Background cache update for all symbols
 setInterval(async () => {
   for (const symbol of symbols) {
     cachedData[symbol] = await getData(symbol);
   }
-}, 120000); // Refresh cache every 2 minutes
+}, 120000); // 2 min
 
-// Initial cache fill on startup
+// Initial cache
 (async () => {
   for (const symbol of symbols) {
     cachedData[symbol] = await getData(symbol);
@@ -543,29 +516,34 @@ setInterval(async () => {
     lastNotificationTime[symbol] = 0;
     sendCounts[symbol] = 0;
   }
-  console.log('Initial data cache filled for all symbols');
+  console.log('Initial cache filled for all symbols');
 })();
 
-app.get('/data', (req, res) => {
-  const symbol = req.query.symbol || 'SOLUSDT';
-  if (!symbols.includes(symbol)) {
-    return res.status(400).json({ error: 'Invalid symbol' });
-  }
-  if (cachedData[symbol]) {
-    res.json(cachedData[symbol]);
+// Data endpoint with symbol param or all
+app.get('/data', async (req, res) => {
+  const symbol = req.query.symbol;
+  if (symbol) {
+    if (!symbols.includes(symbol)) {
+      return res.status(400).json({ error: 'Invalid symbol' });
+    }
+    if (cachedData[symbol]) {
+      res.json(cachedData[symbol]);
+    } else {
+      cachedData[symbol] = await getData(symbol);
+      res.json(cachedData[symbol]);
+    }
   } else {
-    res.status(503).json({ error: 'Data not ready yet' });
+    res.json(cachedData);
   }
 });
 
-// Lightweight price endpoint
+// Price endpoint with symbol
 app.get('/price', async (req, res) => {
   const symbol = req.query.symbol || 'SOLUSDT';
   try {
     const ticker = await client.avgPrice({ symbol });
     res.json({ currentPrice: parseFloat(ticker.price) });
   } catch (error) {
-    console.error(error);
     res.json({ error: 'Failed to fetch price' });
   }
 });
