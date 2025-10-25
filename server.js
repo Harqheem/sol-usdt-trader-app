@@ -363,13 +363,13 @@ async function getData(symbol) {
     }
 
     // Dynamic threshold
-    let threshold = 13; // Base for 17 max
+    let threshold = 11; // Base for 17 max
     let thresholdNote = '';
     if (adx > 30) {
-      threshold = 12;
+      threshold = 10;
       thresholdNote = ' (lower due to strong ADX)';
     } else if (adx < 20) {
-      threshold = 14;
+      threshold = 12;
       thresholdNote = ' (higher due to weak ADX)';
     }
 
