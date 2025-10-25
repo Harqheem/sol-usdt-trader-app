@@ -197,6 +197,12 @@ async function getData(symbol) {
     const opens = klines30m.map(c => parseFloat(c.open));
     const volumes = klines30m.map(c => parseFloat(c.volume));
 
+    // Current price (moved up)
+    const ticker = await client.avgPrice({ symbol });
+    const currentPrice = parseFloat(ticker.price);
+    const timestamp = new Date(lastCandle.closeTime).toLocaleString();
+    const ohlc = { open: parseFloat(lastCandle.open), high: parseFloat(lastCandle.high), low: parseFloat(lastCandle.low), close: parseFloat(lastCandle.close) };
+
     // Calculate indicators
     const ema7 = TI.EMA.calculate({ period: 7, values: closes })[TI.EMA.calculate({ period: 7, values: closes }).length - 1];
     const ema25 = TI.EMA.calculate({ period: 25, values: closes })[TI.EMA.calculate({ period: 25, values: closes }).length - 1];
@@ -209,6 +215,7 @@ async function getData(symbol) {
     const bb = TI.BollingerBands.calculate(bbInput)[TI.BollingerBands.calculate(bbInput).length - 1];
     const psarInput = { step: 0.015, max: 0.15, high: highs, low: lows };
     const psar = TI.PSAR.calculate(psarInput)[TI.PSAR.calculate(psarInput).length - 1];
+    const psarPosition = currentPrice > psar ? 'Below Price (Bullish)' : 'Above Price (Bearish)';
     const rsiInput = { period: 14, values: closes };
     const rsi = TI.RSI.calculate(rsiInput)[TI.RSI.calculate(rsiInput).length - 1];
     const adxInput = { period: 14, high: highs, low: lows, close: closes };
@@ -237,14 +244,6 @@ async function getData(symbol) {
     const klines4h = await client.candles({ symbol, interval: '4h', limit: 50 });
     const closes4h = klines4h.map(c => parseFloat(c.close));
     const trend4h = TI.EMA.calculate({ period: 25, values: closes4h })[TI.EMA.calculate({ period: 25, values: closes4h }).length - 1] < closes4h[closes4h.length - 1] ? 'Bullish' : 'Bearish';
-
-    // Current price
-    const ticker = await client.avgPrice({ symbol });
-    const currentPrice = parseFloat(ticker.price);
-    const timestamp = new Date(lastCandle.closeTime).toLocaleString();
-    const ohlc = { open: lastCandle.open, high: lastCandle.high, low: lastCandle.low, close: lastCandle.close };
-
-    const psarPosition = currentPrice > psar ? 'Below Price (Bullish)' : 'Above Price (Bearish)';
 
     // Normalize ATR for 30m (divide by sqrt(2) from 15m base, but since switched, adjust if needed)
     const normalizedATR = atr / Math.sqrt(2);
@@ -548,25 +547,26 @@ async function getData(symbol) {
 
     // Apply decimals to more fields
     const movingAverages = {
-      ema7: ema7.toFixed(decimals),
-      ema25: ema25.toFixed(decimals),
-      ema99: ema99.toFixed(decimals),
-      sma50: sma50.toFixed(decimals),
-      sma200: sma200.toFixed(decimals)
+      ema7,
+      ema25,
+      ema99,
+      sma50,
+      sma200
     };
 
-    const volatility = { atr: normalizedATR.toFixed(decimals) };
+    const volatility = { atr: normalizedATR, adx };
 
     const bollinger = {
-      upper: bb.upper.toFixed(decimals),
-      middle: bb.middle.toFixed(decimals),
-      lower: bb.lower.toFixed(decimals)
+      upper: bb.upper,
+      middle: bb.middle,
+      lower: bb.lower
     };
 
-    const psarValue = psar.toFixed(decimals);
+    const psarValue = psar;
 
     return {
-      core: { currentPrice: currentPrice.toFixed(decimals), ohlc, timestamp },
+      decimals,
+      core: { currentPrice, ohlc, timestamp },
       movingAverages,
       volatility,
       bollinger,
