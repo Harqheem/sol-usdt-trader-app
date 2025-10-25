@@ -16,7 +16,7 @@ let sendCounts = {}; // Per-symbol send counts
 let pausedQueue = []; // FIFO queue for paused symbols
 let lastSignalTime = {}; // Per-symbol last signal timestamp for time-based reset
 
-const symbols = ['SOLUSDT', 'XRPUSDT', 'ADAUSDT']; // Supported symbols
+const symbols = ['SOLUSDT', 'XRPUSDT', 'ADAUSDT', 'BNBUSDT', 'DOGEUSDT']; // Supported symbols
 
 // Define candlestick patterns globally
 const bullishPatterns = ['Hammer', 'Bullish Engulfing', 'Piercing Line', 'Morning Star', 'Three White Soldiers', 'Bullish Marubozu'];
@@ -26,6 +26,8 @@ const bearishPatterns = ['Bearish Engulfing', 'Dark Cloud Cover', 'Evening Star'
 function getDecimalPlaces(symbol) {
   if (symbol === 'XRPUSDT' || symbol === 'ADAUSDT') {
     return 4;
+  } else if (symbol === 'DOGEUSDT') {
+    return 6;
   }
   return 2;
 }
@@ -206,6 +208,7 @@ async function getData(symbol) {
     const bb = TI.BollingerBands.calculate(bbInput)[TI.BollingerBands.calculate(bbInput).length - 1];
     const psarInput = { step: 0.015, max: 0.15, high: highs, low: lows };
     const psar = TI.PSAR.calculate(psarInput)[TI.PSAR.calculate(psarInput).length - 1];
+    const psarPosition = currentPrice > psar ? 'Below Price (Bullish)' : 'Above Price (Bearish)';
     const rsiInput = { period: 14, values: closes };
     const rsi = TI.RSI.calculate(rsiInput)[TI.RSI.calculate(rsiInput).length - 1];
     const adxInput = { period: 14, high: highs, low: lows, close: closes };
@@ -215,12 +218,7 @@ async function getData(symbol) {
     const cmf = calculateCMF(highs, lows, closes, volumes);
     const rsiDivergence = detectRSIDivergence(closes.slice(-3), TI.RSI.calculate({ period: 14, values: closes.slice(-17) }).slice(-3)); // Enough for 14+3
 
-    // Current price
-    const ticker = await client.avgPrice({ symbol });
-    const currentPrice = parseFloat(ticker.price);
-    const psarPosition = currentPrice > psar ? 'Below Price (Bullish)' : 'Above Price (Bearish)';
-
-    // 15-candle analysis (kept for UI, but analysis removed from messages/logs)
+    // 15-candle analysis
     const last15Candles = klines30m.slice(-15).map((c, idx) => {
       const startTime = new Date(c.openTime).toLocaleTimeString();
       const endTime = new Date(c.closeTime).toLocaleTimeString();
@@ -229,6 +227,8 @@ async function getData(symbol) {
       const pattern = detectCandlePattern(opens.slice(-15), highs.slice(-15), lows.slice(-15), closes.slice(-15), volumes.slice(-15), idx);
       return { startTime, endTime, ohlc, volume, pattern };
     });
+    const candleAnalysis = last15Candles.map(c => `Candle: ${c.pattern}, Volume: ${c.volume.toFixed(0)}`);
+    const trendSummary = last15Candles.reduce((bull, c) => bull + (bullishPatterns.includes(c.pattern) ? 1 : bearishPatterns.includes(c.pattern) ? -1 : 0), 0) > 0 ? 'Bullish trend' : 'Bearish trend';
 
     // Higher TF trends (1h, 4h)
     const klines1h = await client.candles({ symbol, interval: '1h', limit: 50 });
@@ -238,10 +238,13 @@ async function getData(symbol) {
     const closes4h = klines4h.map(c => parseFloat(c.close));
     const trend4h = TI.EMA.calculate({ period: 25, values: closes4h })[TI.EMA.calculate({ period: 25, values: closes4h }).length - 1] < closes4h[closes4h.length - 1] ? 'Bullish' : 'Bearish';
 
+    // Current price
+    const ticker = await client.avgPrice({ symbol });
+    const currentPrice = parseFloat(ticker.price);
     const timestamp = new Date(lastCandle.closeTime).toLocaleString();
     const ohlc = { open: lastCandle.open, high: lastCandle.high, low: lastCandle.low, close: lastCandle.close };
 
-    // Normalize ATR for 30m
+    // Normalize ATR for 30m (divide by sqrt(2) from 15m base, but since switched, adjust if needed)
     const normalizedATR = atr / Math.sqrt(2);
 
     // Average ATR excluding current
@@ -284,10 +287,10 @@ async function getData(symbol) {
     }
 
     // EMA Stack (+2)
-    if (ema7 > ema25 && ema25 > ema99) {
+    if (ema7 > ema25 > ema99) {
       bullishScore += 2;
       bullishReasons.push('Bullish EMA stack');
-    } else if (ema7 < ema25 && ema25 < ema99) {
+    } else if (ema7 < ema25 < ema99) {
       bearishScore += 2;
       bearishReasons.push('Bearish EMA stack');
     } else {
@@ -359,13 +362,13 @@ async function getData(symbol) {
     }
 
     // Dynamic threshold
-    let threshold = 11; // Base for 17 max
+    let threshold = 13; // Base for 17 max
     let thresholdNote = '';
     if (adx > 30) {
-      threshold = 10;
+      threshold = 12;
       thresholdNote = ' (lower due to strong ADX)';
     } else if (adx < 20) {
-      threshold = 12;
+      threshold = 14;
       thresholdNote = ' (higher due to weak ADX)';
     }
 
@@ -380,6 +383,7 @@ async function getData(symbol) {
     const isBullish = bullishScore >= threshold;
     const isBearish = bearishScore >= threshold;
     const score = isBullish ? bullishScore : isBearish ? bearishScore : 0;
+    const reasons = isBullish ? bullishReasons : bearishReasons;
 
     if (score >= threshold && score <= threshold + 1) {
       riskPercent = 0.005;
@@ -390,8 +394,6 @@ async function getData(symbol) {
     let entryNote = '';
     let slNote = '';
     let atrMultiplier = 1;
-
-    const decimals = getDecimalPlaces(symbol);
 
     if (isBullish || isBearish) {
       let optimalEntry = ((pullbackLevel + currentPrice) / 2);
@@ -465,12 +467,18 @@ async function getData(symbol) {
     let trailingLogic = isBullish ? 'Trail SL to entry after 1 ATR, then 1.5x ATR below high. After TP1, SL to entry + 0.5 ATR.' : 'Trail SL to entry after 1 ATR, then 1.5x ATR above low. After TP1, SL to entry - 0.5 ATR.';
     let positionSizingNote = `Position: ${riskPercent * 100}% risk (score ${score}/17), $${riskAmount}, ${positionSize} units.`;
 
-    if (isBullish) {
-      signal = '✅ Enter Long';
-      notes = `Score: ${bullishScore}/17${thresholdNote}. Reasons: ${bullishReasons.slice(0, 3).join(', ')}. Enter at ${entry}${entryNote}; TP1: ${tp1}, TP2: ${tp2}.${slNote}`;
-    } else if (isBearish) {
-      signal = '✅ Enter Short';
-      notes = `Score: ${bearishScore}/17${thresholdNote}. Reasons: ${bearishReasons.slice(0, 3).join(', ')}. Enter at ${entry}${entryNote}; TP1: ${tp1}, TP2: ${tp2}.${slNote}`;
+    if (isBullish || isBearish) {
+      signal = isBullish ? '✅ Enter Long' : '✅ Enter Short';
+      notes = `Score: ${score}/17${thresholdNote}`;
+      if (reasons.length > 0) {
+        notes += `\nTop Reasons:\n- ${reasons.slice(0, 3).join('\n- ')}`;
+      }
+      if (entryNote.trim()) {
+        notes += `\nEntry Note:${entryNote}`;
+      }
+      if (slNote.trim()) {
+        notes += `\nSL Note:${slNote}`;
+      }
     }
 
     // Check cooldown and limit before sending
