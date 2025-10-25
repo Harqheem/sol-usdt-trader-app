@@ -8,26 +8,27 @@ function updateUI(data) {
     alert('Failed to load data: ' + data.error);
     return;
   }
+  const dec = data.decimals || 2;
   document.getElementById('timestamp').textContent = `Last Close: ${data.core.timestamp}`;
-  document.getElementById('ema7').textContent = `${data.movingAverages.ema7} ${data.core.currentPrice > data.movingAverages.ema7 ? '↑' : '↓'}`;
-  document.getElementById('ema25').textContent = `${data.movingAverages.ema25} ${data.core.currentPrice > data.movingAverages.ema25 ? '↑' : '↓'}`;
-  document.getElementById('ema99').textContent = `${data.movingAverages.ema99} ${data.core.currentPrice > data.movingAverages.ema99 ? '↑' : '↓'}`;
-  document.getElementById('sma50').textContent = data.movingAverages.sma50;
-  document.getElementById('sma200').textContent = data.movingAverages.sma200;
+  document.getElementById('ema7').textContent = `${data.movingAverages.ema7.toFixed(dec)} ${data.core.currentPrice > data.movingAverages.ema7 ? '↑' : '↓'}`;
+  document.getElementById('ema25').textContent = `${data.movingAverages.ema25.toFixed(dec)} ${data.core.currentPrice > data.movingAverages.ema25 ? '↑' : '↓'}`;
+  document.getElementById('ema99').textContent = `${data.movingAverages.ema99.toFixed(dec)} ${data.core.currentPrice > data.movingAverages.ema99 ? '↑' : '↓'}`;
+  document.getElementById('sma50').textContent = data.movingAverages.sma50.toFixed(dec);
+  document.getElementById('sma200').textContent = data.movingAverages.sma200.toFixed(dec);
   const atrEl = document.getElementById('atr');
-  atrEl.textContent = data.volatility.atr;
-  if (parseFloat(data.volatility.atr) > 2) atrEl.style.color = 'green';
-  else if (parseFloat(data.volatility.atr) < 0.5) atrEl.style.color = 'red';
+  atrEl.textContent = data.volatility.atr.toFixed(dec);
+  if (data.volatility.atr > 2) atrEl.style.color = 'green';
+  else if (data.volatility.atr < 0.5) atrEl.style.color = 'red';
   else atrEl.style.color = 'orange';
   const adxEl = document.getElementById('adx');
   adxEl.textContent = data.volatility.adx.toFixed(2);
   if (data.volatility.adx > 30) adxEl.style.color = 'green';
   else if (data.volatility.adx < 20) adxEl.style.color = 'red';
   else adxEl.style.color = 'orange';
-  document.getElementById('bb-upper').textContent = data.bollinger.upper;
-  document.getElementById('bb-middle').textContent = data.bollinger.middle;
-  document.getElementById('bb-lower').textContent = data.bollinger.lower;
-  document.getElementById('psar').textContent = data.psar.value;
+  document.getElementById('bb-upper').textContent = data.bollinger.upper.toFixed(dec);
+  document.getElementById('bb-middle').textContent = data.bollinger.middle.toFixed(dec);
+  document.getElementById('bb-lower').textContent = data.bollinger.lower.toFixed(dec);
+  document.getElementById('psar').textContent = data.psar.value.toFixed(dec);
   document.getElementById('psar-pos').textContent = data.psar.position;
   document.getElementById('candle-pattern').textContent = data.candlePattern;
   const candlesList = document.getElementById('last5-candles');
@@ -35,7 +36,7 @@ function updateUI(data) {
   const reversedCandles = [...data.last5Candles].reverse();
   reversedCandles.forEach((candle, index) => {
     const li = document.createElement('li');
-    li.textContent = `Candle ${index + 1}: (${candle.startTime} - ${candle.endTime}), Open=${candle.ohlc.open}, Close=${candle.ohlc.close}, Low=${candle.ohlc.low}, High=${candle.ohlc.high}, volume=${candle.volume.toFixed(0)}`;
+    li.textContent = `Candle ${index + 1}: (${candle.startTime} - ${candle.endTime}), Open=${candle.ohlc.open.toFixed(dec)}, Close=${candle.ohlc.close.toFixed(dec)}, Low=${candle.ohlc.low.toFixed(dec)}, High=${candle.ohlc.high.toFixed(dec)}, volume=${candle.volume.toFixed(0)}`;
     candlesList.appendChild(li);
   });
   document.getElementById('trend1h').textContent = data.higherTF.trend1h;
@@ -68,7 +69,7 @@ async function fetchPrice() {
     } else {
       priceEl.style.color = 'black';
     }
-    priceEl.textContent = `Current Price: ${newPrice.toFixed(2)}${arrow}`;
+    priceEl.textContent = `Current Price: ${newPrice.toFixed(2)}${arrow}`; // Keep fixed 2 for live price tick (or use dec if you fetch it)
     document.getElementById('current-time').textContent = `Current Time: ${new Date().toLocaleTimeString()}`;
     previousPrice = newPrice;
   } catch (err) {
