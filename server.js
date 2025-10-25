@@ -183,6 +183,7 @@ function detectCandlePattern(opens, highs, lows, closes, volumes, index) {
 // Main data calculation function (now takes symbol)
 async function getData(symbol) {
   try {
+    const decimals = getDecimalPlaces(symbol);
     const klines30m = await client.candles({ symbol, interval: '30m', limit: 500 });
     if (klines30m.length < 200) {
       console.error('Insufficient 30m klines for ' + symbol);
@@ -208,7 +209,6 @@ async function getData(symbol) {
     const bb = TI.BollingerBands.calculate(bbInput)[TI.BollingerBands.calculate(bbInput).length - 1];
     const psarInput = { step: 0.015, max: 0.15, high: highs, low: lows };
     const psar = TI.PSAR.calculate(psarInput)[TI.PSAR.calculate(psarInput).length - 1];
-    const psarPosition = currentPrice > psar ? 'Below Price (Bullish)' : 'Above Price (Bearish)';
     const rsiInput = { period: 14, values: closes };
     const rsi = TI.RSI.calculate(rsiInput)[TI.RSI.calculate(rsiInput).length - 1];
     const adxInput = { period: 14, high: highs, low: lows, close: closes };
@@ -243,6 +243,8 @@ async function getData(symbol) {
     const currentPrice = parseFloat(ticker.price);
     const timestamp = new Date(lastCandle.closeTime).toLocaleString();
     const ohlc = { open: lastCandle.open, high: lastCandle.high, low: lastCandle.low, close: lastCandle.close };
+
+    const psarPosition = currentPrice > psar ? 'Below Price (Bullish)' : 'Above Price (Bearish)';
 
     // Normalize ATR for 30m (divide by sqrt(2) from 15m base, but since switched, adjust if needed)
     const normalizedATR = atr / Math.sqrt(2);
