@@ -27,7 +27,7 @@ function getDecimalPlaces(symbol) {
   if (symbol === 'XRPUSDT' || symbol === 'ADAUSDT') {
     return 4;
   } else if (symbol === 'DOGEUSDT') {
-    return 6;
+    return 5;
   }
   return 2;
 }
