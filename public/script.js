@@ -1,6 +1,7 @@
 let currentData = {};
 let previousPrice = null;
 let selectedSymbol = 'SOLUSDT';
+let currentDecimals = 2; // Default to 2 until data loads
 
 function updateUI(data) {
   if (data.error) {
@@ -9,6 +10,7 @@ function updateUI(data) {
     return;
   }
   const dec = data.decimals || 2;
+  currentDecimals = dec; // Update global decimals
   document.getElementById('timestamp').textContent = `Last Close: ${data.core.timestamp}`;
   document.getElementById('ema7').textContent = `${data.movingAverages.ema7.toFixed(dec)} ${data.core.currentPrice > data.movingAverages.ema7 ? '↑' : '↓'}`;
   document.getElementById('ema25').textContent = `${data.movingAverages.ema25.toFixed(dec)} ${data.core.currentPrice > data.movingAverages.ema25 ? '↑' : '↓'}`;
@@ -69,7 +71,7 @@ async function fetchPrice() {
     } else {
       priceEl.style.color = 'black';
     }
-    priceEl.textContent = `Current Price: ${newPrice.toFixed(2)}${arrow}`; // Keep fixed 2 for live price tick (or use dec if you fetch it)
+    priceEl.textContent = `Current Price: ${newPrice.toFixed(currentDecimals)}${arrow}`;
     document.getElementById('current-time').textContent = `Current Time: ${new Date().toLocaleTimeString()}`;
     previousPrice = newPrice;
   } catch (err) {
