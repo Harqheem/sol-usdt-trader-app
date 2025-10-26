@@ -199,14 +199,9 @@ async function getData(symbol) {
 
     // Current price (moved up)
     const ticker = await client.avgPrice({ symbol });
-    const currentPrice = parseFloat(ticker.price).toFixed(decimals);
+    const currentPrice = parseFloat(ticker.price);
     const timestamp = new Date(lastCandle.closeTime).toLocaleString();
-    const ohlc = { 
-      open: parseFloat(lastCandle.open).toFixed(decimals),
-      high: parseFloat(lastCandle.high).toFixed(decimals),
-      low: parseFloat(lastCandle.low).toFixed(decimals),
-      close: parseFloat(lastCandle.close).toFixed(decimals)
-};
+    const ohlc = { open: parseFloat(lastCandle.open), high: parseFloat(lastCandle.high), low: parseFloat(lastCandle.low), close: parseFloat(lastCandle.close) };
 
     // Calculate indicators
     const ema7 = TI.EMA.calculate({ period: 7, values: closes })[TI.EMA.calculate({ period: 7, values: closes }).length - 1];
@@ -234,11 +229,7 @@ async function getData(symbol) {
     const last15Candles = klines30m.slice(-15).map((c, idx) => {
       const startTime = new Date(c.openTime).toLocaleTimeString();
       const endTime = new Date(c.closeTime).toLocaleTimeString();
-      const ohlc = { 
-        open: parseFloat(c.open).toFixed(decimals),
-        high: parseFloat(c.high).toFixed(decimals),
-        low: parseFloat(c.low).toFixed(decimals),
-        close: parseFloat(c.close).toFixed(decimals)};
+      const ohlc = { open: parseFloat(c.open), high: parseFloat(c.high), low: parseFloat(c.low), close: parseFloat(c.close) };
       const volume = parseFloat(c.volume);
       const pattern = detectCandlePattern(opens.slice(-15), highs.slice(-15), lows.slice(-15), closes.slice(-15), volumes.slice(-15), idx);
       return { startTime, endTime, ohlc, volume, pattern };
@@ -648,22 +639,22 @@ if (bearishPenalty > 0) {
 
     // Apply decimals to more fields
     const movingAverages = {
-      ema7: ema7.toFixed(decimals),
-      ema25: ema25.toFixed(decimals),
-      ema99: ema99.toFixed(decimals),
-      sma50: sma50.toFixed(decimals),
-      sma200: sma200.toFixed(decimals)
-};
+      ema7,
+      ema25,
+      ema99,
+      sma50,
+      sma200
+    };
 
-    const volatility = { atr: atr.toFixed(decimals), adx: adx.toFixed(2) };
+    const volatility = { atr, adx };
 
     const bollinger = {
-      upper: bb.upper.toFixed(decimals),
-      middle: bb.middle.toFixed(decimals),
-      lower: bb.lower.toFixed(decimals)
-};
+      upper: bb.upper,
+      middle: bb.middle,
+      lower: bb.lower
+    };
 
-    const psarValue = psar.toFixed(decimals);
+    const psarValue = psar;
 
     return {
       decimals,
