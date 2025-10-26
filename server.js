@@ -199,9 +199,14 @@ async function getData(symbol) {
 
     // Current price (moved up)
     const ticker = await client.avgPrice({ symbol });
-    const currentPrice = parseFloat(ticker.price);
+    const currentPrice = parseFloat(ticker.price).toFixed(decimals);
     const timestamp = new Date(lastCandle.closeTime).toLocaleString();
-    const ohlc = { open: parseFloat(lastCandle.open), high: parseFloat(lastCandle.high), low: parseFloat(lastCandle.low), close: parseFloat(lastCandle.close) };
+    const ohlc = { 
+      open: parseFloat(lastCandle.open).toFixed(decimals),
+      high: parseFloat(lastCandle.high).toFixed(decimals),
+      low: parseFloat(lastCandle.low).toFixed(decimals),
+      close: parseFloat(lastCandle.close).toFixed(decimals)
+};
 
     // Calculate indicators
     const ema7 = TI.EMA.calculate({ period: 7, values: closes })[TI.EMA.calculate({ period: 7, values: closes }).length - 1];
@@ -229,7 +234,11 @@ async function getData(symbol) {
     const last15Candles = klines30m.slice(-15).map((c, idx) => {
       const startTime = new Date(c.openTime).toLocaleTimeString();
       const endTime = new Date(c.closeTime).toLocaleTimeString();
-      const ohlc = { open: parseFloat(c.open), high: parseFloat(c.high), low: parseFloat(c.low), close: parseFloat(c.close) };
+      const ohlc = { 
+        open: parseFloat(c.open).toFixed(decimals),
+        high: parseFloat(c.high).toFixed(decimals),
+        low: parseFloat(c.low).toFixed(decimals),
+        close: parseFloat(c.close).toFixed(decimals)};
       const volume = parseFloat(c.volume);
       const pattern = detectCandlePattern(opens.slice(-15), highs.slice(-15), lows.slice(-15), closes.slice(-15), volumes.slice(-15), idx);
       return { startTime, endTime, ohlc, volume, pattern };
@@ -237,17 +246,85 @@ async function getData(symbol) {
     const candleAnalysis = last15Candles.map(c => `Candle: ${c.pattern}, Volume: ${c.volume.toFixed(0)}`);
     const trendSummary = last15Candles.reduce((bull, c) => bull + (bullishPatterns.includes(c.pattern) ? 1 : bearishPatterns.includes(c.pattern) ? -1 : 0), 0) > 0 ? 'Bullish trend' : 'Bearish trend';
 
-    // Higher TF trends (1h, 4h)
-    const klines1h = await client.candles({ symbol, interval: '1h', limit: 50 });
-    const closes1h = klines1h.map(c => parseFloat(c.close));
-    const trend1h = TI.EMA.calculate({ period: 25, values: closes1h })[TI.EMA.calculate({ period: 25, values: closes1h }).length - 1] < closes1h[closes1h.length - 1] ? 'Bullish' : 'Bearish';
-    const klines4h = await client.candles({ symbol, interval: '4h', limit: 50 });
-    const closes4h = klines4h.map(c => parseFloat(c.close));
-    const trend4h = TI.EMA.calculate({ period: 25, values: closes4h })[TI.EMA.calculate({ period: 25, values: closes4h }).length - 1] < closes4h[closes4h.length - 1] ? 'Bullish' : 'Bearish';
+    // Fetch 1h data for multi-timeframe analysis
+const klines1h = await client.candles({ symbol, interval: '1h', limit: 100 });
+const closes1h = klines1h.map(c => parseFloat(c.close));
+const highs1h = klines1h.map(c => parseFloat(c.high));
+const lows1h = klines1h.map(c => parseFloat(c.low));
 
-    // Normalize ATR for 30m (divide by sqrt(2) from 15m base, but since switched, adjust if needed)
-    const normalizedATR = atr / Math.sqrt(2);
+// Calculate 1h EMA99 and ADX
+const ema99_1h_calc = TI.EMA.calculate({ period: 99, values: closes1h });
+const ema99_1h = ema99_1h_calc[ema99_1h_calc.length - 1];
+const adx1h_calc = TI.ADX.calculate({ period: 14, close: closes1h, high: highs1h, low: lows1h });
+const adx1h = adx1h_calc[adx1h_calc.length - 1].adx;
+const current1hClose = closes1h[closes1h.length - 1];
 
+// Store trend for API response
+const trend1h = current1hClose > ema99_1h ? 
+  (adx1h > 25 ? 'Above Strong' : 'Above Weak') : 
+  (adx1h > 25 ? 'Below Strong' : 'Below Weak');
+
+// Fetch 4h data for API response
+const klines4h = await client.candles({ symbol, interval: '4h', limit: 100 });
+const closes4h = klines4h.map(c => parseFloat(c.close));
+const highs4h = klines4h.map(c => parseFloat(c.high));
+const lows4h = klines4h.map(c => parseFloat(c.low));
+const ema99_4h_calc = TI.EMA.calculate({ period: 99, values: closes4h });
+const ema99_4h = ema99_4h_calc[ema99_4h_calc.length - 1];
+const adx4h_calc = TI.ADX.calculate({ period: 14, close: closes4h, high: highs4h, low: lows4h });
+const adx4h = adx4h_calc[adx4h_calc.length - 1].adx;
+const current4hClose = closes4h[closes4h.length - 1];
+
+const trend4h = current4hClose > ema99_4h ? 
+  (adx4h > 25 ? 'Above Strong' : 'Above Weak') : 
+  (adx4h > 25 ? 'Below Strong' : 'Below Weak');
+
+// Multi-timeframe penalty calculation
+let bullishPenalty = 0;
+let bearishPenalty = 0;
+const multiTFWarnings = [];
+
+// 1h counter-trend penalty (-2 points if strong opposition)
+if (adx1h > 30) {
+  if (currentPrice > sma200 && current1hClose < ema99_1h) {
+    // Trying to go long but 1h is strongly bearish
+    bullishPenalty -= 2;
+    multiTFWarnings.push(`⚠️ 1h strongly bearish (ADX ${adx1h.toFixed(1)}), counter-trend LONG has higher risk`);
+    console.log(`${symbol}: Applying -2 penalty to bullish score due to 1h counter-trend`);
+  } else if (currentPrice < sma200 && current1hClose > ema99_1h) {
+    // Trying to go short but 1h is strongly bullish
+    bearishPenalty -= 2;
+    multiTFWarnings.push(`⚠️ 1h strongly bullish (ADX ${adx1h.toFixed(1)}), counter-trend SHORT has higher risk`);
+    console.log(`${symbol}: Applying -2 penalty to bearish score due to 1h counter-trend`);
+  }
+}
+
+// 4h counter-trend penalty (-1 additional point if 4h also opposes)
+if (adx4h > 30) {
+  if (currentPrice > sma200 && current4hClose < ema99_4h) {
+    bullishPenalty -= 1;
+    multiTFWarnings.push(`⚠️ 4h also bearish (ADX ${adx4h.toFixed(1)}), additional risk`);
+    console.log(`${symbol}: Applying -1 additional penalty to bullish score due to 4h counter-trend`);
+  } else if (currentPrice < sma200 && current4hClose > ema99_4h) {
+    bearishPenalty -= 1;
+    multiTFWarnings.push(`⚠️ 4h also bullish (ADX ${adx4h.toFixed(1)}), additional risk`);
+    console.log(`${symbol}: Applying -1 additional penalty to bearish score due to 4h counter-trend`);
+  }
+}
+
+// Bonus for alignment (+1 point if 1h confirms)
+if (adx1h > 25) {
+  if (currentPrice > sma200 && current1hClose > ema99_1h) {
+    bullishPenalty += 1;  // Actually a bonus
+    multiTFWarnings.push(`✅ 1h confirms bullish trend (ADX ${adx1h.toFixed(1)})`);
+  } else if (currentPrice < sma200 && current1hClose < ema99_1h) {
+    bearishPenalty += 1;  // Actually a bonus
+    multiTFWarnings.push(`✅ 1h confirms bearish trend (ADX ${adx1h.toFixed(1)})`);
+  }
+}
+
+
+  
     // Average ATR excluding current
     const avgATR = TI.ATR.calculate({ high: highs.slice(0, -1), low: lows.slice(0, -1), close: closes.slice(0, -1), period: 14 })[TI.ATR.calculate({ high: highs.slice(0, -1), low: lows.slice(0, -1), close: closes.slice(0, -1), period: 14 }).length - 1];
 
@@ -288,10 +365,10 @@ async function getData(symbol) {
     }
 
     // EMA Stack (+2)
-    if (ema7 > ema25 > ema99) {
+    if (ema7 > ema25 && ema25 > ema99) {
       bullishScore += 2;
       bullishReasons.push('Bullish EMA stack');
-    } else if (ema7 < ema25 < ema99) {
+    } else if (ema7 < ema25 && ema25 < ema99) {
       bearishScore += 2;
       bearishReasons.push('Bearish EMA stack');
     } else {
@@ -299,20 +376,23 @@ async function getData(symbol) {
     }
 
     // RSI (+2)
-    if (rsi > 50) {
+    if (rsi >= 40 && rsi <= 60) {
       bullishScore += 2;
-      bullishReasons.push('RSI above 50');
-    } else if (rsi < 50) {
       bearishScore += 2;
-      bearishReasons.push('RSI below 50');
-    } else {
-      nonAligningIndicators.push('RSI at 50, neutral momentum');
+      bullishReasons.push(`Neutral RSI (${rsi.toFixed(2)})`);
+      bearishReasons.push(`Neutral RSI (${rsi.toFixed(2)})`);
+    } else if (rsi > 70) {
+  nonAligningIndicators.push(`RSI overbought (${rsi.toFixed(2)}), reversal risk`);
+    } else if (rsi < 30) {
+    nonAligningIndicators.push(`RSI oversold (${rsi.toFixed(2)}), reversal risk`);
     }
 
     // ATR (+2)
     if (atr > avgATR) {
       bullishScore += 2;
+      bearishScore += 2;
       bullishReasons.push('High ATR for potential movement');
+      bearishReasons.push('High ATR for potential movement');
     } else {
       nonAligningIndicators.push('Low ATR, limited price movement potential');
     }
@@ -363,7 +443,7 @@ async function getData(symbol) {
     }
 
     // Dynamic threshold
-    let threshold = 11; // Base for 17 max
+    let threshold = 11; // Base for 18 max (17 base + 1 multi-TF bonus)
     let thresholdNote = '';
     if (adx > 30) {
       threshold = 10;
@@ -372,7 +452,28 @@ async function getData(symbol) {
       threshold = 12;
       thresholdNote = ' (higher due to weak ADX)';
     }
+// Apply penalties/bonuses from higher timeframes
+bullishScore += bullishPenalty;
+bearishScore += bearishPenalty;
 
+// Add warnings to non-aligning indicators
+if (multiTFWarnings.length > 0) {
+  nonAligningIndicators.push(...multiTFWarnings);
+}
+
+// Log penalty application
+if (bullishPenalty < 0) {
+  console.log(`${symbol}: Bullish score adjusted from ${bullishScore - bullishPenalty} to ${bullishScore} (penalty: ${bullishPenalty})`);
+}
+if (bearishPenalty < 0) {
+  console.log(`${symbol}: Bearish score adjusted from ${bearishScore - bearishPenalty} to ${bearishScore} (penalty: ${bearishPenalty})`);
+}
+if (bullishPenalty > 0) {
+  bullishReasons.push(`Multi-TF alignment bonus (+${bullishPenalty})`);
+}
+if (bearishPenalty > 0) {
+  bearishReasons.push(`Multi-TF alignment bonus (+${bearishPenalty})`);
+}
     // Trade levels
     let entry = 'N/A';
     let tp1 = 'N/A';
@@ -466,7 +567,7 @@ async function getData(symbol) {
     let suggestion = parseFloat(entry) > psar ? 'long' : 'short';
     let candleDirection = bullishPatterns.includes(candlePattern) ? 'bullish' : bearishPatterns.includes(candlePattern) ? 'bearish' : 'neutral';
     let trailingLogic = isBullish ? 'Trail SL to entry after 1 ATR, then 1.5x ATR below high. After TP1, SL to entry + 0.5 ATR.' : 'Trail SL to entry after 1 ATR, then 1.5x ATR above low. After TP1, SL to entry - 0.5 ATR.';
-    let positionSizingNote = `Position: ${riskPercent * 100}% risk (score ${score}/17), $${riskAmount}, ${positionSize} units.`;
+    let positionSizingNote = `Position: ${riskPercent * 100}% risk (score ${score}/18), $${riskAmount}, ${positionSize} units.`;
 
     if (isBullish || isBearish) {
       signal = isBullish ? '✅ Enter Long' : '✅ Enter Short';
@@ -547,22 +648,22 @@ async function getData(symbol) {
 
     // Apply decimals to more fields
     const movingAverages = {
-      ema7,
-      ema25,
-      ema99,
-      sma50,
-      sma200
-    };
+      ema7: ema7.toFixed(decimals),
+      ema25: ema25.toFixed(decimals),
+      ema99: ema99.toFixed(decimals),
+      sma50: sma50.toFixed(decimals),
+      sma200: sma200.toFixed(decimals)
+};
 
-    const volatility = { atr: normalizedATR, adx };
+    const volatility = { atr: atr.toFixed(decimals), adx: adx.toFixed(2) };
 
     const bollinger = {
-      upper: bb.upper,
-      middle: bb.middle,
-      lower: bb.lower
-    };
+      upper: bb.upper.toFixed(decimals),
+      middle: bb.middle.toFixed(decimals),
+      lower: bb.lower.toFixed(decimals)
+};
 
-    const psarValue = psar;
+    const psarValue = psar.toFixed(decimals);
 
     return {
       decimals,
