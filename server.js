@@ -562,7 +562,7 @@ if (bearishPenalty > 0) {
 
     if (isBullish || isBearish) {
       signal = isBullish ? '✅ Enter Long' : '✅ Enter Short';
-      notes = `Score: ${score}/17${thresholdNote}`;
+      notes = `Score: ${score}/18${thresholdNote}`;
       if (reasons.length > 0) {
         notes += `\nTop Reasons:\n- ${reasons.slice(0, 3).join('\n- ')}`;
       }
@@ -680,7 +680,7 @@ setInterval(async () => {
   for (const symbol of symbols) {
     cachedData[symbol] = await getData(symbol);
   }
-}, 120000); // 2 min
+}, 180000); // 3 min
 
 // Initial cache
 (async () => {
