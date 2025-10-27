@@ -142,7 +142,7 @@ async function sendTelegramNotification(firstMessage, secondMessage, symbol) {
       const response = await withTimeout(axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
         chat_id: targetChatId, text, parse_mode: 'Markdown'
       }), 5000);
-      logToFile(symbol, `Telegram sent to ${targetChatId}`, 'telegram');
+      logToFile([symbol], `Telegram sent to ${targetChatId}`, 'telegram');
       return response.data.result.message_id;
     };
     const firstMsgId = await sendSingle(firstMessage);
@@ -151,7 +151,7 @@ async function sendTelegramNotification(firstMessage, secondMessage, symbol) {
         await withTimeout(axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/forwardMessage`, {
           chat_id: CHANNEL_ID, from_chat_id: CHAT_ID, message_id: firstMsgId
         }), 5000);
-        logToFile(symbol, 'Forwarded to channel', 'telegram');
+        logToFile([symbol], 'Forwarded to channel', 'telegram');
       } catch (fwdError) {
         console.error(`Forward error ${symbol}:`, fwdError.message);
       }
@@ -343,7 +343,7 @@ async function getData(symbol) {
         lastNotificationTime[symbol] = now;
         lastSignalTime[symbol] = now;
         sendCounts[symbol]++;
-        logToFile(symbol, `Signal sent, count ${sendCounts[symbol]}`, 'signal');
+        logToFile([symbol], `Signal sent, count ${sendCounts[symbol]}`, 'signal');
         if (sendCounts[symbol] === 6) {
           if (pausedQueue.length > 0) {
             let resetSym = pausedQueue.shift();
@@ -353,7 +353,7 @@ async function getData(symbol) {
           pausedQueue.push(symbol);
         }
       } else if (sendCounts[symbol] >= 6) {
-        logToFile(symbol, 'Limit reached', 'limit');
+        logToFile([symbol], 'Limit reached', 'limit');
       } else if (!signal.startsWith('✅')) {
         previousSignal[symbol] = signal;
       }
@@ -373,7 +373,7 @@ async function getData(symbol) {
           reasons: { adx: adx.toFixed(2), rsi: rsi.toFixed(2), atr: atr.toFixed(2), cmf: cmf.toFixed(2), macd: macd.MACD.toFixed(2) },
           levels: { entry, tp1, tp2, sl, positionSize }
         };
-        logToFile(symbol, JSON.stringify(log, null, 2), 'TRADE');
+        logToFile([symbol], JSON.stringify(log, null, 2), 'TRADE');
       }
       return {
         decimals,
