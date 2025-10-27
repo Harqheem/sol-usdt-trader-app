@@ -19,8 +19,9 @@ function updateUI(data) {
   document.getElementById('sma200').textContent = data.movingAverages.sma200.toFixed(dec);
   const atrEl = document.getElementById('atr');
   atrEl.textContent = data.volatility.atr.toFixed(dec);
-  if (data.volatility.atr > 2) atrEl.style.color = 'green';
-  else if (data.volatility.atr < 0.5) atrEl.style.color = 'red';
+  const atrPercent = (data.volatility.atr / data.core.currentPrice) * 100;
+  if (atrPercent > 2) atrEl.style.color = 'green';      // >2% volatility
+  else if (atrPercent < 0.5) atrEl.style.color = 'red'; // <0.5% volatility
   else atrEl.style.color = 'orange';
   const adxEl = document.getElementById('adx');
   adxEl.textContent = data.volatility.adx.toFixed(2);
@@ -100,7 +101,7 @@ document.getElementById('symbol-select').addEventListener('change', (e) => {
 
 // Initial and intervals
 fetchData();
-setInterval(fetchData, 300000); // 5 min full refresh
+setInterval(fetchData, 180000); // 3 min full refresh
 setInterval(fetchPrice, 1000); // 1 sec price
 
 document.getElementById('copy-btn').addEventListener('click', () => {
