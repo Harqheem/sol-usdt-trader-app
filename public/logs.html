@@ -40,29 +40,26 @@
       <p>Custom Leverage: <input type="number" id="custom-leverage" value="10" min="1"></p>
       <p>Custom Total Net PnL (%): <span id="custom-total-pnl">0.00</span>%</p>
     </div>
-    <table id="signals-table" style="width:100%; border-collapse:collapse;">
+    <table id="signals-table" class="minimal-table">
       <thead>
         <tr>
-          <th>Timestamp</th>
+          <th>Time</th>
           <th>Symbol</th>
           <th>Signal</th>
-          <th>Notes</th>
-          <th>Entry</th>
           <th>TP1</th>
           <th>TP2</th>
           <th>SL</th>
-          <th>Position Size</th>
           <th>Status</th>
-          <th>Open Time</th>
-          <th>Close Time</th>
-          <th>Exit Price</th>
           <th>Raw PnL (%)</th>
-          <th>Net PnL (%)</th>
-          <th>Custom Net PnL (%)</th>
         </tr>
       </thead>
       <tbody></tbody>
     </table>
+    <!-- Side sheet modal -->
+    <div id="side-sheet" class="side-sheet">
+      <button id="close-sheet">Close</button>
+      <div id="sheet-content"></div>
+    </div>
   </div>
   <script src="logs_script.js"></script>
 </body>
