@@ -78,7 +78,10 @@ function updateUI(data) {
       const low = safeFormat(candle.ohlc.low, dec);
       const close = safeFormat(candle.ohlc.close, dec);
       const volume = safeFormat(candle.ohlc.volume, 0);
-      li.textContent = `O: ${open} H: ${high} L: ${low} C: ${close} V: ${volume}`;
+      li.textContent = `O: ${open} H: ${high} L: ${low} C: ${close}`;
+      if (volume !== 'N/A') {
+        li.textContent += ` V: ${volume}`;
+      }
       if (safeParse(close) > safeParse(open)) {
         li.style.borderLeftColor = '#10b981'; // Green for bullish
       } else {
