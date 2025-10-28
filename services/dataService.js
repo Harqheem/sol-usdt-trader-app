@@ -3,7 +3,7 @@ const TI = require('technicalindicators');
 const { sendTelegramNotification } = require('./notificationService');
 const utils = require('../utils');
 const config = require('../config');
-
+const { logSignal } = require('./logsService');
 const client = Binance();
 const { symbols, bullishPatterns, bearishPatterns } = config;
 

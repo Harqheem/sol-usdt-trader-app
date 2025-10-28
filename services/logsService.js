@@ -106,6 +106,3 @@ process.on('SIGTERM', () => db.close());
 process.on('SIGINT', () => db.close());
 
 module.exports = { logSignal, getSignals };
-
-// Test connection (remove after testing)
-console.log('Testing DB connection...');
