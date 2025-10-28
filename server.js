@@ -1,7 +1,6 @@
 const express = require('express');
 const routes = require('./routes');
 const { initDataService, updateCache } = require('./services/dataService');
-const { updateTradeStatus } = require('./services/monitorService');
 const config = require('./config');
 require('dotenv').config();
 
@@ -12,6 +11,7 @@ app.use(express.static('public'));
 app.use(routes);
 
 let isShuttingDown = false;
+let server; // Declare here
 
 setInterval(updateCache, 300000);
 setInterval(() => {
@@ -26,7 +26,7 @@ async function gracefulShutdown() {
   if (isShuttingDown) return;
   isShuttingDown = true;
   console.log('\n🛑 Shutting down gracefully...');
-  server.close(() => console.log('✅ HTTP server closed'));
+  if (server) server.close(() => console.log('✅ HTTP server closed'));
   await new Promise(resolve => setTimeout(resolve, 5000));
   console.log('✅ Shutdown complete');
   process.exit(0);
@@ -36,7 +36,7 @@ async function gracefulShutdown() {
   try {
     await initDataService();
     const port = process.env.PORT || 3000;
-    const server = app.listen(port, () => {
+    server = app.listen(port, () => { // Assign here
       console.log(`✅ Server running on http://localhost:${port}`);
       console.log(`📊 Monitoring ${symbols.length} symbols: ${symbols.join(', ')}`);
       console.log(`🔄 Cache updates every 5 minutes`);
