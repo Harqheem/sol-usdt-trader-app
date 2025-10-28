@@ -479,36 +479,26 @@ app.get('/health', (req, res) => {
 app.get('/data', async (req, res) => {
   const symbol = req.query.symbol;
 
-  // If no symbol provided, show summary
   if (!symbol) {
     return res.json({
-      symbols,
+      symbols: symbols,
       count: symbols.length,
       note: 'Specify ?symbol=SOLUSDT to get full data'
     });
   }
 
-  // Validate symbol
   if (!symbols.includes(symbol)) {
     return res.status(400).json({ error: 'Invalid symbol' });
   }
 
-  // Serve from cache if available
-  const cached = cachedData[symbol];
-  if (cached && !cached.error) {
-    return res.json(cached);
+  // Only serve cached data — never call getData() here
+  if (cachedData[symbol] && !cachedData[symbol].error) {
+    res.json({ source: 'cache', updatedAt: new Date().toISOString(), ...cachedData[symbol] });
+  } else if (cachedData[symbol] && cachedData[symbol].error === 'Loading...') {
+    res.status(503).json({ error: 'Data loading, try again shortly' });
+  } else {
+    res.status(503).json({ error: `${symbol} data not ready. Please wait for next cache update.` });
   }
-
-  // If still loading
-  if (cached && cached.error === 'Loading...') {
-    return res.status(503).json({ error: 'Data is still loading, please try again soon' });
-  }
-
-  // ❌ Remove live fetching here — no direct call to getData()
-  // Instead, tell the client to wait for the next update cycle
-  return res.status(503).json({ 
-    error: 'Data not available yet. Please wait for the next cache update.' 
-  });
 });
 
 
