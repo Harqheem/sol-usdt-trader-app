@@ -18,27 +18,38 @@
         <option value="">All</option>
         <!-- Symbols will be populated by JS -->
       </select>
+      <select id="status-filter">
+  <option value="">All Statuses</option>
+  <option value="pending">Pending</option>
+  <option value="opened">Opened</option>
+  <option value="closed">Closed</option>
+  <option value="failed">Failed</option>
+</select>
       <input type="date" id="from-date">
       <button id="refresh-btn">Refresh</button>
     </div>
     <table id="signals-table" style="width:100%; border-collapse:collapse;">
       <thead>
         <tr>
-          <th>Timestamp</th>
-          <th>Symbol</th>
-          <th>Signal</th>
-          <th>Notes</th>
-          <th>Entry</th>
-          <th>TP1</th>
-          <th>TP2</th>
-          <th>SL</th>
-          <th>Position Size</th>
-          <th>Status</th>
+            <th>Timestamp</th>
+            <th>Symbol</th>
+            <th>Signal</th>
+            <th>Notes</th>
+            <th>Entry</th>
+            <th>TP1</th>
+            <th>TP2</th>
+            <th>SL</th>
+            <th>Position Size</th>
+            <th>Status</th>
+            <th>Open Time</th>
+            <th>Close Time</th>
+            <th>Exit Price</th>
+            <th>PnL (%)</th>
         </tr>
       </thead>
       <tbody></tbody>
     </table>
-  </div>
+      </div>
   <script src="logs_script.js"></script>
 </body>
 </html>

@@ -1,6 +1,7 @@
 const express = require('express');
 const routes = require('./routes');
 const { initDataService, updateCache } = require('./services/dataService');
+const { updateTradeStatus } = require('./services/monitorService');
 const config = require('./config');
 require('dotenv').config();
 

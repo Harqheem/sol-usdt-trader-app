@@ -38,6 +38,10 @@ async function fetchSignals() {
         <td>${signal.tp2 ? signal.tp2.toFixed(4) : '-'}</td>
         <td>${signal.sl ? signal.sl.toFixed(4) : '-'}</td>
         <td>${signal.position_size ? signal.position_size.toFixed(2) : '-'}</td>
+        <td>${signal.open_time || '-'}</td>
+        <td>${signal.close_time || '-'}</td>
+        <td>${signal.exit_price ? signal.exit_price.toFixed(4) : '-'}</td>
+        <td>${signal.pnl_percentage ? signal.pnl_percentage.toFixed(2) + '%' : '-'}</td>
         <td>${signal.status}</td>
       `;
       tableBody.appendChild(row);

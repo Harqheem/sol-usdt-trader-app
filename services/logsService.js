@@ -39,6 +39,11 @@ db.serialize(() => {
     } else {
       console.log('✅ Signals table ready');
     }
+    // Add new columns if they don't exist (run these once or handle errors)
+db.run('ALTER TABLE signals ADD COLUMN open_time TEXT', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add open_time error:', err.message); });
+db.run('ALTER TABLE signals ADD COLUMN close_time TEXT', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add close_time error:', err.message); });
+db.run('ALTER TABLE signals ADD COLUMN exit_price REAL', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add exit_price error:', err.message); });
+db.run('ALTER TABLE signals ADD COLUMN pnl_percentage REAL', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add pnl_percentage error:', err.message); });
   });
 });
 

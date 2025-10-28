@@ -575,13 +575,6 @@ async function getData(symbol) {
         console.log(symbol, JSON.stringify(log, null, 2), 'TRADE');
       }
 
-// Temporary test: Simulate a signal
-const testSignal = 'Buy'; // Or your signal var
-const testNotes = 'Test note';
-// ... define entry, tp1, etc.
-await sendTelegramNotification('Test First', 'Test Second', symbol);
-await logSignal(symbol, { signal: testSignal, notes: testNotes, entry: 100.0, tp1: 110.0, tp2: 120.0, sl: 90.0, positionSize: 10.0 });
-
       // Format all numeric values for display
       const formattedLast5 = last15Candles.slice(-5).map(candle => ({
         startTime: candle.startTime,
