@@ -253,15 +253,20 @@
       font-weight: bold;
     }
 
-    /* Candles Chart */
-    #candles-chart {
-      height: 200px;
-      display: flex;
-      align-items: flex-end;
+    /* Candles List */
+    .candles-list {
+      list-style: none;
+      padding: 0;
+    }
+
+    .candles-list li {
+      padding: 10px;
       background: #f9f9f9;
       border-radius: 6px;
-      padding: 10px;
-      position: relative;
+      margin-bottom: 8px;
+      font-size: 13px;
+      line-height: 1.5;
+      border-left: 3px solid #e0e0e0;
     }
 
     /* Status Badges */
@@ -469,7 +474,9 @@
       <!-- Last 5 Candles -->
       <div class="card">
         <h3>🕯️ Recent Candles</h3>
-        <div id="candles-chart"></div>
+        <ul id="last5-candles" class="candles-list">
+          <li class="loading">Loading candle data...</li>
+        </ul>
       </div>
     </div>
   </div>

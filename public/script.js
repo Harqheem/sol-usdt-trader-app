@@ -65,54 +65,26 @@ function updateUI(data) {
   document.getElementById('psar-pos').textContent = data.psar.position;
   document.getElementById('candle-pattern').textContent = data.candlePattern;
   
-  // Update bar chart for candles
-  const chart = document.getElementById('candles-chart');
-  chart.innerHTML = '';
+  // Update candles list
+  const candlesList = document.getElementById('last5-candles');
+  candlesList.innerHTML = '';
   const reversedCandles = [...data.last5Candles].reverse();
   
   if (reversedCandles.length > 0) {
-    // Find min and max prices across all candles
-    let minPrice = Math.min(...reversedCandles.map(c => Math.min(safeParse(c.ohlc.low), safeParse(c.ohlc.open), safeParse(c.ohlc.close))));
-    let maxPrice = Math.max(...reversedCandles.map(c => Math.max(safeParse(c.ohlc.high), safeParse(c.ohlc.open), safeParse(c.ohlc.close))));
-    let priceRange = maxPrice - minPrice || 1; // Avoid division by zero
-    
     reversedCandles.forEach((candle) => {
-      const open = safeParse(candle.ohlc.open);
-      const close = safeParse(candle.ohlc.close);
-      const high = safeParse(candle.ohlc.high);
-      const low = safeParse(candle.ohlc.low);
-      
-      const candleDiv = document.createElement('div');
-      candleDiv.style.width = `calc(100% / ${reversedCandles.length})`;
-      candleDiv.style.height = '100%';
-      candleDiv.style.position = 'relative';
-      candleDiv.style.display = 'flex';
-      candleDiv.style.flexDirection = 'column';
-      candleDiv.style.alignItems = 'center';
-      candleDiv.style.justifyContent = 'flex-end';
-      
-      // Wick (full high to low)
-      const wick = document.createElement('div');
-      wick.style.position = 'absolute';
-      wick.style.width = '2px';
-      wick.style.background = '#333';
-      wick.style.top = `${((maxPrice - high) / priceRange) * 100}%`;
-      wick.style.height = `${((high - low) / priceRange) * 100}%`;
-      
-      // Body
-      const body = document.createElement('div');
-      body.style.position = 'absolute';
-      body.style.width = '10px';
-      body.style.background = close > open ? '#10b981' : '#ef4444';
-      body.style.top = `${((maxPrice - Math.max(open, close)) / priceRange) * 100}%`;
-      body.style.height = `${(Math.abs(close - open) / priceRange) * 100}%`;
-      
-      candleDiv.appendChild(wick);
-      candleDiv.appendChild(body);
-      chart.appendChild(candleDiv);
+      const li = document.createElement('li');
+      const open = safeFormat(candle.ohlc.open, dec);
+      const high = safeFormat(candle.ohlc.high, dec);
+      const low = safeFormat(candle.ohlc.low, dec);
+      const close = safeFormat(candle.ohlc.close, dec);
+      li.textContent = `O: ${open} H: ${high} L: ${low} C: ${close}`;
+      if (safeParse(close) > safeParse(open)) {
+        li.style.borderLeftColor = '#10b981'; // Green for bullish
+      } else {
+        li.style.borderLeftColor = '#ef4444'; // Red for bearish
+      }
+      candlesList.appendChild(li);
     });
-    
-    chart.classList.add('loaded');
   }
   
   document.getElementById('trend1h').textContent = data.higherTF.trend1h;
