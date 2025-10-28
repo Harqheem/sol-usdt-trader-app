@@ -82,9 +82,9 @@ function renderTableAndSummary() {
     `;
     tableBody.appendChild(row);
   });
-  // Calculate summary (only for closed trades)
+  // Calculate summary
+  const totalTrades = currentData.length; // All filtered trades
   const closedTrades = currentData.filter(s => s.status === 'closed');
-  const totalTrades = closedTrades.length;
   const totalRawPnl = closedTrades.reduce((sum, s) => sum + (s.raw_pnl_percentage || 0), 0);
   const totalNetPnl = closedTrades.reduce((sum, s) => sum + (s.pnl_percentage || 0), 0);
   const customTotalNetPnl = closedTrades.reduce((sum, s) => sum + calculateCustomNetPnl(s), 0);
