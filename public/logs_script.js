@@ -2,7 +2,7 @@ const tableBody = document.querySelector('#signals-table tbody');
 const symbolFilter = document.getElementById('symbol-filter');
 const fromDateInput = document.getElementById('from-date');
 const refreshBtn = document.getElementById('refresh-btn');
-const statusFilter = document.getElementById('status-filter'); // Added here to fix ReferenceError
+const statusFilter = document.getElementById('status-filter');
 
 // Populate symbol options from config (hardcoded for now)
 const symbols = ['SOLUSDT', 'XRPUSDT', 'ADAUSDT', 'BNBUSDT', 'DOGEUSDT'];
@@ -22,15 +22,17 @@ function getStatusColor(status) {
 }
 
 async function fetchSignals() {
-  tableBody.innerHTML = '<tr><td colspan="14">Loading...</td></tr>'; // Updated colspan
+  tableBody.innerHTML = '<tr><td colspan="14">Loading...</td></tr>';
   try {
     let url = '/signals?limit=100';
     if (symbolFilter.value) url += `&symbol=${symbolFilter.value}`;
     if (fromDateInput.value) url += `&fromDate=${fromDateInput.value}T00:00:00Z`;
-    if (statusFilter && statusFilter.value) url += `&status=${statusFilter.value}`; // Safe check
+    if (statusFilter && statusFilter.value) url += `&status=${statusFilter.value}`;
+    console.log('Fetching URL:', url); // Debug
     const res = await fetch(url);
     if (!res.ok) throw new Error('Fetch failed');
     const data = await res.json();
+    console.log('Received data:', data); // Debug
     tableBody.innerHTML = '';
     if (data.length === 0) {
       tableBody.innerHTML = '<tr><td colspan="14">No logs found</td></tr>';
@@ -66,7 +68,7 @@ async function fetchSignals() {
 refreshBtn.addEventListener('click', fetchSignals);
 symbolFilter.addEventListener('change', fetchSignals);
 fromDateInput.addEventListener('change', fetchSignals);
-if (statusFilter) statusFilter.addEventListener('change', fetchSignals); // Safe addition
+if (statusFilter) statusFilter.addEventListener('change', fetchSignals);
 
 // Initial fetch
 fetchSignals();

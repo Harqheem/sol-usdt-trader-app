@@ -31,7 +31,12 @@ db.serialize(() => {
       tp2 REAL,
       sl REAL,
       position_size REAL,
-      status TEXT DEFAULT 'sent'
+      status TEXT DEFAULT 'pending',
+      error_message TEXT,
+      open_time TEXT,
+      close_time TEXT,
+      exit_price REAL,
+      pnl_percentage REAL
     )
   `, (err) => {
     if (err) {
@@ -39,24 +44,24 @@ db.serialize(() => {
     } else {
       console.log('✅ Signals table ready');
     }
-    // Add new columns if they don't exist (run these once or handle errors)
-db.run('ALTER TABLE signals ADD COLUMN open_time TEXT', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add open_time error:', err.message); });
-db.run('ALTER TABLE signals ADD COLUMN close_time TEXT', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add close_time error:', err.message); });
-db.run('ALTER TABLE signals ADD COLUMN exit_price REAL', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add exit_price error:', err.message); });
-db.run('ALTER TABLE signals ADD COLUMN pnl_percentage REAL', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add pnl_percentage error:', err.message); });
   });
+  // Add columns if missing (ignore duplicate errors)
+  db.run('ALTER TABLE signals ADD COLUMN open_time TEXT', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add open_time error:', err.message); });
+  db.run('ALTER TABLE signals ADD COLUMN close_time TEXT', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add close_time error:', err.message); });
+  db.run('ALTER TABLE signals ADD COLUMN exit_price REAL', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add exit_price error:', err.message); });
+  db.run('ALTER TABLE signals ADD COLUMN pnl_percentage REAL', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add pnl_percentage error:', err.message); });
 });
 
-async function logSignal(symbol, signalData) {
+async function logSignal(symbol, signalData, status = 'pending', errorMessage = null) {
   return new Promise((resolve, reject) => {
     const { signal, notes, entry, tp1, tp2, sl, positionSize } = signalData;
     const timestamp = new Date().toISOString();
     const stmt = db.prepare(`
-      INSERT INTO signals (timestamp, symbol, signal_type, notes, entry, tp1, tp2, sl, position_size, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO signals (timestamp, symbol, signal_type, notes, entry, tp1, tp2, sl, position_size, status, error_message, open_time, close_time, exit_price, pnl_percentage)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
-      timestamp, symbol, signal || 'Unknown', notes || null, entry || null, tp1 || null, tp2 || null, sl || null, positionSize || null, 'sent'
+      timestamp, symbol, signal || 'Unknown', notes || null, entry || null, tp1 || null, tp2 || null, sl || null, positionSize || null, status, errorMessage || null, null, null, null, null
     , function (err) {
       if (err) {
         console.error(`Log error for ${symbol}:`, err.message);
@@ -72,6 +77,7 @@ async function logSignal(symbol, signalData) {
 
 async function getSignals(options = {}) {
   const { symbol, limit = 50, fromDate, status } = options;
+  console.log('getSignals called with options:', options); // Debug
   let query = 'SELECT * FROM signals';
   const params = [];
   const whereClauses = [];
@@ -97,9 +103,9 @@ async function getSignals(options = {}) {
 
   return new Promise((resolve, reject) => {
     db.all(query, params, (err, rows) => {
-      if (err) {
-        reject(err);
-      } else {
+      if (err) reject(err);
+      else {
+        console.log('Returning rows:', rows.length); // Debug
         resolve(rows);
       }
     });
