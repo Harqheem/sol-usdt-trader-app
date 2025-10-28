@@ -1,47 +1,79 @@
 let currentData = {};
 let previousPrice = null;
 let selectedSymbol = 'SOLUSDT';
-let currentDecimals = 2; // Default to 2 until data loads
+let currentDecimals = 2;
 
 function updateUI(data) {
   if (data.error) {
     console.error('Data error:', data.error);
-    alert('Failed to load data: ' + data.error);
+    document.getElementById('signal').textContent = '❌ Error Loading Data';
+    document.getElementById('signal').style.color = 'red';
+    document.getElementById('notes').textContent = data.error;
     return;
   }
+  
   const dec = data.decimals || 2;
-  currentDecimals = dec; // Update global decimals
+  currentDecimals = dec;
+  
+  // Helper to safely format values (handles both strings and numbers)
+  const safeFormat = (val, decimals) => {
+    if (typeof val === 'string') return val; // Already formatted
+    if (typeof val === 'number') return val.toFixed(decimals);
+    return 'N/A';
+  };
+  
+  // Helper to safely parse for comparison
+  const safeParse = (val) => {
+    return typeof val === 'string' ? parseFloat(val) : val;
+  };
+  
+  const currentPrice = safeParse(data.core.currentPrice);
+  
   document.getElementById('timestamp').textContent = `Last Close: ${data.core.timestamp}`;
-  document.getElementById('ema7').textContent = `${data.movingAverages.ema7.toFixed(dec)} ${data.core.currentPrice > data.movingAverages.ema7 ? '↑' : '↓'}`;
-  document.getElementById('ema25').textContent = `${data.movingAverages.ema25.toFixed(dec)} ${data.core.currentPrice > data.movingAverages.ema25 ? '↑' : '↓'}`;
-  document.getElementById('ema99').textContent = `${data.movingAverages.ema99.toFixed(dec)} ${data.core.currentPrice > data.movingAverages.ema99 ? '↑' : '↓'}`;
-  document.getElementById('sma50').textContent = data.movingAverages.sma50.toFixed(dec);
-  document.getElementById('sma200').textContent = data.movingAverages.sma200.toFixed(dec);
+  
+  const ema7 = safeParse(data.movingAverages.ema7);
+  document.getElementById('ema7').textContent = `${safeFormat(data.movingAverages.ema7, dec)} ${currentPrice > ema7 ? '↑' : '↓'}`;
+  
+  const ema25 = safeParse(data.movingAverages.ema25);
+  document.getElementById('ema25').textContent = `${safeFormat(data.movingAverages.ema25, dec)} ${currentPrice > ema25 ? '↑' : '↓'}`;
+  
+  const ema99 = safeParse(data.movingAverages.ema99);
+  document.getElementById('ema99').textContent = `${safeFormat(data.movingAverages.ema99, dec)} ${currentPrice > ema99 ? '↑' : '↓'}`;
+  
+  document.getElementById('sma50').textContent = safeFormat(data.movingAverages.sma50, dec);
+  document.getElementById('sma200').textContent = safeFormat(data.movingAverages.sma200, dec);
+  
   const atrEl = document.getElementById('atr');
-  atrEl.textContent = data.volatility.atr.toFixed(dec);
-  const atrPercent = (data.volatility.atr / data.core.currentPrice) * 100;
-  if (atrPercent > 2) atrEl.style.color = 'green';      // >2% volatility
-  else if (atrPercent < 0.5) atrEl.style.color = 'red'; // <0.5% volatility
+  const atr = safeParse(data.volatility.atr);
+  atrEl.textContent = safeFormat(data.volatility.atr, dec);
+  const atrPercent = (atr / currentPrice) * 100;
+  if (atrPercent > 2) atrEl.style.color = 'green';
+  else if (atrPercent < 0.5) atrEl.style.color = 'red';
   else atrEl.style.color = 'orange';
+  
   const adxEl = document.getElementById('adx');
-  adxEl.textContent = data.volatility.adx.toFixed(2);
-  if (data.volatility.adx > 30) adxEl.style.color = 'green';
-  else if (data.volatility.adx < 20) adxEl.style.color = 'red';
+  const adx = safeParse(data.volatility.adx);
+  adxEl.textContent = safeFormat(data.volatility.adx, 2);
+  if (adx > 30) adxEl.style.color = 'green';
+  else if (adx < 20) adxEl.style.color = 'red';
   else adxEl.style.color = 'orange';
-  document.getElementById('bb-upper').textContent = data.bollinger.upper.toFixed(dec);
-  document.getElementById('bb-middle').textContent = data.bollinger.middle.toFixed(dec);
-  document.getElementById('bb-lower').textContent = data.bollinger.lower.toFixed(dec);
-  document.getElementById('psar').textContent = data.psar.value.toFixed(dec);
+  
+  document.getElementById('bb-upper').textContent = safeFormat(data.bollinger.upper, dec);
+  document.getElementById('bb-middle').textContent = safeFormat(data.bollinger.middle, dec);
+  document.getElementById('bb-lower').textContent = safeFormat(data.bollinger.lower, dec);
+  document.getElementById('psar').textContent = safeFormat(data.psar.value, dec);
   document.getElementById('psar-pos').textContent = data.psar.position;
   document.getElementById('candle-pattern').textContent = data.candlePattern;
+  
   const candlesList = document.getElementById('last5-candles');
   candlesList.innerHTML = '';
   const reversedCandles = [...data.last5Candles].reverse();
   reversedCandles.forEach((candle, index) => {
     const li = document.createElement('li');
-    li.textContent = `Candle ${index + 1}: (${candle.startTime} - ${candle.endTime}), Open=${candle.ohlc.open.toFixed(dec)}, Close=${candle.ohlc.close.toFixed(dec)}, Low=${candle.ohlc.low.toFixed(dec)}, High=${candle.ohlc.high.toFixed(dec)}, volume=${candle.volume.toFixed(0)}`;
+    li.textContent = `Candle ${index + 1}: (${candle.startTime} - ${candle.endTime}), Open=${safeFormat(candle.ohlc.open, dec)}, Close=${safeFormat(candle.ohlc.close, dec)}, Low=${safeFormat(candle.ohlc.low, dec)}, High=${safeFormat(candle.ohlc.high, dec)}, volume=${candle.volume.toFixed(0)}`;
     candlesList.appendChild(li);
   });
+  
   document.getElementById('trend1h').textContent = data.higherTF.trend1h;
   document.getElementById('trend4h').textContent = data.higherTF.trend4h;
   document.getElementById('signal').textContent = data.signals.signal;
@@ -62,17 +94,26 @@ async function fetchPrice() {
     const data = await res.json();
     if (data.error) throw new Error(data.error);
 
+    const decimals = data.decimals || currentDecimals;
     const priceEl = document.getElementById('current-price');
     const newPrice = data.currentPrice;
     let arrow = '';
+    
     if (previousPrice !== null) {
-      if (newPrice > previousPrice) arrow = ' ↑', priceEl.style.color = 'green';
-      else if (newPrice < previousPrice) arrow = ' ↓', priceEl.style.color = 'red';
-      else priceEl.style.color = 'black';
+      if (newPrice > previousPrice) {
+        arrow = ' ↑';
+        priceEl.style.color = 'green';
+      } else if (newPrice < previousPrice) {
+        arrow = ' ↓';
+        priceEl.style.color = 'red';
+      } else {
+        priceEl.style.color = 'black';
+      }
     } else {
       priceEl.style.color = 'black';
     }
-    priceEl.textContent = `Current Price: ${newPrice.toFixed(currentDecimals)}${arrow}`;
+    
+    priceEl.textContent = `Current Price: ${newPrice.toFixed(decimals)}${arrow}`;
     document.getElementById('current-time').textContent = `Current Time: ${new Date().toLocaleTimeString()}`;
     previousPrice = newPrice;
   } catch (err) {
@@ -89,6 +130,8 @@ async function fetchData() {
     fetchPrice();
   } catch (err) {
     console.error('Data fetch error:', err);
+    document.getElementById('signal').textContent = '❌ Network Error';
+    document.getElementById('notes').textContent = 'Failed to fetch data. Check console for details.';
   }
 }
 
