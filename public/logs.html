@@ -1,12 +1,325 @@
-<!-- public/logs.html -->
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Signal Logs</title>
-  <link rel="stylesheet" href="styles.css"> <!-- Reuse your CSS -->
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+      background: #ffffff;
+      color: #1a1a1a;
+      line-height: 1.6;
+    }
+
+    .dashboard {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 40px 24px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 32px;
+      border-bottom: 1px solid #e5e5e5;
+      margin-bottom: 32px;
+    }
+
+    .header h1 {
+      font-size: 28px;
+      font-weight: 600;
+      letter-spacing: -0.5px;
+    }
+
+    .header a {
+      color: #1a1a1a;
+      text-decoration: none;
+      font-size: 14px;
+      padding: 8px 16px;
+      border: 1px solid #e5e5e5;
+      border-radius: 6px;
+      transition: all 0.2s ease;
+    }
+
+    .header a:hover {
+      background: #f5f5f5;
+    }
+
+    .symbol-selector {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 20px 0;
+      margin-bottom: 24px;
+      border-bottom: 1px solid #e5e5e5;
+      flex-wrap: wrap;
+    }
+
+    .symbol-selector h3 {
+      font-size: 14px;
+      font-weight: 500;
+      color: #666;
+      margin-right: 8px;
+    }
+
+    select, input[type="date"], input[type="number"] {
+      padding: 8px 12px;
+      border: 1px solid #e5e5e5;
+      border-radius: 6px;
+      font-size: 14px;
+      background: #ffffff;
+      color: #1a1a1a;
+      outline: none;
+      transition: border-color 0.2s ease;
+    }
+
+    select:focus, input[type="date"]:focus, input[type="number"]:focus {
+      border-color: #1a1a1a;
+    }
+
+    select {
+      cursor: pointer;
+      min-width: 140px;
+    }
+
+    input[type="number"] {
+      width: 100px;
+    }
+
+    button {
+      padding: 8px 20px;
+      background: #1a1a1a;
+      color: #ffffff;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: opacity 0.2s ease;
+    }
+
+    button:hover {
+      opacity: 0.85;
+    }
+
+    .summary-panel {
+      background: #fafafa;
+      padding: 24px;
+      border-radius: 8px;
+      margin-bottom: 32px;
+      border: 1px solid #e5e5e5;
+    }
+
+    .summary-panel h3 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+
+    .summary-panel p {
+      font-size: 14px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .summary-panel span {
+      font-weight: 600;
+      color: #1a1a1a;
+    }
+
+    .minimal-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    .minimal-table thead {
+      border-bottom: 2px solid #1a1a1a;
+    }
+
+    .minimal-table th {
+      text-align: left;
+      padding: 12px 16px;
+      font-weight: 600;
+      font-size: 13px;
+      letter-spacing: 0.3px;
+      color: #1a1a1a;
+    }
+
+    .minimal-table tbody tr {
+      border-bottom: 1px solid #e5e5e5;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    .minimal-table tbody tr:hover {
+      background: #fafafa;
+    }
+
+    .minimal-table td {
+      padding: 16px;
+      color: #333;
+    }
+
+    .minimal-table tbody tr:last-child {
+      border-bottom: none;
+    }
+
+    /* Status badges */
+    .status-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 500;
+      border: 1px solid;
+    }
+
+    .status-sent {
+      background: #f0f9ff;
+      border-color: #0ea5e9;
+      color: #0369a1;
+    }
+
+    .status-pending {
+      background: #fefce8;
+      border-color: #facc15;
+      color: #854d0e;
+    }
+
+    .status-opened {
+      background: #f0fdf4;
+      border-color: #22c55e;
+      color: #15803d;
+    }
+
+    .status-closed {
+      background: #f5f5f5;
+      border-color: #737373;
+      color: #404040;
+    }
+
+    .status-failed {
+      background: #fef2f2;
+      border-color: #ef4444;
+      color: #991b1b;
+    }
+
+    /* Signal direction */
+    .signal-long {
+      color: #15803d;
+      font-weight: 500;
+    }
+
+    .signal-short {
+      color: #991b1b;
+      font-weight: 500;
+    }
+
+    /* PnL colors */
+    .pnl-positive {
+      color: #15803d;
+      font-weight: 500;
+    }
+
+    .pnl-negative {
+      color: #991b1b;
+      font-weight: 500;
+    }
+
+    /* Side sheet */
+    .side-sheet {
+      position: fixed;
+      right: -400px;
+      top: 0;
+      width: 400px;
+      height: 100vh;
+      background: #ffffff;
+      border-left: 1px solid #e5e5e5;
+      padding: 32px;
+      overflow-y: auto;
+      transition: right 0.3s ease;
+      z-index: 1000;
+    }
+
+    .side-sheet.active {
+      right: 0;
+    }
+
+    .side-sheet button {
+      margin-bottom: 24px;
+      background: #ffffff;
+      color: #1a1a1a;
+      border: 1px solid #e5e5e5;
+    }
+
+    .side-sheet button:hover {
+      background: #f5f5f5;
+      opacity: 1;
+    }
+
+    #sheet-content h3 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+
+    #sheet-content p {
+      font-size: 14px;
+      margin-bottom: 12px;
+      line-height: 1.6;
+    }
+
+    #sheet-content strong {
+      font-weight: 600;
+      color: #1a1a1a;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .dashboard {
+        padding: 24px 16px;
+      }
+
+      .header {
+        flex-direction: column;
+        gap: 16px;
+        align-items: flex-start;
+      }
+
+      .symbol-selector {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      select, input[type="date"] {
+        width: 100%;
+      }
+
+      .side-sheet {
+        width: 100%;
+        right: -100%;
+      }
+
+      .minimal-table {
+        font-size: 12px;
+      }
+
+      .minimal-table th,
+      .minimal-table td {
+        padding: 12px 8px;
+      }
+    }
+  </style>
 </head>
 <body>
   <div class="dashboard">
@@ -14,7 +327,7 @@
       <h1>Signal Logs</h1>
       <a href="/">Back to Dashboard</a>
     </div>
-    <div class="symbol-selector"> <!-- Filter controls -->
+    <div class="symbol-selector">
       <h3>Filter by Symbol</h3>
       <select id="symbol-filter">
         <option value="">All</option>
@@ -53,14 +366,34 @@
           <th>Raw PnL (%)</th>
         </tr>
       </thead>
-      <tbody></tbody>
+      <tbody>
+        <!-- Rows will be populated by JS -->
+      </tbody>
     </table>
-    <!-- Side sheet modal -->
     <div id="side-sheet" class="side-sheet">
       <button id="close-sheet">Close</button>
-      <div id="sheet-content"></div>
+      <div id="sheet-content">
+        <h3>Trade Details</h3>
+        <p><strong>Symbol:</strong> BTCUSDT</p>
+        <p><strong>Entry Price:</strong> 68,000</p>
+        <p><strong>Exit Price:</strong> 69,600</p>
+        <p><strong>Position Size:</strong> $1,000</p>
+        <p><strong>Leverage:</strong> 10x</p>
+        <p><strong>Raw PnL:</strong> <span class="pnl-positive">+2.35%</span></p>
+        <p><strong>Net PnL:</strong> <span class="pnl-positive">+2.15%</span></p>
+      </div>
     </div>
   </div>
-  <script src="logs_script.js"></script>
+  <script>
+    // Demo functionality for side sheet
+    document.getElementById('close-sheet').addEventListener('click', () => {
+      document.getElementById('side-sheet').classList.remove('active');
+    });
+
+    // Demo refresh button
+    document.getElementById('refresh-btn').addEventListener('click', () => {
+      console.log('Refreshing data...');
+    });
+  </script>
 </body>
 </html>
