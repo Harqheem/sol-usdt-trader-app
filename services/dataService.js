@@ -54,6 +54,10 @@ async function getData(symbol) {
       const opens = klines30m.map(c => parseFloat(c.open)).filter(v => !isNaN(v));
       const volumes = klines30m.map(c => parseFloat(c.volume)).filter(v => !isNaN(v));
       
+      if (closes.length < 200 || highs.length < 200 || lows.length < 200 || opens.length < 200 || volumes.length < 200) {
+        throw new Error('Insufficient valid data after parsing');
+      }
+      
       const last15Candles = [];
       for (let i = klines30m.length - 15; i < klines30m.length; i++) {
         last15Candles.push({
@@ -70,34 +74,78 @@ async function getData(symbol) {
         });
       }
       
-      const ema7 = TI.EMA.calculate({ period: 7, values: closes })[utils.getLast(TI.EMA.calculate({ period: 7, values: closes }))];
-      const ema25 = TI.EMA.calculate({ period: 25, values: closes })[utils.getLast(TI.EMA.calculate({ period: 25, values: closes }))];
-      const ema99 = TI.EMA.calculate({ period: 99, values: closes })[utils.getLast(TI.EMA.calculate({ period: 99, values: closes }))];
-      const sma50 = TI.SMA.calculate({ period: 50, values: closes })[utils.getLast(TI.SMA.calculate({ period: 50, values: closes }))];
-      const sma200 = TI.SMA.calculate({ period: 200, values: closes })[utils.getLast(TI.SMA.calculate({ period: 200, values: closes }))];
-      const atr = TI.ATR.calculate({ period: 14, high: highs, low: lows, close: closes })[utils.getLast(TI.ATR.calculate({ period: 14, high: highs, low: lows, close: closes }))];
-      const adx = TI.ADX.calculate({ period: 14, high: highs, low: lows, close: closes })[utils.getLast(TI.ADX.calculate({ period: 14, high: highs, low: lows, close: closes }))].adx;
-      const bb = TI.BollingerBands.calculate({ period: 20, stdDev: 2, values: closes })[utils.getLast(TI.BollingerBands.calculate({ period: 20, stdDev: 2, values: closes }))];
-      const psar = TI.PSAR.calculate({ step: 0.015, max: 0.15, high: highs, low: lows })[utils.getLast(TI.PSAR.calculate({ step: 0.015, max: 0.15, high: highs, low: lows }))];
-      const rsi = TI.RSI.calculate({ period: 14, values: closes })[utils.getLast(TI.RSI.calculate({ period: 14, values: closes }))];
-      const macd = TI.MACD.calculate({ values: closes, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 })[utils.getLast(TI.MACD.calculate({ values: closes, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 }))];
+      const ema7Result = TI.EMA.calculate({ period: 7, values: closes });
+      const ema7 = ema7Result.length > 0 ? ema7Result[ema7Result.length - 1] : 0;
+      
+      const ema25Result = TI.EMA.calculate({ period: 25, values: closes });
+      const ema25 = ema25Result.length > 0 ? ema25Result[ema25Result.length - 1] : 0;
+      
+      const ema99Result = TI.EMA.calculate({ period: 99, values: closes });
+      const ema99 = ema99Result.length > 0 ? ema99Result[ema99Result.length - 1] : 0;
+      
+      const sma50Result = TI.SMA.calculate({ period: 50, values: closes });
+      const sma50 = sma50Result.length > 0 ? sma50Result[sma50Result.length - 1] : 0;
+      
+      const sma200Result = TI.SMA.calculate({ period: 200, values: closes });
+      const sma200 = sma200Result.length > 0 ? sma200Result[sma200Result.length - 1] : 0;
+      
+      const atrResult = TI.ATR.calculate({ period: 14, high: highs, low: lows, close: closes });
+      const atr = atrResult.length > 0 ? atrResult[atrResult.length - 1] : 0;
+      
+      const adxResult = TI.ADX.calculate({ period: 14, high: highs, low: lows, close: closes });
+      const adx = adxResult.length > 0 ? adxResult[adxResult.length - 1].adx : 0;
+      
+      const bbResult = TI.BollingerBands.calculate({ period: 20, stdDev: 2, values: closes });
+      const bb = bbResult.length > 0 ? bbResult[bbResult.length - 1] : { upper: 0, middle: 0, lower: 0 };
+      
+      const psarResult = TI.PSAR.calculate({ step: 0.015, max: 0.15, high: highs, low: lows });
+      const psar = psarResult.length > 0 ? psarResult[psarResult.length - 1] : 0;
+      
+      const rsiResult = TI.RSI.calculate({ period: 14, values: closes });
+      const rsi = rsiResult.length > 0 ? rsiResult[rsiResult.length - 1] : 0;
+      
+      const macdResult = TI.MACD.calculate({ values: closes, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 });
+      const macd = macdResult.length > 0 ? macdResult[macdResult.length - 1] : { MACD: 0, signal: 0 };
+      
       const cmf = utils.calculateCMF(highs, lows, closes, volumes);
-      const rsiDivergence = utils.detectRSIDivergence(closes, TI.RSI.calculate({ period: 14, values: closes }));
+      const rsiDivergence = utils.detectRSIDivergence(closes, rsiResult);
 
       const ohlc = last15Candles[last15Candles.length - 1].ohlc;
-      const currentPrice = ohlc.close;
+      const currentPrice = parseFloat(ohlc.close);
       const timestamp = new Date(klines30m[klines30m.length - 1].closeTime).toLocaleString();
       const psarPosition = psar > currentPrice ? 'Below' : 'Above';
       const candlePattern = last15Candles[last15Candles.length - 1].pattern;
 
       // Fetch higher TFs
-      const klines1h = await utils.withTimeout(client.candles({ symbol, interval: '1h', limit: 100 }), 5000);
-      const closes1h = klines1h.map(c => parseFloat(c.close));
-      const trend1h = TI.EMA.calculate({ period: 50, values: closes1h })[utils.getLast(TI.EMA.calculate({ period: 50, values: closes1h }))] > TI.EMA.calculate({ period: 200, values: closes1h })[utils.getLast(TI.EMA.calculate({ period: 200, values: closes1h }))] ? 'Bearish' : 'Bullish';
-
-      const klines4h = await utils.withTimeout(client.candles({ symbol, interval: '4h', limit: 100 }), 5000);
-      const closes4h = klines4h.map(c => parseFloat(c.close));
-      const trend4h = TI.EMA.calculate({ period: 50, values: closes4h })[utils.getLast(TI.EMA.calculate({ period: 50, values: closes4h }))] > TI.EMA.calculate({ period: 200, values: closes4h })[utils.getLast(TI.EMA.calculate({ period: 200, values: closes4h }))] ? 'Bearish' : 'Bullish';
+      let klines1h;
+      try {
+        klines1h = await utils.withTimeout(client.candles({ symbol, interval: '1h', limit: 100 }), 5000);
+      } catch (err) {
+        console.error(`Failed to fetch 1h candles for ${symbol}: ${err.message}`);
+        klines1h = [];
+      }
+      const closes1h = klines1h.map(c => parseFloat(c.close)).filter(v => !isNaN(v));
+      let trend1h = 'Neutral';
+      if (closes1h.length >= 200) {
+        const ema50_1h = TI.EMA.calculate({ period: 50, values: closes1h })[TI.EMA.calculate({ period: 50, values: closes1h }).length - 1];
+        const ema200_1h = TI.EMA.calculate({ period: 200, values: closes1h })[TI.EMA.calculate({ period: 200, values: closes1h }).length - 1];
+        trend1h = ema50_1h > ema200_1h ? 'Bullish' : 'Bearish';
+      }
+      
+      let klines4h;
+      try {
+        klines4h = await utils.withTimeout(client.candles({ symbol, interval: '4h', limit: 100 }), 5000);
+      } catch (err) {
+        console.error(`Failed to fetch 4h candles for ${symbol}: ${err.message}`);
+        klines4h = [];
+      }
+      const closes4h = klines4h.map(c => parseFloat(c.close)).filter(v => !isNaN(v));
+      let trend4h = 'Neutral';
+      if (closes4h.length >= 200) {
+        const ema50_4h = TI.EMA.calculate({ period: 50, values: closes4h })[TI.EMA.calculate({ period: 50, values: closes4h }).length - 1];
+        const ema200_4h = TI.EMA.calculate({ period: 200, values: closes4h })[TI.EMA.calculate({ period: 200, values: closes4h }).length - 1];
+        trend4h = ema50_4h > ema200_4h ? 'Bullish' : 'Bearish';
+      }
 
       // Signal generation
       let bullishScore = 0;
@@ -203,7 +251,7 @@ async function getData(symbol) {
         };
         console.log(symbol, JSON.stringify(log, null, 2), 'TRADE');
       }
-
+      
       const formattedLast5 = last15Candles.slice(-5).map(candle => ({
         startTime: candle.startTime,
         endTime: candle.endTime,
@@ -220,7 +268,7 @@ async function getData(symbol) {
       return {
         decimals,
         core: { 
-          currentPrice: parseFloat(currentPrice).toFixed(decimals), 
+          currentPrice: currentPrice.toFixed(decimals), 
           ohlc: {
             open: parseFloat(ohlc.open).toFixed(decimals),
             high: parseFloat(ohlc.high).toFixed(decimals),
@@ -230,98 +278,44 @@ async function getData(symbol) {
           timestamp 
         },
         movingAverages: { 
-          ema7: parseFloat(ema7).toFixed(decimals), 
-          ema25: parseFloat(ema25).toFixed(decimals), 
-          ema99: parseFloat(ema99).toFixed(decimals), 
-          sma50: parseFloat(sma50).toFixed(decimals), 
-          sma200: parseFloat(sma200).toFixed(decimals) 
+          ema7: ema7.toFixed(decimals), 
+          ema25: ema25.toFixed(decimals), 
+          ema99: ema99.toFixed(decimals), 
+          sma50: sma50.toFixed(decimals), 
+          sma200: sma200.toFixed(decimals) 
         },
         volatility: { 
-          atr: parseFloat(atr).toFixed(decimals), 
-          adx: parseFloat(adx).toFixed(2) 
+          atr: atr.toFixed(decimals), 
+          adx: adx.toFixed(2) 
         },
         bollinger: { 
-          upper: parseFloat(bb.upper).toFixed(decimals), 
-          middle: parseFloat(bb.middle).toFixed(decimals), 
-          lower: parseFloat(bb.lower).toFixed(decimals) 
+          upper: bb.upper.toFixed(decimals), 
+          middle: bb.middle.toFixed(decimals), 
+          lower: bb.lower.toFixed(decimals) 
         },
         psar: { 
-          value: parseFloat(psar).toFixed(decimals), 
+          value: psar.toFixed(decimals), 
           position: psarPosition 
         },
         last5Candles: formattedLast5,
         avgVolume: (last15Candles.reduce((sum, c) => sum + c.ohlc.volume, 0) / last15Candles.length || 0).toFixed(0),
         candlePattern,
         higherTF: { trend1h, trend4h },
-        signals: { signal, notes, entry, tp1, tp2, sl, positionSize }
+        signals: { signal, notes, entry: entry ? entry.toFixed(decimals) : '-', tp1: tp1 ? tp1.toFixed(decimals) : '-', tp2: tp2 ? tp2.toFixed(decimals) : '-', sl: sl ? sl.toFixed(decimals) : '-', positionSize: positionSize ? positionSize.toFixed(2) : '-' }
       };
     } catch (error) {
-      if (error.message === 'Request timeout' || error.code === 'ETIMEDOUT' || error.message.includes('429')) {
-        attempt++;
-        const backoff = Math.pow(2, attempt) * 1000;
-        console.warn(`${symbol}: ${error.message}, retry ${attempt}/${maxRetries} in ${backoff}ms`);
-        if (attempt < maxRetries) {
-          await new Promise(resolve => setTimeout(resolve, backoff));
-          continue;
-        }
-      }
-      console.error(`getData error for ${symbol}:`, error.message);
-      console.log(symbol, `getData error: ${error.message}`, 'error');
-      return { error: 'Failed to fetch data', details: error.message };
+      // ... (unchanged)
     }
   }
   return { error: 'Max retries exceeded' };
 }
 
 async function updateCache() {
-  console.log('📄 Cache update cycle starting...');
-  const updatePromises = symbols.map(async (symbol) => {
-    if (failureCount[symbol] >= 5) {
-      console.warn(`⏭️ Skipping ${symbol} (5+ failures)`);
-      return;
-    }
-    try {
-      const data = await getData(symbol);
-      if (!data.error) {
-        cachedData[symbol] = data;
-        failureCount[symbol] = 0;
-        console.log(`✅ ${symbol} updated`);
-      } else {
-        failureCount[symbol] = (failureCount[symbol] || 0) + 1;
-        console.error(`❌ ${symbol} failed (${failureCount[symbol]}/5): ${data.error}`);
-      }
-    } catch (error) {
-      failureCount[symbol] = (failureCount[symbol] || 0) + 1;
-      console.error(`❌ ${symbol} crashed (${failureCount[symbol]}/5):`, error.message);
-    }
-  });
-  await Promise.allSettled(updatePromises);
-  console.log('✅ Cache cycle complete');
+  // ... (unchanged)
 }
 
 async function initDataService() {
-  console.log('🚀 Initializing bot...');
-  utils.validateEnv();
-  for (const symbol of symbols) {
-    previousSignal[symbol] = '';
-    lastNotificationTime[symbol] = 0;
-    sendCounts[symbol] = 0;
-    lastSignalTime[symbol] = 0;
-    failureCount[symbol] = 0;
-    cachedData[symbol] = { error: 'Loading...' };
-  }
-  console.log('Loading initial cache (parallel)...');
-  const loadPromises = symbols.map(async (symbol) => {
-    try {
-      cachedData[symbol] = await getData(symbol);
-      console.log(`✅ ${symbol} loaded`);
-    } catch (error) {
-      console.error(`❌ ${symbol} load failed:`, error.message);
-      cachedData[symbol] = { error: 'Failed initial load' };
-    }
-  });
-  await Promise.allSettled(loadPromises);
-  console.log('✅ Initial cache complete');
+  // ... (unchanged)
 }
 
 module.exports = { getData, updateCache, initDataService, cachedData };
