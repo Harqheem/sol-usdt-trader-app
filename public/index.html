@@ -13,7 +13,7 @@
 
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: #f5f5f5;
+      background: #f0f0f0;
       min-height: 100vh;
       padding: 20px;
       color: #333;
@@ -25,11 +25,10 @@
     }
 
     .header {
-      background: #fff;
+      background: white;
       border-radius: 12px;
       padding: 20px 30px;
       margin-bottom: 20px;
-      border: 1px solid #e0e0e0;
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -64,7 +63,7 @@
 
     .copy-btn {
       background: #667eea;
-      color: #fff;
+      color: white;
       border: none;
       padding: 10px 20px;
       border-radius: 8px;
@@ -75,26 +74,15 @@
 
     .copy-btn:hover {
       background: #5568d3;
-    }
-
-    /* Trade Status Checkmark */
-    .trade-status {
-      font-size: 18px;
-      margin-right: 10px;
-      display: none; /* Hidden by default; show via JS if trade exists */
-    }
-
-    .trade-status.active {
-      display: inline;
+      transform: translateY(-2px);
     }
 
     /* Symbol Radio Buttons */
     .symbol-selector {
-      background: #fff;
+      background: white;
       border-radius: 12px;
       padding: 20px;
       margin-bottom: 20px;
-      border: 1px solid #e0e0e0;
     }
 
     .symbol-selector h3 {
@@ -123,7 +111,7 @@
     .radio-label {
       display: inline-block;
       padding: 12px 24px;
-      background: #f5f5f5;
+      background: #f7f7f7;
       border: 2px solid #e0e0e0;
       border-radius: 8px;
       cursor: pointer;
@@ -134,12 +122,13 @@
 
     .radio-item input[type="radio"]:checked + .radio-label {
       background: #667eea;
-      color: #fff;
-      border-color: #5568d3;
+      color: white;
+      border-color: #667eea;
     }
 
     .radio-label:hover {
-      border-color: #bbb;
+      border-color: #667eea;
+      transform: translateY(-2px);
     }
 
     /* Grid Layout */
@@ -151,15 +140,14 @@
     }
 
     .card {
-      background: #fff;
+      background: white;
       border-radius: 12px;
       padding: 25px;
-      border: 1px solid #e0e0e0;
-      transition: all 0.3s;
+      transition: transform 0.3s;
     }
 
     .card:hover {
-      background: #f9f9f9;
+      transform: translateY(-5px);
     }
 
     .card h3 {
@@ -167,7 +155,7 @@
       font-size: 18px;
       margin-bottom: 20px;
       padding-bottom: 10px;
-      border-bottom: 1px solid #e0e0e0;
+      border-bottom: 2px solid #f0f0f0;
       font-weight: 600;
     }
 
@@ -198,17 +186,17 @@
     /* Signal Card */
     .signal-card {
       grid-column: 1 / -1;
-      background: #e0e0e0;
+      background: #f0f0f0;
       color: #333;
     }
 
     .signal-card h3 {
       color: #333;
-      border-bottom-color: #ccc;
+      border-bottom-color: rgba(0, 0, 0, 0.1);
     }
 
     .signal-card .metric {
-      border-bottom-color: #ccc;
+      border-bottom-color: rgba(0, 0, 0, 0.05);
     }
 
     .signal-card .metric-label {
@@ -226,12 +214,12 @@
       text-align: center;
       padding: 20px;
       margin: 15px 0;
-      background: #f5f5f5;
+      background: #e0e0e0;
       border-radius: 8px;
     }
 
     .notes-box {
-      background: #f5f5f5;
+      background: #e0e0e0;
       padding: 15px;
       border-radius: 8px;
       margin-top: 15px;
@@ -242,17 +230,17 @@
     /* Trade Levels Card */
     .trade-levels {
       grid-column: 1 / -1;
-      background: #e0e0e0;
+      background: #f0f0f0;
       color: #333;
     }
 
     .trade-levels h3 {
       color: #333;
-      border-bottom-color: #ccc;
+      border-bottom-color: rgba(0, 0, 0, 0.1);
     }
 
     .trade-levels .metric {
-      border-bottom-color: #ccc;
+      border-bottom-color: rgba(0, 0, 0, 0.05);
     }
 
     .trade-levels .metric-label {
@@ -265,26 +253,20 @@
       font-weight: bold;
     }
 
-    /* Bar Chart for Candles */
-    .bar-chart {
-      height: 150px;
-      display: flex;
-      align-items: flex-end;
-      justify-content: space-around;
-      background: #f9f9f9;
-      border-radius: 6px;
-      padding: 10px;
-      position: relative;
+    /* Candles List */
+    .candles-list {
+      list-style: none;
+      padding: 0;
     }
 
-    .bar-chart::before {
-      content: 'Loading candle data...';
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      color: #666;
-      font-style: italic;
+    .candles-list li {
+      padding: 10px;
+      background: #f9f9f9;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      font-size: 13px;
+      line-height: 1.5;
+      border-left: 3px solid #e0e0e0;
     }
 
     /* Status Badges */
@@ -349,7 +331,6 @@
           <div id="current-price" class="price-display">Loading...</div>
           <div id="current-time" class="time-display"></div>
         </div>
-        <span id="trade-status" class="trade-status">✅</span>
         <button id="copy-btn" class="copy-btn">📋 Copy Data</button>
       </div>
     </div>
@@ -383,6 +364,13 @@
 
     <!-- Main Grid -->
     <div class="grid">
+      <!-- Signal Card -->
+      <div class="card signal-card">
+        <h3>🚨 Trading Signal</h3>
+        <div class="signal-main" id="signal">⏳ Analyzing...</div>
+        <div class="notes-box" id="notes">Waiting for data...</div>
+        <div class="timestamp" id="timestamp">Last updated: -</div>
+      </div>
       <!-- Trend Indicators -->
       <div class="card">
         <h3>📈 Trend Indicators</h3>
@@ -457,20 +445,17 @@
         </div>
       </div>
 
-      <!-- Recent Candles as Bar Chart -->
+      <!-- Last 5 Candles -->
       <div class="card">
         <h3>🕯️ Recent Candles</h3>
-        <div id="candles-chart" class="bar-chart"></div>
+        <ul id="last5-candles" class="candles-list">
+          <li class="loading">Loading candle data...</li>
+        </ul>
       </div>
+    </div>
+  </div>
 
-      <!-- Signal Card -->
-      <div class="card signal-card">
-        <h3>🚨 Trading Signal</h3>
-        <div class="signal-main" id="signal">⏳ Analyzing...</div>
-        <div class="notes-box" id="notes">Waiting for data...</div>
-        <div class="timestamp" id="timestamp">Last updated: -</div>
-      </div>
-
+  <script src="script.js"></script>
       <!-- Trade Levels -->
       <div class="card trade-levels">
         <h3>💰 Trade Levels</h3>
@@ -495,9 +480,5 @@
           <span class="metric-value" id="positionSize">-</span>
         </div>
       </div>
-    </div>
-  </div>
-
-  <script src="script.js"></script>
 </body>
 </html>
