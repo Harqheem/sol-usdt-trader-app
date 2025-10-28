@@ -26,12 +26,15 @@ symbols.forEach(sym => {
   symbolFilter.appendChild(opt);
 });
 
-function getStatusColor(status) {
-  if (status === 'closed') return 'green';
-  if (status === 'failed') return 'red';
-  if (status === 'opened') return 'blue';
-  if (status === 'pending') return 'orange';
-  return 'gray';
+function getStatusClass(status) {
+  const statusMap = {
+    'sent': 'status-sent',
+    'pending': 'status-pending',
+    'opened': 'status-opened',
+    'closed': 'status-closed',
+    'failed': 'status-failed'
+  };
+  return statusMap[status] || 'status-closed';
 }
 
 function formatTime(isoTime) {
@@ -41,18 +44,18 @@ function formatTime(isoTime) {
 }
 
 async function fetchSignals() {
-  tableBody.innerHTML = '<tr><td colspan="8">Loading...</td></tr>'; // Adjusted for new column count
+  tableBody.innerHTML = '<tr><td colspan="8">Loading...</td></tr>';
   try {
     let url = '/signals?limit=100';
     if (symbolFilter.value) url += `&symbol=${symbolFilter.value}`;
     if (fromDateInput.value) url += `&fromDate=${fromDateInput.value}T00:00:00Z`;
     if (statusFilter && statusFilter.value) url += `&status=${statusFilter.value}`;
-    console.log('Fetching URL:', url); // Debug
+    console.log('Fetching URL:', url);
     const res = await fetch(url);
     if (!res.ok) throw new Error('Fetch failed');
     const data = await res.json();
-    console.log('Received data:', data); // Debug
-    currentData = data; // Store for recalc
+    console.log('Received data:', data);
+    currentData = data;
     renderTableAndSummary();
   } catch (err) {
     console.error('Fetch error:', err);
@@ -68,22 +71,37 @@ function renderTableAndSummary() {
     updateSummary(0, 0, 0, 0);
     return;
   }
-  currentData.forEach((signal, index) => {
-    const customNetPnlPct = calculateCustomNetPnl(signal);
+  
+  currentData.forEach((signal) => {
     const row = document.createElement('tr');
+    
+    // Signal type with styling
+    const signalClass = signal.signal_type === 'Buy' ? 'signal-long' : 'signal-short';
+    const signalText = signal.signal_type === 'Buy' ? 'LONG' : 'SHORT';
+    
+    // PnL with styling
+    let pnlHTML = '-';
+    if (signal.raw_pnl_percentage !== null && signal.raw_pnl_percentage !== undefined) {
+      const pnlClass = signal.raw_pnl_percentage > 0 ? 'pnl-positive' : signal.raw_pnl_percentage < 0 ? 'pnl-negative' : '';
+      const pnlSign = signal.raw_pnl_percentage > 0 ? '+' : '';
+      pnlHTML = `<span class="${pnlClass}">${pnlSign}${signal.raw_pnl_percentage.toFixed(2)}</span>`;
+    }
+    
     row.innerHTML = `
       <td>${formatTime(signal.timestamp)}</td>
       <td>${signal.symbol}</td>
-      <td>${signal.signal_type}</td>
+      <td><span class="${signalClass}">${signalText}</span></td>
       <td>${signal.tp1 ? signal.tp1.toFixed(4) : '-'}</td>
       <td>${signal.tp2 ? signal.tp2.toFixed(4) : '-'}</td>
       <td>${signal.sl ? signal.sl.toFixed(4) : '-'}</td>
-      <td style="color: ${getStatusColor(signal.status)};">${signal.status}</td>
-      <td style="color: ${signal.raw_pnl_percentage > 0 ? 'green' : signal.raw_pnl_percentage < 0 ? 'red' : 'black'};">${signal.raw_pnl_percentage ? signal.raw_pnl_percentage.toFixed(2) + '%' : '-'}</td>
+      <td><span class="status-badge ${getStatusClass(signal.status)}">${signal.status.charAt(0).toUpperCase() + signal.status.slice(1)}</span></td>
+      <td>${pnlHTML}</td>
     `;
+    
     row.addEventListener('click', () => showDetails(signal));
     tableBody.appendChild(row);
   });
+  
   // Calculate summary
   const totalTrades = currentData.length;
   const closedTrades = currentData.filter(s => s.status === 'closed');
@@ -109,16 +127,41 @@ function calculateCustomNetPnl(signal) {
 
 function updateSummary(trades, rawPnl, netPnl, customNetPnl) {
   totalTradesEl.textContent = trades;
+  
+  // Apply color classes to PnL values
   totalRawPnlEl.textContent = rawPnl.toFixed(2);
+  totalRawPnlEl.className = rawPnl > 0 ? 'pnl-positive' : rawPnl < 0 ? 'pnl-negative' : '';
+  
   totalPnlEl.textContent = netPnl.toFixed(2);
+  totalPnlEl.className = netPnl > 0 ? 'pnl-positive' : netPnl < 0 ? 'pnl-negative' : '';
+  
   customTotalPnlEl.textContent = customNetPnl.toFixed(2);
+  customTotalPnlEl.className = customNetPnl > 0 ? 'pnl-positive' : customNetPnl < 0 ? 'pnl-negative' : '';
 }
 
 function showDetails(signal) {
+  const signalText = signal.signal_type === 'Buy' ? 'LONG' : 'SHORT';
+  
+  // Format PnL values with colors
+  let rawPnlHTML = '-';
+  if (signal.raw_pnl_percentage !== null && signal.raw_pnl_percentage !== undefined) {
+    const pnlClass = signal.raw_pnl_percentage > 0 ? 'pnl-positive' : signal.raw_pnl_percentage < 0 ? 'pnl-negative' : '';
+    const pnlSign = signal.raw_pnl_percentage > 0 ? '+' : '';
+    rawPnlHTML = `<span class="${pnlClass}">${pnlSign}${signal.raw_pnl_percentage.toFixed(2)}%</span>`;
+  }
+  
+  let netPnlHTML = '-';
+  if (signal.pnl_percentage !== null && signal.pnl_percentage !== undefined) {
+    const pnlClass = signal.pnl_percentage > 0 ? 'pnl-positive' : signal.pnl_percentage < 0 ? 'pnl-negative' : '';
+    const pnlSign = signal.pnl_percentage > 0 ? '+' : '';
+    netPnlHTML = `<span class="${pnlClass}">${pnlSign}${signal.pnl_percentage.toFixed(2)}%</span>`;
+  }
+  
   sheetContent.innerHTML = `
+    <h3>Trade Details</h3>
     <p><strong>Timestamp:</strong> ${formatTime(signal.timestamp)}</p>
     <p><strong>Symbol:</strong> ${signal.symbol}</p>
-    <p><strong>Signal:</strong> ${signal.signal_type}</p>
+    <p><strong>Signal:</strong> ${signalText}</p>
     <p><strong>Notes:</strong> ${signal.notes || '-'}</p>
     <p><strong>Entry:</strong> ${signal.entry ? signal.entry.toFixed(4) : '-'}</p>
     <p><strong>TP1:</strong> ${signal.tp1 ? signal.tp1.toFixed(4) : '-'}</p>
@@ -126,18 +169,18 @@ function showDetails(signal) {
     <p><strong>SL:</strong> ${signal.sl ? signal.sl.toFixed(4) : '-'}</p>
     <p><strong>Position Size:</strong> ${signal.position_size ? signal.position_size.toFixed(2) : '-'}</p>
     <p><strong>Leverage:</strong> ${signal.leverage || '-'}</p>
-    <p><strong>Status:</strong> ${signal.status}</p>
+    <p><strong>Status:</strong> <span class="status-badge ${getStatusClass(signal.status)}">${signal.status.charAt(0).toUpperCase() + signal.status.slice(1)}</span></p>
     <p><strong>Open Time:</strong> ${formatTime(signal.open_time)}</p>
     <p><strong>Close Time:</strong> ${formatTime(signal.close_time)}</p>
     <p><strong>Exit Price:</strong> ${signal.exit_price ? signal.exit_price.toFixed(4) : '-'}</p>
-    <p><strong>Raw PnL (%):</strong> ${signal.raw_pnl_percentage ? signal.raw_pnl_percentage.toFixed(2) + '%' : '-'}</p>
-    <p><strong>Net PnL (%):</strong> ${signal.pnl_percentage ? signal.pnl_percentage.toFixed(2) + '%' : '-'}</p>
+    <p><strong>Raw PnL (%):</strong> ${rawPnlHTML}</p>
+    <p><strong>Net PnL (%):</strong> ${netPnlHTML}</p>
   `;
-  sideSheet.classList.add('open');
+  sideSheet.classList.add('active');
 }
 
 closeSheetBtn.addEventListener('click', () => {
-  sideSheet.classList.remove('open');
+  sideSheet.classList.remove('active');
 });
 
 // Event listeners
