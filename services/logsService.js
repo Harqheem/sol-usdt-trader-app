@@ -110,4 +110,4 @@ async function getSignals(options = {}) {
 process.on('SIGTERM', () => db.close());
 process.on('SIGINT', () => db.close());
 
-module.exports = { logSignal, getSignals };
+module.exports = { logSignal, getSignals, db };
