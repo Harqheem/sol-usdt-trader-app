@@ -3,6 +3,16 @@ let previousPrice = null;
 let selectedSymbol = 'SOLUSDT';
 let currentDecimals = 2;
 
+const symbolMap = {
+  'SOLUSDT': 'sol',
+  'XRPUSDT': 'xrp',
+  'ADAUSDT': 'ada',
+  'BNBUSDT': 'bnb',
+  'DOGEUSDT': 'doge'
+};
+
+const symbols = Object.keys(symbolMap);
+
 function updateUI(data) {
   if (data.error) {
     console.error('Data error:', data.error);
@@ -65,24 +75,86 @@ function updateUI(data) {
   document.getElementById('psar-pos').textContent = data.psar.position;
   document.getElementById('candle-pattern').textContent = data.candlePattern;
   
-  const candlesList = document.getElementById('last5-candles');
-  candlesList.innerHTML = '';
+  // Update bar chart for candles
+  const chart = document.getElementById('candles-chart');
+  chart.innerHTML = '';
   const reversedCandles = [...data.last5Candles].reverse();
-  reversedCandles.forEach((candle, index) => {
-    const li = document.createElement('li');
-    li.textContent = `Candle ${index + 1}: (${candle.startTime} - ${candle.endTime}), Open=${safeFormat(candle.ohlc.open, dec)}, Close=${safeFormat(candle.ohlc.close, dec)}, Low=${safeFormat(candle.ohlc.low, dec)}, High=${safeFormat(candle.ohlc.high, dec)}, volume=${candle.volume.toFixed(0)}`;
-    candlesList.appendChild(li);
-  });
+  
+  if (reversedCandles.length > 0) {
+    // Find min and max prices across all candles
+    let minPrice = Math.min(...reversedCandles.map(c => Math.min(safeParse(c.ohlc.low), safeParse(c.ohlc.open), safeParse(c.ohlc.close))));
+    let maxPrice = Math.max(...reversedCandles.map(c => Math.max(safeParse(c.ohlc.high), safeParse(c.ohlc.open), safeParse(c.ohlc.close))));
+    let priceRange = maxPrice - minPrice || 1; // Avoid division by zero
+    
+    reversedCandles.forEach((candle) => {
+      const open = safeParse(candle.ohlc.open);
+      const close = safeParse(candle.ohlc.close);
+      const high = safeParse(candle.ohlc.high);
+      const low = safeParse(candle.ohlc.low);
+      
+      const candleDiv = document.createElement('div');
+      candleDiv.style.width = `calc(100% / ${reversedCandles.length})`;
+      candleDiv.style.height = '100%';
+      candleDiv.style.position = 'relative';
+      candleDiv.style.display = 'flex';
+      candleDiv.style.flexDirection = 'column';
+      candleDiv.style.alignItems = 'center';
+      candleDiv.style.justifyContent = 'flex-end';
+      
+      // Wick (full high to low)
+      const wick = document.createElement('div');
+      wick.style.position = 'absolute';
+      wick.style.width = '2px';
+      wick.style.background = '#333';
+      wick.style.top = `${((maxPrice - high) / priceRange) * 100}%`;
+      wick.style.height = `${((high - low) / priceRange) * 100}%`;
+      
+      // Body
+      const body = document.createElement('div');
+      body.style.position = 'absolute';
+      body.style.width = '10px';
+      body.style.background = close > open ? '#10b981' : '#ef4444';
+      body.style.top = `${((maxPrice - Math.max(open, close)) / priceRange) * 100}%`;
+      body.style.height = `${(Math.abs(close - open) / priceRange) * 100}%`;
+      
+      candleDiv.appendChild(wick);
+      candleDiv.appendChild(body);
+      chart.appendChild(candleDiv);
+    });
+    
+    chart.classList.add('loaded');
+  }
   
   document.getElementById('trend1h').textContent = data.higherTF.trend1h;
   document.getElementById('trend4h').textContent = data.higherTF.trend4h;
   document.getElementById('signal').textContent = data.signals.signal;
   document.getElementById('notes').textContent = data.signals.notes;
-  document.getElementById('entry').textContent = data.signals.entry;
-  document.getElementById('tp1').textContent = data.signals.tp1;
-  document.getElementById('tp2').textContent = data.signals.tp2;
-  document.getElementById('sl').textContent = data.signals.sl;
-  document.getElementById('positionSize').textContent = data.signals.positionSize;
+  document.getElementById('entry').textContent = data.signals.entry || '-';
+  document.getElementById('tp1').textContent = data.signals.tp1 || '-';
+  document.getElementById('tp2').textContent = data.signals.tp2 || '-';
+  document.getElementById('sl').textContent = data.signals.sl || '-';
+  document.getElementById('positionSize').textContent = data.signals.positionSize || '-';
+
+  // Show trade status checkmark if there's a trade (entry is set)
+  const tradeStatus = document.getElementById('trade-status');
+  const hasTrade = data.signals.entry && data.signals.entry !== '-';
+  if (hasTrade) {
+    tradeStatus.classList.add('active');
+  } else {
+    tradeStatus.classList.remove('active');
+  }
+
+  // Update symbol label with checkmark if trade exists
+  const id = symbolMap[selectedSymbol];
+  if (id) {
+    const label = document.querySelector(`label[for="${id}"]`);
+    if (label) {
+      label.textContent = label.textContent.replace(/✅$/, '');
+      if (hasTrade) {
+        label.textContent += '✅';
+      }
+    }
+  }
 
   currentData = data;
 }
@@ -121,13 +193,19 @@ async function fetchPrice() {
   }
 }
 
-// Fetch data
-async function fetchData() {
+// Fetch symbol data
+async function fetchSymbolData(sym) {
+  const res = await fetch(`/data?symbol=${sym}`);
+  const data = await res.json();
+  return data;
+}
+
+// Load data for selected symbol
+async function loadSelectedData() {
   try {
-    const res = await fetch(`/data?symbol=${selectedSymbol}`);
-    const data = await res.json();
+    const data = await fetchSymbolData(selectedSymbol);
     updateUI(data);
-    fetchPrice();
+    await fetchPrice();
   } catch (err) {
     console.error('Data fetch error:', err);
     document.getElementById('signal').textContent = '❌ Network Error';
@@ -135,18 +213,55 @@ async function fetchData() {
   }
 }
 
-// Symbol change listener - now uses radio buttons
+// Update trade status for all symbols
+async function updateAllTradeStatus() {
+  let selectedData = null;
+  for (const sym of symbols) {
+    try {
+      const data = await fetchSymbolData(sym);
+      if (data.error) continue;
+      const hasTrade = data.signals && data.signals.entry && data.signals.entry !== '-';
+      const id = symbolMap[sym];
+      if (id) {
+        const label = document.querySelector(`label[for="${id}"]`);
+        if (label) {
+          label.textContent = label.textContent.replace(/✅$/, '');
+          if (hasTrade) {
+            label.textContent += '✅';
+          }
+        }
+      }
+      if (sym === selectedSymbol) {
+        selectedData = data;
+      }
+    } catch (err) {
+      console.error(`Error fetching data for ${sym}:`, err);
+    }
+  }
+  if (selectedData) {
+    updateUI(selectedData);
+  } else {
+    await loadSelectedData();
+  }
+  await fetchPrice();
+}
+
+// Symbol change listener
 document.querySelectorAll('input[name="symbol"]').forEach(radio => {
-  radio.addEventListener('change', (e) => {
+  radio.addEventListener('change', async (e) => {
     selectedSymbol = e.target.value;
     previousPrice = null;
-    fetchData();
+    await loadSelectedData();
   });
 });
 
-// Initial and intervals
-fetchData();
-setInterval(fetchData, 300000); // 5 min full refresh
+// Initial load
+(async () => {
+  await updateAllTradeStatus();
+})();
+
+// Intervals
+setInterval(updateAllTradeStatus, 300000); // 5 min full refresh for all symbols
 setInterval(fetchPrice, 1000); // 1 sec price
 
 document.getElementById('copy-btn').addEventListener('click', () => {

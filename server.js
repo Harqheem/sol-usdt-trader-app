@@ -772,7 +772,7 @@ let server;
     server = app.listen(port, () => {
       console.log(`✅ Server running on http://localhost:${port}`);
       console.log(`📊 Monitoring ${symbols.length} symbols: ${symbols.join(', ')}`);
-      console.log(`🔄 Cache updates every 2 minutes`);
+      console.log(`🔄 Cache updates every 5 minutes`);
       console.log(`🏥 Health check: http://localhost:${port}/health`);
     });
   } catch (error) {

@@ -13,7 +13,7 @@
 
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: #f5f5f5;
       min-height: 100vh;
       padding: 20px;
       color: #333;
@@ -25,11 +25,11 @@
     }
 
     .header {
-      background: white;
+      background: #fff;
       border-radius: 12px;
       padding: 20px 30px;
       margin-bottom: 20px;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      border: 1px solid #e0e0e0;
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -39,7 +39,7 @@
 
     .header h1 {
       font-size: 24px;
-      color: #667eea;
+      color: #333;
       font-weight: 600;
     }
 
@@ -64,7 +64,7 @@
 
     .copy-btn {
       background: #667eea;
-      color: white;
+      color: #fff;
       border: none;
       padding: 10px 20px;
       border-radius: 8px;
@@ -75,22 +75,20 @@
 
     .copy-btn:hover {
       background: #5568d3;
-      transform: translateY(-2px);
-      box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
     }
 
     /* Symbol Radio Buttons */
     .symbol-selector {
-      background: white;
+      background: #fff;
       border-radius: 12px;
       padding: 20px;
       margin-bottom: 20px;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      border: 1px solid #e0e0e0;
     }
 
     .symbol-selector h3 {
       margin-bottom: 15px;
-      color: #667eea;
+      color: #333;
       font-size: 16px;
       font-weight: 600;
     }
@@ -114,7 +112,7 @@
     .radio-label {
       display: inline-block;
       padding: 12px 24px;
-      background: #f7f7f7;
+      background: #f5f5f5;
       border: 2px solid #e0e0e0;
       border-radius: 8px;
       cursor: pointer;
@@ -125,14 +123,12 @@
 
     .radio-item input[type="radio"]:checked + .radio-label {
       background: #667eea;
-      color: white;
-      border-color: #667eea;
-      box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+      color: #fff;
+      border-color: #5568d3;
     }
 
     .radio-label:hover {
-      border-color: #667eea;
-      transform: translateY(-2px);
+      border-color: #bbb;
     }
 
     /* Grid Layout */
@@ -144,24 +140,23 @@
     }
 
     .card {
-      background: white;
+      background: #fff;
       border-radius: 12px;
       padding: 25px;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-      transition: transform 0.3s;
+      border: 1px solid #e0e0e0;
+      transition: all 0.3s;
     }
 
     .card:hover {
-      transform: translateY(-5px);
-      box-shadow: 0 8px 12px rgba(0, 0, 0, 0.15);
+      background: #f9f9f9;
     }
 
     .card h3 {
-      color: #667eea;
+      color: #333;
       font-size: 18px;
       margin-bottom: 20px;
       padding-bottom: 10px;
-      border-bottom: 2px solid #f0f0f0;
+      border-bottom: 1px solid #e0e0e0;
       font-weight: 600;
     }
 
@@ -192,25 +187,25 @@
     /* Signal Card */
     .signal-card {
       grid-column: 1 / -1;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
+      background: #e0e0e0;
+      color: #333;
     }
 
     .signal-card h3 {
-      color: white;
-      border-bottom-color: rgba(255, 255, 255, 0.2);
+      color: #333;
+      border-bottom-color: #ccc;
     }
 
     .signal-card .metric {
-      border-bottom-color: rgba(255, 255, 255, 0.1);
+      border-bottom-color: #ccc;
     }
 
     .signal-card .metric-label {
-      color: rgba(255, 255, 255, 0.9);
+      color: #666;
     }
 
     .signal-card .metric-value {
-      color: white;
+      color: #333;
       font-size: 16px;
     }
 
@@ -220,12 +215,12 @@
       text-align: center;
       padding: 20px;
       margin: 15px 0;
-      background: rgba(255, 255, 255, 0.1);
+      background: #f5f5f5;
       border-radius: 8px;
     }
 
     .notes-box {
-      background: rgba(255, 255, 255, 0.1);
+      background: #f5f5f5;
       padding: 15px;
       border-radius: 8px;
       margin-top: 15px;
@@ -236,43 +231,49 @@
     /* Trade Levels Card */
     .trade-levels {
       grid-column: 1 / -1;
-      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-      color: white;
+      background: #e0e0e0;
+      color: #333;
     }
 
     .trade-levels h3 {
-      color: white;
-      border-bottom-color: rgba(255, 255, 255, 0.2);
+      color: #333;
+      border-bottom-color: #ccc;
     }
 
     .trade-levels .metric {
-      border-bottom-color: rgba(255, 255, 255, 0.1);
+      border-bottom-color: #ccc;
     }
 
     .trade-levels .metric-label {
-      color: rgba(255, 255, 255, 0.9);
+      color: #666;
     }
 
     .trade-levels .metric-value {
-      color: white;
+      color: #333;
       font-size: 18px;
       font-weight: bold;
     }
 
-    /* Candles List */
-    .candles-list {
-      list-style: none;
-      padding: 0;
-    }
-
-    .candles-list li {
-      padding: 10px;
+    /* Bar Chart for Candles */
+    .bar-chart {
+      height: 150px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-around;
       background: #f9f9f9;
       border-radius: 6px;
-      margin-bottom: 8px;
-      font-size: 13px;
-      line-height: 1.5;
-      border-left: 3px solid #667eea;
+      padding: 10px;
+      position: relative;
+    }
+
+    .bar-chart::before {
+      content: 'Loading candle data...';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #666;
+      font-style: italic;
     }
 
     /* Status Badges */
@@ -322,7 +323,7 @@
     /* Timestamp */
     .timestamp {
       font-size: 12px;
-      color: rgba(255, 255, 255, 0.8);
+      color: #666;
       margin-top: 10px;
     }
   </style>
@@ -444,12 +445,10 @@
         </div>
       </div>
 
-      <!-- Last 5 Candles -->
+      <!-- Recent Candles as Bar Chart -->
       <div class="card">
         <h3>🕯️ Recent Candles</h3>
-        <ul id="last5-candles" class="candles-list">
-          <li class="loading">Loading candle data...</li>
-        </ul>
+        <div id="candles-chart" class="bar-chart"></div>
       </div>
 
       <!-- Signal Card -->
