@@ -80,7 +80,6 @@ async function logSignal(symbol, signalData, status = 'pending', errorMessage = 
 
 async function getSignals(options = {}) {
   const { symbol, limit = 50, fromDate, status } = options;
-  console.log('getSignals called with options:', options); // Debug
   let query = 'SELECT * FROM signals';
   const params = [];
   const whereClauses = [];
@@ -107,10 +106,7 @@ async function getSignals(options = {}) {
   return new Promise((resolve, reject) => {
     db.all(query, params, (err, rows) => {
       if (err) reject(err);
-      else {
-        console.log('Returning rows:', rows.length); // Debug
-        resolve(rows);
-      }
+      else resolve(rows);
     });
   });
 }
