@@ -1,3 +1,5 @@
+// services/logsService.js
+
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
@@ -46,6 +48,7 @@ db.serialize(() => {
     }
   });
   // Add columns if missing (ignore duplicate errors)
+  db.run('ALTER TABLE signals ADD COLUMN error_message TEXT', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add error_message error:', err.message); });
   db.run('ALTER TABLE signals ADD COLUMN open_time TEXT', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add open_time error:', err.message); });
   db.run('ALTER TABLE signals ADD COLUMN close_time TEXT', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add close_time error:', err.message); });
   db.run('ALTER TABLE signals ADD COLUMN exit_price REAL', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add exit_price error:', err.message); });

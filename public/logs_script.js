@@ -1,3 +1,5 @@
+// public/logs_script.js
+
 const tableBody = document.querySelector('#signals-table tbody');
 const symbolFilter = document.getElementById('symbol-filter');
 const fromDateInput = document.getElementById('from-date');
