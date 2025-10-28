@@ -77,7 +77,8 @@ function updateUI(data) {
       const high = safeFormat(candle.ohlc.high, dec);
       const low = safeFormat(candle.ohlc.low, dec);
       const close = safeFormat(candle.ohlc.close, dec);
-      li.textContent = `O: ${open} H: ${high} L: ${low} C: ${close}`;
+      const volume = safeFormat(candle.ohlc.volume, 0);
+      li.textContent = `O: ${open} H: ${high} L: ${low} C: ${close} V: ${volume}`;
       if (safeParse(close) > safeParse(open)) {
         li.style.borderLeftColor = '#10b981'; // Green for bullish
       } else {
@@ -96,14 +97,6 @@ function updateUI(data) {
   document.getElementById('tp2').textContent = data.signals.tp2 || '-';
   document.getElementById('sl').textContent = data.signals.sl || '-';
   document.getElementById('positionSize').textContent = data.signals.positionSize || '-';
-
-  // Show trade status checkmark if there's a trade (entry is set)
-  const tradeStatus = document.getElementById('trade-status');
-  if (data.signals.entry && data.signals.entry !== '-') {
-    tradeStatus.classList.add('active');
-  } else {
-    tradeStatus.classList.remove('active');
-  }
 
   currentData = data;
 }
