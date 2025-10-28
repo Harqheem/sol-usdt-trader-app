@@ -36,3 +36,18 @@ table th, td {
 th {
   background: #f0f0f0;
 }
+
+.summary-panel {
+  background: #f5f6f7;
+  padding: 15px;
+  margin-bottom: 20px;
+  border-radius: 8px;
+}
+
+.summary-panel h3 {
+  margin-bottom: 10px;
+}
+
+.summary-panel p {
+  margin: 5px 0;
+}

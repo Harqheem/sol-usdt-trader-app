@@ -5,6 +5,8 @@ const symbolFilter = document.getElementById('symbol-filter');
 const fromDateInput = document.getElementById('from-date');
 const refreshBtn = document.getElementById('refresh-btn');
 const statusFilter = document.getElementById('status-filter');
+const totalTradesEl = document.getElementById('total-trades');
+const totalPnlEl = document.getElementById('total-pnl');
 
 // Populate symbol options from config (hardcoded for now)
 const symbols = ['SOLUSDT', 'XRPUSDT', 'ADAUSDT', 'BNBUSDT', 'DOGEUSDT'];
@@ -38,6 +40,7 @@ async function fetchSignals() {
     tableBody.innerHTML = '';
     if (data.length === 0) {
       tableBody.innerHTML = '<tr><td colspan="14">No logs found</td></tr>';
+      updateSummary(0, 0);
       return;
     }
     data.forEach(signal => {
@@ -60,10 +63,20 @@ async function fetchSignals() {
       `;
       tableBody.appendChild(row);
     });
+    // Calculate summary
+    const totalTrades = data.length;
+    const totalPnl = data.reduce((sum, signal) => sum + (signal.pnl_percentage || 0), 0);
+    updateSummary(totalTrades, totalPnl);
   } catch (err) {
     console.error('Fetch error:', err);
     tableBody.innerHTML = '<tr><td colspan="14">Error loading logs: ' + err.message + '</td></tr>';
+    updateSummary(0, 0);
   }
+}
+
+function updateSummary(trades, pnl) {
+  totalTradesEl.textContent = trades;
+  totalPnlEl.textContent = pnl.toFixed(2);
 }
 
 // Event listeners
