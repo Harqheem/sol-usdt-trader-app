@@ -1,10 +1,11 @@
 const express = require('express');
-const { getData, cachedData } = require('../services/dataService');
+const { getData, cachedData, lastSignalTime, sendCounts, pausedQueue, failureCount } = require('../services/dataService');
 const Binance = require('binance-api-node').default;
 const client = Binance();
 const { symbols } = require('../config');
 const { withTimeout } = require('../utils');
 const { getDecimalPlaces } = require('../utils');
+const { getSignals } = require('../services/logsService');
 
 const router = express.Router();
 
@@ -71,6 +72,22 @@ router.get('/price', async (req, res) => {
   } catch (error) {
     console.error(`Price fetch error ${symbol}:`, error.message);
     res.json({ error: 'Failed to fetch price' });
+  }
+});
+
+router.get('/signals', async (req, res) => {
+  try {
+    const options = {
+      symbol: req.query.symbol,
+      limit: parseInt(req.query.limit) || 50,
+      fromDate: req.query.fromDate,
+      status: req.query.status
+    };
+    const signals = await getSignals(options);
+    res.json(signals);
+  } catch (err) {
+    console.error('Signals fetch error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch signals' });
   }
 });
 
