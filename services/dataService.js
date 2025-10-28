@@ -127,8 +127,12 @@ async function getData(symbol) {
       const closes1h = klines1h.map(c => parseFloat(c.close)).filter(v => !isNaN(v));
       let trend1h = 'Neutral';
       if (closes1h.length >= 200) {
-        const ema50_1h = TI.EMA.calculate({ period: 50, values: closes1h })[TI.EMA.calculate({ period: 50, values: closes1h }).length - 1];
-        const ema200_1h = TI.EMA.calculate({ period: 200, values: closes1h })[TI.EMA.calculate({ period: 200, values: closes1h }).length - 1];
+        const ema50_1hResult = TI.EMA.calculate({ period: 50, values: closes1h });
+        const ema50_1h = ema50_1hResult.length > 0 ? ema50_1hResult[ema50_1hResult.length - 1] : 0;
+        
+        const ema200_1hResult = TI.EMA.calculate({ period: 200, values: closes1h });
+        const ema200_1h = ema200_1hResult.length > 0 ? ema200_1hResult[ema200_1hResult.length - 1] : 0;
+        
         trend1h = ema50_1h > ema200_1h ? 'Bullish' : 'Bearish';
       }
       
@@ -142,8 +146,12 @@ async function getData(symbol) {
       const closes4h = klines4h.map(c => parseFloat(c.close)).filter(v => !isNaN(v));
       let trend4h = 'Neutral';
       if (closes4h.length >= 200) {
-        const ema50_4h = TI.EMA.calculate({ period: 50, values: closes4h })[TI.EMA.calculate({ period: 50, values: closes4h }).length - 1];
-        const ema200_4h = TI.EMA.calculate({ period: 200, values: closes4h })[TI.EMA.calculate({ period: 200, values: closes4h }).length - 1];
+        const ema50_4hResult = TI.EMA.calculate({ period: 50, values: closes4h });
+        const ema50_4h = ema50_4hResult.length > 0 ? ema50_4hResult[ema50_4hResult.length - 1] : 0;
+        
+        const ema200_4hResult = TI.EMA.calculate({ period: 200, values: closes4h });
+        const ema200_4h = ema200_4hResult.length > 0 ? ema200_4hResult[ema200_4hResult.length - 1] : 0;
+        
         trend4h = ema50_4h > ema200_4h ? 'Bullish' : 'Bearish';
       }
 
@@ -218,7 +226,7 @@ async function getData(symbol) {
           sendCounts[symbol] = 0;
         }
         if (sendCounts[symbol] < 3) {
-          const firstMessage = `${symbol} Signal: ${signal}\nEntry: ${entry.toFixed(decimals)}\nTP1: ${tp1.toFixed(decimals)}\nTP2: ${tp2.toFixed(decimals)}\nSL: ${sl.toFixed(decimals)}`;
+          const firstMessage = `${symbol} Signal: ${signal}\nEntry: ${entry ? entry.toFixed(decimals) : '-'}\nTP1: ${tp1 ? tp1.toFixed(decimals) : '-'}\nTP2: ${tp2 ? tp2.toFixed(decimals) : '-'}\nSL: ${sl ? sl.toFixed(decimals) : '-'}`;
           const secondMessage = notes;
           await sendTelegramNotification(firstMessage, secondMessage, symbol);
           sendCounts[symbol] = (sendCounts[symbol] || 0) + 1;
@@ -231,7 +239,7 @@ async function getData(symbol) {
         }
       }
 
-      lastSignalTime[symbol] = now;
+      lastSignalTime[symbol] = Date.now();
 
       if (signal.startsWith('✅')) {
         const log = {
@@ -304,18 +312,72 @@ async function getData(symbol) {
         signals: { signal, notes, entry: entry ? entry.toFixed(decimals) : '-', tp1: tp1 ? tp1.toFixed(decimals) : '-', tp2: tp2 ? tp2.toFixed(decimals) : '-', sl: sl ? sl.toFixed(decimals) : '-', positionSize: positionSize ? positionSize.toFixed(2) : '-' }
       };
     } catch (error) {
-      // ... (unchanged)
+      if (error.message === 'Request timeout' || error.code === 'ETIMEDOUT' || error.message.includes('429')) {
+        attempt++;
+        const backoff = Math.pow(2, attempt) * 1000;
+        console.warn(`${symbol}: ${error.message}, retry ${attempt}/${maxRetries} in ${backoff}ms`);
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, backoff));
+          continue;
+        }
+      }
+      console.error(`getData error for ${symbol}:`, error.message);
+      console.log(symbol, `getData error: ${error.message}`, 'error');
+      return { error: 'Failed to fetch data', details: error.message };
     }
   }
   return { error: 'Max retries exceeded' };
 }
 
 async function updateCache() {
-  // ... (unchanged)
+  console.log('📄 Cache update cycle starting...');
+  const updatePromises = symbols.map(async (symbol) => {
+    if (failureCount[symbol] >= 5) {
+      console.warn(`⏭️ Skipping ${symbol} (5+ failures)`);
+      return;
+    }
+    try {
+      const data = await getData(symbol);
+      if (!data.error) {
+        cachedData[symbol] = data;
+        failureCount[symbol] = 0;
+        console.log(`✅ ${symbol} updated`);
+      } else {
+        failureCount[symbol] = (failureCount[symbol] || 0) + 1;
+        console.error(`❌ ${symbol} failed (${failureCount[symbol]}/5): ${data.error}`);
+      }
+    } catch (error) {
+      failureCount[symbol] = (failureCount[symbol] || 0) + 1;
+      console.error(`❌ ${symbol} crashed (${failureCount[symbol]}/5):`, error.message);
+    }
+  });
+  await Promise.allSettled(updatePromises);
+  console.log('✅ Cache cycle complete');
 }
 
 async function initDataService() {
-  // ... (unchanged)
+  console.log('🚀 Initializing bot...');
+  utils.validateEnv();
+  for (const symbol of symbols) {
+    previousSignal[symbol] = '';
+    lastNotificationTime[symbol] = 0;
+    sendCounts[symbol] = 0;
+    lastSignalTime[symbol] = 0;
+    failureCount[symbol] = 0;
+    cachedData[symbol] = { error: 'Loading...' };
+  }
+  console.log('Loading initial cache (parallel)...');
+  const loadPromises = symbols.map(async (symbol) => {
+    try {
+      cachedData[symbol] = await getData(symbol);
+      console.log(`✅ ${symbol} loaded`);
+    } catch (error) {
+      console.error(`❌ ${symbol} load failed:`, error.message);
+      cachedData[symbol] = { error: 'Failed initial load' };
+    }
+  });
+  await Promise.allSettled(loadPromises);
+  console.log('✅ Initial cache complete');
 }
 
-module.exports = { getData, updateCache, initDataService, cachedData };
+module.exports = { getData, updateCache, initDataService, cachedData, lastSignalTime, sendCounts, pausedQueue, failureCount, previousSignal, lastNotificationTime };
