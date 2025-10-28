@@ -33,12 +33,17 @@ db.serialize(() => {
       tp2 REAL,
       sl REAL,
       position_size REAL,
+      leverage INTEGER DEFAULT 10,
       status TEXT DEFAULT 'pending',
       error_message TEXT,
       open_time TEXT,
       close_time TEXT,
       exit_price REAL,
-      pnl_percentage REAL
+      raw_pnl_percentage REAL,
+      pnl_percentage REAL,
+      remaining_position REAL DEFAULT 1.0,
+      updated_sl REAL,
+      partial_pnl_percentage REAL
     )
   `, (err) => {
     if (err) {
@@ -48,23 +53,28 @@ db.serialize(() => {
     }
   });
   // Add columns if missing (ignore duplicate errors)
+  db.run('ALTER TABLE signals ADD COLUMN remaining_position REAL DEFAULT 1.0', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add remaining_position error:', err.message); });
+  db.run('ALTER TABLE signals ADD COLUMN updated_sl REAL', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add updated_sl error:', err.message); });
+  db.run('ALTER TABLE signals ADD COLUMN partial_pnl_percentage REAL', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add partial_pnl_percentage error:', err.message); });
+  db.run('ALTER TABLE signals ADD COLUMN leverage INTEGER DEFAULT 10', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add leverage error:', err.message); });
   db.run('ALTER TABLE signals ADD COLUMN error_message TEXT', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add error_message error:', err.message); });
   db.run('ALTER TABLE signals ADD COLUMN open_time TEXT', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add open_time error:', err.message); });
   db.run('ALTER TABLE signals ADD COLUMN close_time TEXT', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add close_time error:', err.message); });
   db.run('ALTER TABLE signals ADD COLUMN exit_price REAL', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add exit_price error:', err.message); });
+  db.run('ALTER TABLE signals ADD COLUMN raw_pnl_percentage REAL', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add raw_pnl_percentage error:', err.message); });
   db.run('ALTER TABLE signals ADD COLUMN pnl_percentage REAL', (err) => { if (err && !err.message.includes('duplicate column')) console.error('Add pnl_percentage error:', err.message); });
 });
 
 async function logSignal(symbol, signalData, status = 'pending', errorMessage = null) {
   return new Promise((resolve, reject) => {
-    const { signal, notes, entry, tp1, tp2, sl, positionSize } = signalData;
+    const { signal, notes, entry, tp1, tp2, sl, positionSize, leverage = 20 } = signalData;
     const timestamp = new Date().toISOString();
     const stmt = db.prepare(`
-      INSERT INTO signals (timestamp, symbol, signal_type, notes, entry, tp1, tp2, sl, position_size, status, error_message, open_time, close_time, exit_price, pnl_percentage)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO signals (timestamp, symbol, signal_type, notes, entry, tp1, tp2, sl, position_size, leverage, status, error_message, open_time, close_time, exit_price, raw_pnl_percentage, pnl_percentage, remaining_position, updated_sl, partial_pnl_percentage)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
-      timestamp, symbol, signal || 'Unknown', notes || null, entry || null, tp1 || null, tp2 || null, sl || null, positionSize || null, status, errorMessage || null, null, null, null, null
+      timestamp, symbol, signal || 'Unknown', notes || null, entry || null, tp1 || null, tp2 || null, sl || null, positionSize || null, leverage, status, errorMessage || null, null, null, null, null, null, 1.0, sl, null
     , function (err) {
       if (err) {
         console.error(`Log error for ${symbol}:`, err.message);

@@ -3,45 +3,100 @@ const db = require('./logsService').db; // Reuse DB connection
 const { symbols } = require('../config');
 const client = Binance();
 
+const TAKER_FEE = 0.04 / 100;
+const MAKER_FEE = 0.02 / 100; // Not used, but available
+
 async function updateTradeStatus() {
   console.log('🔄 Monitoring trades...');
-  const openTrades = await getOpenTrades(); // Define below
+  const openTrades = await getOpenTrades();
   for (const trade of openTrades) {
     try {
       const price = await client.avgPrice({ symbol: trade.symbol });
       const currentPrice = parseFloat(price.price);
-      const isBuy = trade.signal_type === 'Buy'; // Assume 'Buy' for long, 'Sell' for short
+      const isBuy = trade.signal_type === 'Buy';
+      const leverage = trade.leverage || 10;
+      const positionSize = trade.position_size || 0; // Margin $
+      const notional = positionSize * leverage;
+      const remainingFraction = trade.remaining_position || 1.0;
+      const remainingNotional = notional * remainingFraction;
+      const remainingPositionSize = positionSize * remainingFraction;
+      const currentSl = trade.updated_sl || trade.sl;
 
       // Check entry hit (if pending)
       if (trade.status === 'pending') {
-        const entryHit = isBuy ? currentPrice <= trade.entry : currentPrice >= trade.entry; // For buy: price drops to entry; adjust logic if market order
+        const entryHit = isBuy ? currentPrice <= trade.entry : currentPrice >= trade.entry;
         if (entryHit) {
-          await updateTrade(trade.id, { status: 'opened', open_time: new Date().toISOString(), entry: currentPrice }); // Use actual fill price
+          await updateTrade(trade.id, { status: 'opened', open_time: new Date().toISOString(), entry: currentPrice });
           console.log(`✅ Opened ${trade.symbol} at ${currentPrice}`);
         }
         continue;
       }
 
-      // Check TP/SL for opened
+      // Check for opened trades
       if (trade.status === 'opened') {
-        let exitPrice = null;
-        let closeReason = null;
+        let updates = {};
+        let closeFull = false;
 
-        // TP1/TP2: Assume partial closes or full at TP2; simplify to close at any TP/SL
-        if (isBuy) {
-          if (currentPrice >= trade.tp2) { exitPrice = trade.tp2; closeReason = 'TP2'; }
-          else if (currentPrice >= trade.tp1) { exitPrice = trade.tp1; closeReason = 'TP1'; }
-          else if (currentPrice <= trade.sl) { exitPrice = trade.sl; closeReason = 'SL'; }
-        } else { // Sell (short)
-          if (currentPrice <= trade.tp2) { exitPrice = trade.tp2; closeReason = 'TP2'; }
-          else if (currentPrice <= trade.tp1) { exitPrice = trade.tp1; closeReason = 'TP1'; }
-          else if (currentPrice >= trade.sl) { exitPrice = trade.sl; closeReason = 'SL'; }
+        // Check SL (original or updated)
+        const slHit = isBuy ? currentPrice <= currentSl : currentPrice >= currentSl;
+        if (slHit) {
+          let exitPrice = currentSl; // Or currentPrice if market
+          if (remainingFraction === 1.0) {
+            // Full loss
+            const rawPnl = isBuy ? (exitPrice - trade.entry) * (notional / trade.entry) : (trade.entry - exitPrice) * (notional / trade.entry);
+            const entryFee = notional * TAKER_FEE;
+            const exitFee = notional * TAKER_FEE;
+            const netPnl = rawPnl - entryFee - exitFee;
+            const rawPnlPct = (rawPnl / positionSize) * 100;
+            const netPnlPct = (netPnl / positionSize) * 100;
+            updates = { status: 'closed', close_time: new Date().toISOString(), exit_price: exitPrice, raw_pnl_percentage: rawPnlPct, pnl_percentage: netPnlPct, remaining_position: 0.0 };
+            closeFull = true;
+          } else {
+            // Break even on remaining
+            const rawPnlRemaining = 0; // Since at entry
+            const exitFee = remainingNotional * TAKER_FEE;
+            const netPnlRemaining = rawPnlRemaining - exitFee;
+            const rawPnlPctRemaining = 0;
+            const netPnlPctRemaining = (netPnlRemaining / remainingPositionSize) * 100;
+            const totalRawPnlPct = trade.partial_pnl_percentage + rawPnlPctRemaining;
+            const totalNetPnlPct = trade.partial_pnl_percentage + netPnlPctRemaining; // Partial already net? Adjust if not
+            updates = { status: 'closed', close_time: new Date().toISOString(), exit_price: exitPrice, raw_pnl_percentage: totalRawPnlPct, pnl_percentage: totalNetPnlPct, remaining_position: 0.0 };
+            closeFull = true;
+          }
+        } else {
+          // Check TP1 if not partial
+          const tp1Hit = isBuy ? currentPrice >= trade.tp1 : currentPrice <= trade.tp1;
+          if (tp1Hit && remainingFraction === 1.0) {
+            const exitPrice = trade.tp1; // Or currentPrice
+            const halfFraction = 0.5;
+            const halfNotional = notional * halfFraction;
+            const halfPosition = positionSize * halfFraction;
+            const rawPnlHalf = isBuy ? (exitPrice - trade.entry) * (halfNotional / trade.entry) : (trade.entry - exitPrice) * (halfNotional / trade.entry);
+            const exitFeeHalf = halfNotional * TAKER_FEE;
+            const netPnlHalf = rawPnlHalf - exitFeeHalf;
+            const rawPnlPctHalf = (rawPnlHalf / halfPosition) * 100;
+            const netPnlPctHalf = (netPnlHalf / halfPosition) * 100;
+            updates = { partial_pnl_percentage: netPnlPctHalf, remaining_position: 0.5, updated_sl: trade.entry }; // Use net for partial
+            console.log(`✅ Partial close at TP1 for ${trade.symbol}`);
+          }
+          // Check TP2 if partial
+          const tp2Hit = isBuy ? currentPrice >= trade.tp2 : currentPrice <= trade.tp2;
+          if (tp2Hit && remainingFraction < 1.0) {
+            const exitPrice = trade.tp2;
+            const rawPnlRemaining = isBuy ? (exitPrice - trade.entry) * (remainingNotional / trade.entry) : (trade.entry - exitPrice) * (remainingNotional / trade.entry);
+            const exitFeeRemaining = remainingNotional * TAKER_FEE;
+            const netPnlRemaining = rawPnlRemaining - exitFeeRemaining;
+            const rawPnlPctRemaining = (rawPnlRemaining / remainingPositionSize) * 100;
+            const netPnlPctRemaining = (netPnlRemaining / remainingPositionSize) * 100;
+            const totalRawPnlPct = rawPnlPctRemaining + (trade.partial_pnl_percentage / 0.5 * 0.5); // Adjust if partial is net
+            const totalNetPnlPct = trade.partial_pnl_percentage + netPnlPctRemaining;
+            updates = { status: 'closed', close_time: new Date().toISOString(), exit_price: exitPrice, raw_pnl_percentage: totalRawPnlPct, pnl_percentage: totalNetPnlPct, remaining_position: 0.0 };
+            closeFull = true;
+          }
         }
 
-        if (exitPrice) {
-          const pnl = isBuy ? ((exitPrice - trade.entry) / trade.entry) * 100 : ((trade.entry - exitPrice) / trade.entry) * 100;
-          await updateTrade(trade.id, { status: 'closed', close_time: new Date().toISOString(), exit_price: exitPrice, pnl_percentage: pnl });
-          console.log(`✅ Closed ${trade.symbol} at ${exitPrice} (PnL: ${pnl.toFixed(2)}%)`);
+        if (Object.keys(updates).length > 0) {
+          await updateTrade(trade.id, updates);
         }
       }
     } catch (err) {
