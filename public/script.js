@@ -3,16 +3,6 @@ let previousPrice = null;
 let selectedSymbol = 'SOLUSDT';
 let currentDecimals = 2;
 
-const symbolMap = {
-  'SOLUSDT': 'sol',
-  'XRPUSDT': 'xrp',
-  'ADAUSDT': 'ada',
-  'BNBUSDT': 'bnb',
-  'DOGEUSDT': 'doge'
-};
-
-const symbols = Object.keys(symbolMap);
-
 function updateUI(data) {
   if (data.error) {
     console.error('Data error:', data.error);
@@ -137,23 +127,10 @@ function updateUI(data) {
 
   // Show trade status checkmark if there's a trade (entry is set)
   const tradeStatus = document.getElementById('trade-status');
-  const hasTrade = data.signals.entry && data.signals.entry !== '-';
-  if (hasTrade) {
+  if (data.signals.entry && data.signals.entry !== '-') {
     tradeStatus.classList.add('active');
   } else {
     tradeStatus.classList.remove('active');
-  }
-
-  // Update symbol label with checkmark if trade exists
-  const id = symbolMap[selectedSymbol];
-  if (id) {
-    const label = document.querySelector(`label[for="${id}"]`);
-    if (label) {
-      label.textContent = label.textContent.replace(/✅$/, '');
-      if (hasTrade) {
-        label.textContent += '✅';
-      }
-    }
   }
 
   currentData = data;
@@ -193,19 +170,13 @@ async function fetchPrice() {
   }
 }
 
-// Fetch symbol data
-async function fetchSymbolData(sym) {
-  const res = await fetch(`/data?symbol=${sym}`);
-  const data = await res.json();
-  return data;
-}
-
-// Load data for selected symbol
-async function loadSelectedData() {
+// Fetch data
+async function fetchData() {
   try {
-    const data = await fetchSymbolData(selectedSymbol);
+    const res = await fetch(`/data?symbol=${selectedSymbol}`);
+    const data = await res.json();
     updateUI(data);
-    await fetchPrice();
+    fetchPrice();
   } catch (err) {
     console.error('Data fetch error:', err);
     document.getElementById('signal').textContent = '❌ Network Error';
@@ -213,55 +184,18 @@ async function loadSelectedData() {
   }
 }
 
-// Update trade status for all symbols
-async function updateAllTradeStatus() {
-  let selectedData = null;
-  for (const sym of symbols) {
-    try {
-      const data = await fetchSymbolData(sym);
-      if (data.error) continue;
-      const hasTrade = data.signals && data.signals.entry && data.signals.entry !== '-';
-      const id = symbolMap[sym];
-      if (id) {
-        const label = document.querySelector(`label[for="${id}"]`);
-        if (label) {
-          label.textContent = label.textContent.replace(/✅$/, '');
-          if (hasTrade) {
-            label.textContent += '✅';
-          }
-        }
-      }
-      if (sym === selectedSymbol) {
-        selectedData = data;
-      }
-    } catch (err) {
-      console.error(`Error fetching data for ${sym}:`, err);
-    }
-  }
-  if (selectedData) {
-    updateUI(selectedData);
-  } else {
-    await loadSelectedData();
-  }
-  await fetchPrice();
-}
-
-// Symbol change listener
+// Symbol change listener - now uses radio buttons
 document.querySelectorAll('input[name="symbol"]').forEach(radio => {
-  radio.addEventListener('change', async (e) => {
+  radio.addEventListener('change', (e) => {
     selectedSymbol = e.target.value;
     previousPrice = null;
-    await loadSelectedData();
+    fetchData();
   });
 });
 
-// Initial load
-(async () => {
-  await updateAllTradeStatus();
-})();
-
-// Intervals
-setInterval(updateAllTradeStatus, 300000); // 5 min full refresh for all symbols
+// Initial and intervals
+fetchData();
+setInterval(fetchData, 300000); // 5 min full refresh
 setInterval(fetchPrice, 1000); // 1 sec price
 
 document.getElementById('copy-btn').addEventListener('click', () => {

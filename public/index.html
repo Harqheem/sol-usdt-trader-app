@@ -77,6 +77,17 @@
       background: #5568d3;
     }
 
+    /* Trade Status Checkmark */
+    .trade-status {
+      font-size: 18px;
+      margin-right: 10px;
+      display: none; /* Hidden by default; show via JS if trade exists */
+    }
+
+    .trade-status.active {
+      display: inline;
+    }
+
     /* Symbol Radio Buttons */
     .symbol-selector {
       background: #fff;
@@ -338,6 +349,7 @@
           <div id="current-price" class="price-display">Loading...</div>
           <div id="current-time" class="time-display"></div>
         </div>
+        <span id="trade-status" class="trade-status">✅</span>
         <button id="copy-btn" class="copy-btn">📋 Copy Data</button>
       </div>
     </div>
