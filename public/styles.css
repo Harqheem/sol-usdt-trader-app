@@ -27,3 +27,12 @@
 .top-bar span {
   margin-right: 10px;
 }
+
+table th, td {
+  border: 1px solid #ccc;
+  padding: 8px;
+  text-align: left;
+}
+th {
+  background: #f0f0f0;
+}

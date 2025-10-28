@@ -1,0 +1,60 @@
+const tableBody = document.querySelector('#signals-table tbody');
+const symbolFilter = document.getElementById('symbol-filter');
+const fromDateInput = document.getElementById('from-date');
+const refreshBtn = document.getElementById('refresh-btn');
+
+// Populate symbol options from config (hardcoded for now)
+const symbols = ['SOLUSDT', 'XRPUSDT', 'ADAUSDT', 'BNBUSDT', 'DOGEUSDT'];
+symbols.forEach(sym => {
+  const opt = document.createElement('option');
+  opt.value = sym;
+  opt.textContent = sym;
+  symbolFilter.appendChild(opt);
+});
+
+async function fetchSignals() {
+  tableBody.innerHTML = '<tr><td colspan="10">Loading...</td></tr>';
+  try {
+    let url = '/signals?limit=100';
+    if (symbolFilter.value) url += `&symbol=${symbolFilter.value}`;
+    if (fromDateInput.value) url += `&fromDate=${fromDateInput.value}T00:00:00Z`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Fetch failed');
+    const data = await res.json();
+    tableBody.innerHTML = '';
+    if (data.length === 0) {
+      tableBody.innerHTML = '<tr><td colspan="10">No logs found</td></tr>';
+      return;
+    }
+    data.forEach(signal => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${signal.timestamp}</td>
+        <td>${signal.symbol}</td>
+        <td>${signal.signal_type}</td>
+        <td>${signal.notes || '-'}</td>
+        <td>${signal.entry ? signal.entry.toFixed(4) : '-'}</td>
+        <td>${signal.tp1 ? signal.tp1.toFixed(4) : '-'}</td>
+        <td>${signal.tp2 ? signal.tp2.toFixed(4) : '-'}</td>
+        <td>${signal.sl ? signal.sl.toFixed(4) : '-'}</td>
+        <td>${signal.position_size ? signal.position_size.toFixed(2) : '-'}</td>
+        <td>${signal.status}</td>
+      `;
+      tableBody.appendChild(row);
+    });
+  } catch (err) {
+    console.error('Fetch error:', err);
+    tableBody.innerHTML = '<tr><td colspan="10">Error loading logs: ' + err.message + '</td></tr>';
+  }
+}
+
+// Event listeners
+refreshBtn.addEventListener('click', fetchSignals);
+symbolFilter.addEventListener('change', fetchSignals);
+fromDateInput.addEventListener('change', fetchSignals);
+
+// Initial fetch
+fetchSignals();
+
+// Poll every 5 minutes for updates
+setInterval(fetchSignals, 300000);
