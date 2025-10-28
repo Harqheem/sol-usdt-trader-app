@@ -24,13 +24,12 @@ function updateUI(data) {
   
   // Helper to safely parse for comparison
   const safeParse = (val) => {
-    if (typeof val === 'string') return parseFloat(val);
-    if (typeof val === 'number') return val;
-    return NaN;
+    return typeof val === 'string' ? parseFloat(val) : val;
   };
   
   // Format volume with abbreviation
   const formatVolume = (val) => {
+    if (val === undefined || val === null) return 'N/A';
     const num = safeParse(val);
     if (isNaN(num)) return 'N/A';
     if (num < 1000) return num.toFixed(0);
@@ -89,7 +88,7 @@ function updateUI(data) {
       const high = safeFormat(candle.ohlc.high, dec);
       const low = safeFormat(candle.ohlc.low, dec);
       const close = safeFormat(candle.ohlc.close, dec);
-      const volume = formatVolume(candle.ohlc.volume);
+      const volume = formatVolume(candle.volume);
       li.textContent = `O: ${open} H: ${high} L: ${low} C: ${close} V: ${volume}`;
       if (safeParse(close) > safeParse(open)) {
         li.style.borderLeftColor = '#10b981'; // Green for bullish
