@@ -17,6 +17,7 @@ async function fetchSignals() {
   try {
     let url = '/signals?limit=100';
     if (symbolFilter.value) url += `&symbol=${symbolFilter.value}`;
+    if (statusFilter && statusFilter.value) url += `&status=${statusFilter.value}`;
     if (fromDateInput.value) url += `&fromDate=${fromDateInput.value}T00:00:00Z`;
     const res = await fetch(url);
     if (!res.ok) throw new Error('Fetch failed');
@@ -28,22 +29,22 @@ async function fetchSignals() {
     }
     data.forEach(signal => {
       const row = document.createElement('tr');
-      row.innerHTML = `
-        <td>${signal.timestamp}</td>
-        <td>${signal.symbol}</td>
-        <td>${signal.signal_type}</td>
-        <td>${signal.notes || '-'}</td>
-        <td>${signal.entry ? signal.entry.toFixed(4) : '-'}</td>
-        <td>${signal.tp1 ? signal.tp1.toFixed(4) : '-'}</td>
-        <td>${signal.tp2 ? signal.tp2.toFixed(4) : '-'}</td>
-        <td>${signal.sl ? signal.sl.toFixed(4) : '-'}</td>
-        <td>${signal.position_size ? signal.position_size.toFixed(2) : '-'}</td>
-        <td>${signal.open_time || '-'}</td>
-        <td>${signal.close_time || '-'}</td>
-        <td>${signal.exit_price ? signal.exit_price.toFixed(4) : '-'}</td>
-        <td>${signal.pnl_percentage ? signal.pnl_percentage.toFixed(2) + '%' : '-'}</td>
-        <td>${signal.status}</td>
-      `;
+    row.innerHTML = `
+  <td>${signal.timestamp}</td>
+  <td>${signal.symbol}</td>
+  <td>${signal.signal_type}</td>
+  <td>${signal.notes || '-'}</td>
+  <td>${signal.entry ? signal.entry.toFixed(4) : '-'}</td>
+  <td>${signal.tp1 ? signal.tp1.toFixed(4) : '-'}</td>
+  <td>${signal.tp2 ? signal.tp2.toFixed(4) : '-'}</td>
+  <td>${signal.sl ? signal.sl.toFixed(4) : '-'}</td>
+  <td>${signal.position_size ? signal.position_size.toFixed(2) : '-'}</td>
+  <td style="color: ${getStatusColor(signal.status)};">${signal.status}</td> <!-- Status here -->
+  <td>${signal.open_time || '-'}</td>
+  <td>${signal.close_time || '-'}</td>
+  <td>${signal.exit_price ? signal.exit_price.toFixed(4) : '-'}</td>
+  <td style="color: ${signal.pnl_percentage > 0 ? 'green' : signal.pnl_percentage < 0 ? 'red' : 'black'};">${signal.pnl_percentage ? signal.pnl_percentage.toFixed(2) + '%' : '-'}</td>
+`;
       tableBody.appendChild(row);
     });
   } catch (err) {
