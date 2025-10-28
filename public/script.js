@@ -146,7 +146,7 @@ document.querySelectorAll('input[name="symbol"]').forEach(radio => {
 
 // Initial and intervals
 fetchData();
-setInterval(fetchData, 180000); // 3 min full refresh
+setInterval(fetchData, 300000); // 5 min full refresh
 setInterval(fetchPrice, 1000); // 1 sec price
 
 document.getElementById('copy-btn').addEventListener('click', () => {
