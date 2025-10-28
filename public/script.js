@@ -135,11 +135,13 @@ async function fetchData() {
   }
 }
 
-// Symbol change listener
-document.getElementById('symbol-select').addEventListener('change', (e) => {
-  selectedSymbol = e.target.value;
-  previousPrice = null;
-  fetchData();
+// Symbol change listener - now uses radio buttons
+document.querySelectorAll('input[name="symbol"]').forEach(radio => {
+  radio.addEventListener('change', (e) => {
+    selectedSymbol = e.target.value;
+    previousPrice = null;
+    fetchData();
+  });
 });
 
 // Initial and intervals

@@ -2,70 +2,491 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Multi-Symbol Trader App (30m Timeframe)</title>
-  <link rel="stylesheet" href="styles.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Multi-Symbol Trading Dashboard</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+      color: #333;
+    }
+
+    .dashboard {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .header {
+      background: white;
+      border-radius: 12px;
+      padding: 20px 30px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 15px;
+    }
+
+    .header h1 {
+      font-size: 24px;
+      color: #667eea;
+      font-weight: 600;
+    }
+
+    .header-right {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .price-display {
+      font-size: 28px;
+      font-weight: bold;
+      color: #333;
+      letter-spacing: -0.5px;
+    }
+
+    .time-display {
+      font-size: 14px;
+      color: #666;
+    }
+
+    .copy-btn {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.3s;
+    }
+
+    .copy-btn:hover {
+      background: #5568d3;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+    }
+
+    /* Symbol Radio Buttons */
+    .symbol-selector {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .symbol-selector h3 {
+      margin-bottom: 15px;
+      color: #667eea;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .radio-group {
+      display: flex;
+      gap: 15px;
+      flex-wrap: wrap;
+    }
+
+    .radio-item {
+      position: relative;
+    }
+
+    .radio-item input[type="radio"] {
+      position: absolute;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .radio-label {
+      display: inline-block;
+      padding: 12px 24px;
+      background: #f7f7f7;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s;
+      font-weight: 500;
+      user-select: none;
+    }
+
+    .radio-item input[type="radio"]:checked + .radio-label {
+      background: #667eea;
+      color: white;
+      border-color: #667eea;
+      box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+    }
+
+    .radio-label:hover {
+      border-color: #667eea;
+      transform: translateY(-2px);
+    }
+
+    /* Grid Layout */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 25px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      transition: transform 0.3s;
+    }
+
+    .card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 8px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .card h3 {
+      color: #667eea;
+      font-size: 18px;
+      margin-bottom: 20px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #f0f0f0;
+      font-weight: 600;
+    }
+
+    .metric {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid #f5f5f5;
+    }
+
+    .metric:last-child {
+      border-bottom: none;
+    }
+
+    .metric-label {
+      font-weight: 500;
+      color: #666;
+      font-size: 14px;
+    }
+
+    .metric-value {
+      font-weight: 600;
+      color: #333;
+      font-size: 15px;
+    }
+
+    /* Signal Card */
+    .signal-card {
+      grid-column: 1 / -1;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .signal-card h3 {
+      color: white;
+      border-bottom-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .signal-card .metric {
+      border-bottom-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .signal-card .metric-label {
+      color: rgba(255, 255, 255, 0.9);
+    }
+
+    .signal-card .metric-value {
+      color: white;
+      font-size: 16px;
+    }
+
+    .signal-main {
+      font-size: 32px;
+      font-weight: bold;
+      text-align: center;
+      padding: 20px;
+      margin: 15px 0;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+    }
+
+    .notes-box {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 15px;
+      line-height: 1.6;
+      font-size: 14px;
+    }
+
+    /* Trade Levels Card */
+    .trade-levels {
+      grid-column: 1 / -1;
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      color: white;
+    }
+
+    .trade-levels h3 {
+      color: white;
+      border-bottom-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .trade-levels .metric {
+      border-bottom-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .trade-levels .metric-label {
+      color: rgba(255, 255, 255, 0.9);
+    }
+
+    .trade-levels .metric-value {
+      color: white;
+      font-size: 18px;
+      font-weight: bold;
+    }
+
+    /* Candles List */
+    .candles-list {
+      list-style: none;
+      padding: 0;
+    }
+
+    .candles-list li {
+      padding: 10px;
+      background: #f9f9f9;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      font-size: 13px;
+      line-height: 1.5;
+      border-left: 3px solid #667eea;
+    }
+
+    /* Status Badges */
+    .status-positive {
+      color: #10b981 !important;
+      font-weight: bold;
+    }
+
+    .status-negative {
+      color: #ef4444 !important;
+      font-weight: bold;
+    }
+
+    .status-neutral {
+      color: #f59e0b !important;
+      font-weight: bold;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .header {
+        flex-direction: column;
+        text-align: center;
+      }
+
+      .radio-group {
+        justify-content: center;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .signal-card, .trade-levels {
+        grid-column: 1;
+      }
+    }
+
+    /* Loading State */
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+      font-style: italic;
+    }
+
+    /* Timestamp */
+    .timestamp {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.8);
+      margin-top: 10px;
+    }
+  </style>
 </head>
 <body>
-  <div class="container">
-    <!-- Symbol Select -->
-    <div class="symbol-select">
-      <label for="symbol-select">Symbol:</label>
-      <select id="symbol-select">
-        <option value="SOLUSDT">SOL/USDT</option>
-        <option value="XRPUSDT">XRP/USDT</option>
-        <option value="ADAUSDT">ADA/USDT</option>
-        <option value="BNBUSDT">BNB/USDT</option>
-        <option value="DOGEUSDT">DOGE/USDT</option>
-      </select>
+  <div class="dashboard">
+    <!-- Header -->
+    <div class="header">
+      <h1>📊 Multi-Symbol Trading Dashboard</h1>
+      <div class="header-right">
+        <div>
+          <div id="current-price" class="price-display">Loading...</div>
+          <div id="current-time" class="time-display"></div>
+        </div>
+        <button id="copy-btn" class="copy-btn">📋 Copy Data</button>
+      </div>
     </div>
-    <!-- Top Bar -->
-    <div class="top-bar">
-      <span id="current-price"></span>
-      <span id="current-time"></span>
-      <span id="timestamp"></span>
-      <button id="copy-btn">Copy Data</button>
+
+    <!-- Symbol Selector -->
+    <div class="symbol-selector">
+      <h3>Select Trading Pair (30m Timeframe)</h3>
+      <div class="radio-group">
+        <div class="radio-item">
+          <input type="radio" id="sol" name="symbol" value="SOLUSDT" checked>
+          <label for="sol" class="radio-label">SOL/USDT</label>
+        </div>
+        <div class="radio-item">
+          <input type="radio" id="xrp" name="symbol" value="XRPUSDT">
+          <label for="xrp" class="radio-label">XRP/USDT</label>
+        </div>
+        <div class="radio-item">
+          <input type="radio" id="ada" name="symbol" value="ADAUSDT">
+          <label for="ada" class="radio-label">ADA/USDT</label>
+        </div>
+        <div class="radio-item">
+          <input type="radio" id="bnb" name="symbol" value="BNBUSDT">
+          <label for="bnb" class="radio-label">BNB/USDT</label>
+        </div>
+        <div class="radio-item">
+          <input type="radio" id="doge" name="symbol" value="DOGEUSDT">
+          <label for="doge" class="radio-label">DOGE/USDT</label>
+        </div>
+      </div>
     </div>
-    <!-- Left Panel -->
-    <div class="left-panel">
-      <h3>Trend & Volatility (30m)</h3>
-      <p>EMA7: <span id="ema7"></span></p>
-      <p>EMA25: <span id="ema25"></span></p>
-      <p>EMA99: <span id="ema99"></span></p>
-      <p>SMA50: <span id="sma50"></span></p>
-      <p>SMA200: <span id="sma200"></span></p>
-      <p>ATR(14): <span id="atr"></span></p>
-      <p>ADX(14): <span id="adx"></span></p>
-    </div>
-    <!-- Middle Panel -->
-    <div class="middle-panel">
-      <h3>Market Status (30m)</h3>
-      <p>Bollinger Upper: <span id="bb-upper"></span></p>
-      <p>Bollinger Middle: <span id="bb-middle"></span></p>
-      <p>Bollinger Lower: <span id="bb-lower"></span></p>
-      <p>PSAR: <span id="psar"></span> (<span id="psar-pos"></span>)</p>
-      <p>Candlestick: <span id="candle-pattern"></span></p>
-    </div>
-    <!-- Right Panel -->
-    <div class="right-panel">
-      <h3>Volume (30m)</h3>
-      <h4>Last 5 Candles (Candle 1=most recent):</h4>
-      <ul id="last5-candles"></ul>
-    </div>
-    <!-- Bottom Panel -->
-    <div class="bottom-panel">
-      <h3>Signals (30m)</h3>
-      <p>1H Trend: <span id="trend1h"></span></p>
-      <p>4H Trend: <span id="trend4h"></span></p>
-      <p>Recommendation: <span id="signal"></span></p>
-      <p>Notes: <span id="notes"></span></p>
-      <h3>Trade Levels</h3>
-      <p>Entry Price: <span id="entry"></span></p>
-      <p>Take Profit 1: <span id="tp1"></span></p>
-      <p>Take Profit 2: <span id="tp2"></span></p>
-      <p>Stop Loss: <span id="sl"></span></p>
-      <p>Position Size: <span id="positionSize"></span></p>
+
+    <!-- Main Grid -->
+    <div class="grid">
+      <!-- Trend Indicators -->
+      <div class="card">
+        <h3>📈 Trend Indicators</h3>
+        <div class="metric">
+          <span class="metric-label">EMA 7</span>
+          <span class="metric-value" id="ema7">-</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">EMA 25</span>
+          <span class="metric-value" id="ema25">-</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">EMA 99</span>
+          <span class="metric-value" id="ema99">-</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">SMA 50</span>
+          <span class="metric-value" id="sma50">-</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">SMA 200</span>
+          <span class="metric-value" id="sma200">-</span>
+        </div>
+      </div>
+
+      <!-- Volatility -->
+      <div class="card">
+        <h3>⚡ Volatility & Momentum</h3>
+        <div class="metric">
+          <span class="metric-label">ATR (14)</span>
+          <span class="metric-value" id="atr">-</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">ADX (14)</span>
+          <span class="metric-value" id="adx">-</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">1H Trend</span>
+          <span class="metric-value" id="trend1h">-</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">4H Trend</span>
+          <span class="metric-value" id="trend4h">-</span>
+        </div>
+      </div>
+
+      <!-- Market Status -->
+      <div class="card">
+        <h3>🎯 Market Status</h3>
+        <div class="metric">
+          <span class="metric-label">BB Upper</span>
+          <span class="metric-value" id="bb-upper">-</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">BB Middle</span>
+          <span class="metric-value" id="bb-middle">-</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">BB Lower</span>
+          <span class="metric-value" id="bb-lower">-</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">PSAR</span>
+          <span class="metric-value">
+            <span id="psar">-</span>
+            <span id="psar-pos" style="font-size: 12px; opacity: 0.7;"></span>
+          </span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Candle Pattern</span>
+          <span class="metric-value" id="candle-pattern">-</span>
+        </div>
+      </div>
+
+      <!-- Last 5 Candles -->
+      <div class="card">
+        <h3>🕯️ Recent Candles</h3>
+        <ul id="last5-candles" class="candles-list">
+          <li class="loading">Loading candle data...</li>
+        </ul>
+      </div>
+
+      <!-- Signal Card -->
+      <div class="card signal-card">
+        <h3>🚨 Trading Signal</h3>
+        <div class="signal-main" id="signal">⏳ Analyzing...</div>
+        <div class="notes-box" id="notes">Waiting for data...</div>
+        <div class="timestamp" id="timestamp">Last updated: -</div>
+      </div>
+
+      <!-- Trade Levels -->
+      <div class="card trade-levels">
+        <h3>💰 Trade Levels</h3>
+        <div class="metric">
+          <span class="metric-label">Entry Price</span>
+          <span class="metric-value" id="entry">-</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Take Profit 1 (50%)</span>
+          <span class="metric-value" id="tp1">-</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Take Profit 2 (50%)</span>
+          <span class="metric-value" id="tp2">-</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Stop Loss</span>
+          <span class="metric-value" id="sl">-</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Position Size</span>
+          <span class="metric-value" id="positionSize">-</span>
+        </div>
+      </div>
     </div>
   </div>
+
   <script src="script.js"></script>
 </body>
 </html>

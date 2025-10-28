@@ -742,7 +742,7 @@ app.get('/price', async (req, res) => {
 });
 
 // Scheduled tasks
-setInterval(updateCache, 120000); // 2 min
+setInterval(updateCache, 300000); // 5 min
 setInterval(() => {
   failureCount = {};
   console.log('🔄 Failure counts reset');
