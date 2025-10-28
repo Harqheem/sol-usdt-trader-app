@@ -525,6 +525,20 @@ async function getData(symbol) {
         lastSignalTime[symbol] = now;
         sendCounts[symbol]++;
         console.log(symbol, `Signal sent, count ${sendCounts[symbol]}`, 'signal');
+
+        try {
+  await logSignal(symbol, {
+    signal: signal,  // Or data.signals.signal if that's where it's stored
+    notes: notes,    // Or data.signals.notes
+    entry: parseFloat(entry),  // Or data.signals.entry; use parseFloat to ensure number
+    tp1: parseFloat(tp1),      // Adjust variable names based on your code
+    tp2: parseFloat(tp2),
+    sl: parseFloat(sl),
+    positionSize: parseFloat(positionSize)  // Or data.signals.positionSize
+  });
+} catch (logErr) {
+  console.error(`Failed to log signal for ${symbol}:`, logErr.message);
+}
         
         // Queue management - reset oldest when reaching limit
         if (sendCounts[symbol] === 6) {
@@ -560,7 +574,14 @@ async function getData(symbol) {
         };
         console.log(symbol, JSON.stringify(log, null, 2), 'TRADE');
       }
-      
+
+// Temporary test: Simulate a signal
+const testSignal = 'Buy'; // Or your signal var
+const testNotes = 'Test note';
+// ... define entry, tp1, etc.
+await sendTelegramNotification('Test First', 'Test Second', symbol);
+await logSignal(symbol, { signal: testSignal, notes: testNotes, entry: 100.0, tp1: 110.0, tp2: 120.0, sl: 90.0, positionSize: 10.0 });
+
       // Format all numeric values for display
       const formattedLast5 = last15Candles.slice(-5).map(candle => ({
         startTime: candle.startTime,
