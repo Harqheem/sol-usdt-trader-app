@@ -1,7 +1,10 @@
 const express = require('express');
 const routes = require('./routes');
 const { initDataService, updateCache } = require('./services/dataService');
+const config = require('./config');
 require('dotenv').config();
+
+const { symbols } = config;
 
 const app = express();
 app.use(express.static('public'));
