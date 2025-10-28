@@ -91,6 +91,8 @@ async function getSignals(options = {}) {
   if (fromDate) {
     whereClauses.push('timestamp >= ?');
     params.push(fromDate);
+    whereClauses.push('timestamp < datetime(?, "+1 day")');
+    params.push(fromDate);
   }
   if (status) {
     whereClauses.push('status = ?');
