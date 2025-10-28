@@ -2,8 +2,6 @@ const express = require('express');
 const Binance = require('binance-api-node').default;
 const TI = require('technicalindicators');
 const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
 require('dotenv').config();
 
 const app = express();
@@ -56,17 +54,6 @@ function withTimeout(promise, timeoutMs = 10000) {
   ]);
 }
 
-// Logging
-const logsDir = path.join(__dirname, 'logs');
-if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir);
-
-function logToFile(symbol, message, type = 'info') {
-  const timestamp = new Date().toISOString();
-  const logFile = path.join(logsDir, `${symbol}_${new Date().toISOString().split('T')[0]}.log`);
-  const logEntry = `[${timestamp}] [${type.toUpperCase()}] ${message}\n`;
-  fs.appendFile(logFile, logEntry, (err) => { if (err) console.error('Failed to write log:', err); });
-  console.log(logEntry.trim());
-}
 
 // Technical indicators
 function calculateCMF(highs, lows, closes, volumes, period = 20) {
@@ -142,7 +129,7 @@ async function sendTelegramNotification(firstMessage, secondMessage, symbol) {
       const response = await withTimeout(axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
         chat_id: targetChatId, text, parse_mode: 'Markdown'
       }), 5000);
-      logToFile([symbol], `Telegram sent to ${targetChatId}`, 'telegram');
+      console.log(`[TELEGRAM] ${symbol}: Sent to ${targetChatId}`);
       return response.data.result.message_id;
     };
     const firstMsgId = await sendSingle(firstMessage);
@@ -151,7 +138,7 @@ async function sendTelegramNotification(firstMessage, secondMessage, symbol) {
         await withTimeout(axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/forwardMessage`, {
           chat_id: CHANNEL_ID, from_chat_id: CHAT_ID, message_id: firstMsgId
         }), 5000);
-        logToFile([symbol], 'Forwarded to channel', 'telegram');
+        console.log(`[TELEGRAM] ${symbol}: Forwarded to channel`);
       } catch (fwdError) {
         console.error(`Forward error ${symbol}:`, fwdError.message);
       }
@@ -332,7 +319,9 @@ async function getData(symbol) {
         sendCounts[symbol] = 0;
         const queueIndex = pausedQueue.indexOf(symbol);
         if (queueIndex > -1) pausedQueue.splice(queueIndex, 1);
-        logToFile(symbol, 'Time reset', 'reset');
+        console.log(`[RESET] ${symbol}: Time reset after 18 hours of inactivity`);
+
+
       }
       if (signal.startsWith('✅') && signal !== previousSignal[symbol] && (!lastNotificationTime[symbol] || now - lastNotificationTime[symbol] > 300000) && sendCounts[symbol] < 6) {
         const nonAligningText = nonAligningIndicators.length > 0 ? `\nNon-aligning:\n- ${nonAligningIndicators.join('\n- ')}` : '';
@@ -343,17 +332,17 @@ async function getData(symbol) {
         lastNotificationTime[symbol] = now;
         lastSignalTime[symbol] = now;
         sendCounts[symbol]++;
-        logToFile([symbol], `Signal sent, count ${sendCounts[symbol]}`, 'signal');
+        console.log(`[SIGNAL] ${symbol}: Signal sent, count ${sendCounts[symbol]}`);
         if (sendCounts[symbol] === 6) {
           if (pausedQueue.length > 0) {
             let resetSym = pausedQueue.shift();
             sendCounts[resetSym] = 0;
-            logToFile(resetSym, `Reset by ${symbol}`, 'reset');
+            console.log(`[RESET] ${resetSym}: Reset triggered by ${symbol}`);
           }
           pausedQueue.push(symbol);
         }
       } else if (sendCounts[symbol] >= 6) {
-        logToFile([symbol], 'Limit reached', 'limit');
+        console.log(`[LIMIT] ${symbol}: Signal limit reached (${sendCounts[symbol]}/6)`)
       } else if (!signal.startsWith('✅')) {
         previousSignal[symbol] = signal;
       }
@@ -373,21 +362,17 @@ async function getData(symbol) {
           reasons: { adx: adx.toFixed(2), rsi: rsi.toFixed(2), atr: atr.toFixed(2), cmf: cmf.toFixed(2), macd: macd.MACD.toFixed(2) },
           levels: { entry, tp1, tp2, sl, positionSize }
         };
-        logToFile([symbol], JSON.stringify(log, null, 2), 'TRADE');
+        console.log(`[TRADE] ${symbol}: Trade Log\n${JSON.stringify(log, null, 2)}`);
       }
-      return {
-        decimals,
-        core: { currentPrice, ohlc, timestamp },
-        movingAverages: { ema7, ema25, ema99, sma50, sma200 },
-        volatility: { atr, adx },
-        bollinger: { upper: bb.upper, middle: bb.middle, lower: bb.lower },
-        psar: { value: psar, position: psarPosition },
-        last5Candles: last15Candles.slice(-5),
-        avgVolume: last15Candles.reduce((sum, c) => sum + c.volume, 0) / last15Candles.length || 0,
-        candlePattern,
-        higherTF: { trend1h, trend4h },
-        signals: { signal, notes, entry, tp1, tp2, sl, positionSize }
-      };
+      // Format all numeric values for display
+      const formattedLast5 = last15Candles.slice(-5).map(candle => ({
+        startTime: candle.startTime,
+        endTime: candle.endTime,
+        ohlc: candle.ohlc,
+        volume: candle.volume,
+        pattern: candle.pattern
+      }));
+
     } catch (error) {
       if (error.message === 'Request timeout' || error.code === 'ETIMEDOUT' || error.message.includes('429')) {
         attempt++;
@@ -398,8 +383,8 @@ async function getData(symbol) {
           continue;
         }
       }
-      console.error(`getData error for ${symbol}:`, error.message);
-      logToFile(symbol, `getData error: ${error.message}`, 'error');
+      console.error(`[ERROR] ${symbol}: getData error → ${error.message}`);
+      console.log(symbol, `getData error: ${error.message}`, 'error');
       return { error: 'Failed to fetch data', details: error.message };
     }
   }
@@ -408,7 +393,7 @@ async function getData(symbol) {
 
 // Cache update
 async function updateCache() {
-  console.log('📄 Cache update cycle starting...');
+  console.log(`[CACHE] Starting update cycle for all symbols...`);
   const updatePromises = symbols.map(async (symbol) => {
     if (failureCount[symbol] >= 5) {
       console.warn(`⏭️ Skipping ${symbol} (5+ failures)`);
@@ -560,7 +545,7 @@ let server;
     server = app.listen(port, () => {
       console.log(`✅ Server running on http://localhost:${port}`);
       console.log(`📊 Monitoring ${symbols.length} symbols: ${symbols.join(', ')}`);
-      console.log(`🔄 Cache updates every 2 minutes`);
+      console.log(`🔄 Cache updates every 3 minutes`);
       console.log(`🏥 Health check: http://localhost:${port}/health`);
     });
   } catch (error) {
