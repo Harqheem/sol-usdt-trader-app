@@ -135,7 +135,8 @@ async function updateTrade(id, updates) {
   if (error) throw error;
 }
 
-// Start monitoring every 30 seconds
+console.log('Starting trade monitoring interval...'); // Add this debug
 setInterval(updateTradeStatus, 30000);
+updateTradeStatus(); // Optional: Run once immediately if needed
 
 module.exports = { updateTradeStatus };

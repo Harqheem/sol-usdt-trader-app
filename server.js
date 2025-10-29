@@ -3,6 +3,7 @@ const express = require('express');
 const routes = require('./routes');
 const { initDataService, updateCache } = require('./services/dataService');
 const config = require('./config');
+const { updateTradeStatus } = require('./services/monitorService');
 require('dotenv').config();
 
 const { symbols } = config;
@@ -37,11 +38,12 @@ async function gracefulShutdown() {
   try {
     await initDataService();
     const port = process.env.PORT || 3000;
-    server = app.listen(port, () => { // Assign here
+    const server = app.listen(port, () => {
       console.log(`✅ Server running on http://localhost:${port}`);
       console.log(`📊 Monitoring ${symbols.length} symbols: ${symbols.join(', ')}`);
       console.log(`🔄 Cache updates every 5 minutes`);
       console.log(`🏥 Health check: http://localhost:${port}/health`);
+      updateTradeStatus(); // Start monitoring immediately
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);
