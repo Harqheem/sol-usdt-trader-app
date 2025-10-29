@@ -98,15 +98,14 @@ function subscribeToSymbol(symbol) {
   if (subscriptions[symbol]) return; // Already subscribed
   
   const unsubscribe = client.ws.futuresTicker(symbol, ticker => {
-    console.log('Ticker data:', ticker); // Added log to inspect the full ticker object
+    const currentPrice = parseFloat(ticker.curDayClose); // Changed to ticker.curDayClose based on the ticker data structure
     
-    const currentPrice = parseFloat(ticker.close); // Keep this, but check the log to confirm the property (e.g., might be ticker.c or ticker.closePrice)
-    console.log(`📈 Price update for ${symbol}: ${currentPrice}`);
-    
-    // Find relevant trades for this symbol
+    // Only log price updates if there are relevant trades (reduces clutter)
     const relevantTrades = openTradesCache.filter(t => t.symbol === symbol);
-    
-    relevantTrades.forEach(trade => processPriceUpdate(trade, currentPrice));
+    if (relevantTrades.length > 0) {
+      console.log(`📈 Price update for ${symbol}: ${currentPrice}`);
+      relevantTrades.forEach(trade => processPriceUpdate(trade, currentPrice));
+    }
   });
   
   subscriptions[symbol] = unsubscribe;
