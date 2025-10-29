@@ -123,17 +123,47 @@
       margin-bottom: 16px;
     }
 
-    .summary-panel p {
-      font-size: 14px;
-      margin-bottom: 8px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 16px;
     }
 
-    .summary-panel span {
+    .summary-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .summary-item label {
+      font-size: 13px;
+      color: #666;
+      font-weight: 500;
+    }
+
+    .summary-item .value {
+      font-size: 18px;
       font-weight: 600;
       color: #1a1a1a;
+    }
+
+    .summary-item input {
+      font-size: 14px;
+    }
+
+    .custom-inputs {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-top: 8px;
+      padding-top: 16px;
+      border-top: 1px solid #e5e5e5;
+    }
+
+    .custom-inputs label {
+      font-size: 13px;
+      color: #666;
+      font-weight: 500;
     }
 
     .minimal-table {
@@ -239,9 +269,9 @@
     /* Side sheet */
     .side-sheet {
       position: fixed;
-      right: -400px;
+      right: -450px;
       top: 0;
-      width: 400px;
+      width: 450px;
       height: 100vh;
       background: #ffffff;
       border-left: 1px solid #e5e5e5;
@@ -249,6 +279,7 @@
       overflow-y: auto;
       transition: right 0.3s ease;
       z-index: 1000;
+      box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1);
     }
 
     .side-sheet.active {
@@ -270,7 +301,15 @@
     #sheet-content h3 {
       font-size: 18px;
       font-weight: 600;
-      margin-bottom: 16px;
+      margin-bottom: 20px;
+    }
+
+    #sheet-content h4 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-top: 20px;
+      margin-bottom: 12px;
+      color: #1a1a1a;
     }
 
     #sheet-content p {
@@ -282,6 +321,14 @@
     #sheet-content strong {
       font-weight: 600;
       color: #1a1a1a;
+      display: inline-block;
+      min-width: 140px;
+    }
+
+    #sheet-content hr {
+      margin: 20px 0;
+      border: none;
+      border-top: 1px solid #e5e5e5;
     }
 
     /* Responsive */
@@ -318,6 +365,15 @@
       .minimal-table td {
         padding: 12px 8px;
       }
+
+      .summary-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .custom-inputs {
+        flex-direction: column;
+        align-items: stretch;
+      }
     }
   </style>
 </head>
@@ -327,13 +383,14 @@
       <h1>Signal Logs</h1>
       <a href="/">Back to Dashboard</a>
     </div>
+    
     <div class="symbol-selector">
-      <h3>Filter by Symbol</h3>
+      <h3>Filter by</h3>
       <select id="symbol-filter">
-        <option value="">All</option>
+        <option value="">All Symbols</option>
         <!-- Symbols will be populated by JS -->
       </select>
-      <input type="date" id="from-date">
+      <input type="date" id="from-date" placeholder="From Date">
       <select id="status-filter">
         <option value="">All Statuses</option>
         <option value="sent">Sent</option>
@@ -344,16 +401,43 @@
       </select>
       <button id="refresh-btn">Refresh</button>
     </div>
+    
     <div id="summary" class="summary-panel">
       <h3>Trade Summary</h3>
-      <p>Total Trades: <span id="total-trades">0</span></p>
-      <p>Total Raw PnL (%): <span id="total-raw-pnl">0.00</span>%</p>
-      <p>Total Net PnL (%): <span id="total-pnl">0.00</span>%</p>
-      <p>Custom Position Size ($): <input type="number" id="custom-position-size" value="100" min="1"></p>
-      <p>Custom Leverage: <input type="number" id="custom-leverage" value="10" min="1"></p>
-      <p>Custom Total Net PnL (%): <span id="custom-total-pnl">0.00</span>%</p>
-      <p>Custom Total Net PnL ($): <span id="custom-total-pnl-dollars">0.00</span></p>
+      <div class="summary-grid">
+        <div class="summary-item">
+          <label>Total Trades</label>
+          <span class="value" id="total-trades">0</span>
+        </div>
+        <div class="summary-item">
+          <label>Total Raw PnL (%)</label>
+          <span class="value" id="total-raw-pnl">0.00%</span>
+        </div>
+        <div class="summary-item">
+          <label>Total Net PnL (%)</label>
+          <span class="value" id="total-pnl">0.00%</span>
+        </div>
+      </div>
+      
+      <div class="custom-inputs">
+        <label>Custom Position Size ($):</label>
+        <input type="number" id="custom-position-size" value="100" min="1" step="10">
+        <label>Leverage:</label>
+        <input type="number" id="custom-leverage" value="10" min="1" max="125">
+      </div>
+      
+      <div class="summary-grid" style="margin-top: 16px;">
+        <div class="summary-item">
+          <label>Custom Total PnL (%)</label>
+          <span class="value" id="custom-total-pnl">0.00%</span>
+        </div>
+        <div class="summary-item">
+          <label>Custom Total PnL ($)</label>
+          <span class="value" id="custom-total-pnl-dollars">$0.00</span>
+        </div>
+      </div>
     </div>
+    
     <table id="signals-table" class="minimal-table">
       <thead>
         <tr>
@@ -365,23 +449,19 @@
           <th>SL</th>
           <th>Status</th>
           <th>Raw PnL (%)</th>
+          <th>Custom PnL ($)</th>
         </tr>
       </thead>
       <tbody>
         <!-- Rows will be populated by JS -->
       </tbody>
     </table>
+    
     <div id="side-sheet" class="side-sheet">
-      <button id="close-sheet">Close</button>
+      <button id="close-sheet">✕ Close</button>
       <div id="sheet-content">
         <h3>Trade Details</h3>
-        <p><strong>Symbol:</strong> BTCUSDT</p>
-        <p><strong>Entry Price:</strong> 68,000</p>
-        <p><strong>Exit Price:</strong> 69,600</p>
-        <p><strong>Position Size:</strong> $1,000</p>
-        <p><strong>Leverage:</strong> 10x</p>
-        <p><strong>Raw PnL:</strong> <span class="pnl-positive">+2.35%</span></p>
-        <p><strong>Net PnL:</strong> <span class="pnl-positive">+2.15%</span></p>
+        <p>Select a trade to view details</p>
       </div>
     </div>
   </div>

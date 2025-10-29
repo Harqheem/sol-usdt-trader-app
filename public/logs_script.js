@@ -45,7 +45,7 @@ function formatTime(isoTime) {
 }
 
 async function fetchSignals() {
-  tableBody.innerHTML = '<tr><td colspan="9">Loading...</td></tr>'; // Updated for new column
+  tableBody.innerHTML = '<tr><td colspan="9">Loading...</td></tr>';
   try {
     let url = '/signals?limit=100';
     if (symbolFilter.value) url += `&symbol=${symbolFilter.value}`;
@@ -65,6 +65,69 @@ async function fetchSignals() {
   }
 }
 
+/**
+ * Calculate custom PnL based on user-defined position size and leverage
+ * Matches exchange calculation method
+ */
+function calculateCustomPnL(signal) {
+  if (signal.status !== 'closed' || !signal.entry) {
+    return { customPnlDollars: 0, customPnlPct: 0 };
+  }
+
+  const customPosition = parseFloat(customPositionSizeInput.value) || 100;
+  const customLeverage = parseFloat(customLeverageInput.value) || 10;
+  const isBuy = signal.signal_type === 'Buy';
+  const TAKER_FEE = 0.0004; // 0.04%
+  
+  const notional = customPosition * customLeverage;
+  const quantity = notional / signal.entry;
+  
+  let totalPnlDollars = 0;
+  let totalFeeDollars = 0;
+  
+  // Entry fee on full position
+  totalFeeDollars += notional * TAKER_FEE;
+  
+  // Check if there was a partial close (TP1 hit)
+  const hadPartialClose = signal.remaining_position !== undefined && signal.remaining_position !== null && signal.remaining_position < 1.0;
+  
+  if (hadPartialClose) {
+    // Partial close at TP1 (50%)
+    const halfQuantity = quantity * 0.5;
+    const halfNotional = notional * 0.5;
+    const tp1Exit = signal.tp1;
+    
+    const priceChange1 = isBuy ? (tp1Exit - signal.entry) : (signal.entry - tp1Exit);
+    const pnlDollars1 = halfQuantity * priceChange1;
+    totalPnlDollars += pnlDollars1;
+    totalFeeDollars += halfNotional * TAKER_FEE;
+    
+    // Remaining close at TP2 or SL (breakeven)
+    const remainingQuantity = quantity * 0.5;
+    const remainingNotional = notional * 0.5;
+    const exitPrice = signal.exit_price || signal.entry;
+    
+    const priceChange2 = isBuy ? (exitPrice - signal.entry) : (signal.entry - exitPrice);
+    const pnlDollars2 = remainingQuantity * priceChange2;
+    totalPnlDollars += pnlDollars2;
+    totalFeeDollars += remainingNotional * TAKER_FEE;
+  } else {
+    // Full position closed at once (either full SL or full TP)
+    const exitPrice = signal.exit_price || signal.entry;
+    const priceChange = isBuy ? (exitPrice - signal.entry) : (signal.entry - exitPrice);
+    totalPnlDollars = quantity * priceChange;
+    totalFeeDollars += notional * TAKER_FEE; // Exit fee
+  }
+  
+  const netPnlDollars = totalPnlDollars - totalFeeDollars;
+  const netPnlPct = (netPnlDollars / customPosition) * 100;
+  
+  return {
+    customPnlDollars: netPnlDollars,
+    customPnlPct: netPnlPct
+  };
+}
+
 function renderTableAndSummary() {
   tableBody.innerHTML = '';
   if (currentData.length === 0) {
@@ -72,8 +135,9 @@ function renderTableAndSummary() {
     updateSummary(0, 0, 0, 0, 0);
     return;
   }
+  
   currentData.forEach((signal, index) => {
-    const { customNetPnlDollars, customNetPnlPct } = calculateCustomNetPnl(signal);
+    const { customPnlDollars, customPnlPct } = calculateCustomPnL(signal);
     const row = document.createElement('tr');
     row.innerHTML = `
       <td>${formatTime(signal.timestamp)}</td>
@@ -84,85 +148,62 @@ function renderTableAndSummary() {
       <td>${signal.sl ? signal.sl.toFixed(4) : '-'}</td>
       <td class="status-badge ${getStatusClass(signal.status)}">${signal.status.charAt(0).toUpperCase() + signal.status.slice(1)}</td>
       <td style="color: ${signal.raw_pnl_percentage > 0 ? 'green' : signal.raw_pnl_percentage < 0 ? 'red' : 'black'};">${signal.raw_pnl_percentage ? signal.raw_pnl_percentage.toFixed(2) + '%' : '-'}</td>
-      <td style="color: ${customNetPnlDollars > 0 ? 'green' : customNetPnlDollars < 0 ? 'red' : 'black'};">${customNetPnlDollars.toFixed(2)}</td>
+      <td style="color: ${customPnlDollars > 0 ? 'green' : customPnlDollars < 0 ? 'red' : 'black'};">${customPnlDollars !== 0 ? '$' + customPnlDollars.toFixed(2) : '-'}</td>
     `;
     row.addEventListener('click', () => showDetails(signal));
     tableBody.appendChild(row);
   });
+  
   // Calculate summary
   const totalTrades = currentData.length;
   const closedTrades = currentData.filter(s => s.status === 'closed');
   const totalRawPnl = closedTrades.reduce((sum, s) => sum + (s.raw_pnl_percentage || 0), 0);
   const totalNetPnl = closedTrades.reduce((sum, s) => sum + (s.pnl_percentage || 0), 0);
-  const customTotalNetPnlPct = closedTrades.reduce((sum, s) => sum + calculateCustomNetPnl(s).customNetPnlPct, 0);
-  const customTotalNetPnlDollars = closedTrades.reduce((sum, s) => sum + calculateCustomNetPnl(s).customNetPnlDollars, 0);
-  updateSummary(totalTrades, totalRawPnl, totalNetPnl, customTotalNetPnlPct, customTotalNetPnlDollars);
+  
+  const customResults = closedTrades.map(s => calculateCustomPnL(s));
+  const customTotalPnlPct = customResults.reduce((sum, r) => sum + r.customPnlPct, 0);
+  const customTotalPnlDollars = customResults.reduce((sum, r) => sum + r.customPnlDollars, 0);
+  
+  updateSummary(totalTrades, totalRawPnl, totalNetPnl, customTotalPnlPct, customTotalPnlDollars);
 }
 
-function calculateCustomNetPnl(signal) {
-  if (signal.status !== 'closed' || !signal.entry) return { customNetPnlDollars: 0, customNetPnlPct: 0 };
-  const customPosition = parseFloat(customPositionSizeInput.value) || 100;
-  const customLeverage = parseFloat(customLeverageInput.value) || 10;
-  const notional = customPosition * customLeverage;
-  const quantity = notional / signal.entry;
-  const isBuy = signal.signal_type === 'Buy';
-  const takerFee = 0.0004;
-
-  let totalRawPnl = 0;
-  let totalFee = notional * takerFee; // Entry fee on full
-
-  // Partial close at TP1 (50%)
-  if (signal.tp1) {
-    const halfNotional = notional * 0.5;
-    const halfQuantity = quantity * 0.5;
-    const tp1Exit = signal.tp1;
-    const rawPnlPctHalf = isBuy ? ((tp1Exit - signal.entry) / signal.entry) * 100 : ((signal.entry - tp1Exit) / signal.entry) * 100;
-    const rawPnlHalf = (rawPnlPctHalf / 100) * (customPosition * 0.5);
-    totalRawPnl += rawPnlHalf;
-    totalFee += halfNotional * takerFee; // Exit fee for half
-  }
-
-  // Remaining close (at TP2 or SL/entry)
-  const remainingPosition = customPosition * 0.5;
-  const exitPrice = signal.exit_price || signal.entry; // Use entry if BE
-  const rawPnlPctRemaining = isBuy ? ((exitPrice - signal.entry) / signal.entry) * 100 : ((signal.entry - exitPrice) / signal.entry) * 100;
-  const rawPnlRemaining = (rawPnlPctRemaining / 100) * remainingPosition;
-  totalRawPnl += rawPnlRemaining;
-  totalFee += (notional * 0.5) * takerFee; // Exit fee for remaining
-
-  const netPnl = totalRawPnl - totalFee;
-  const netPnlPct = (netPnl / customPosition) * 100;
-  return { customNetPnlDollars: netPnl, customNetPnlPct: netPnlPct };
-}
-
-function updateSummary(trades, rawPnl, netPnl, customNetPnlPct, customNetPnlDollars) {
+function updateSummary(trades, rawPnl, netPnl, customPnlPct, customPnlDollars) {
   totalTradesEl.textContent = trades;
-  totalRawPnlEl.textContent = rawPnl.toFixed(2);
-  totalPnlEl.textContent = netPnl.toFixed(2);
-  customTotalPnlEl.textContent = customNetPnlPct.toFixed(2);
-  customTotalPnlDollarsEl.textContent = customNetPnlDollars.toFixed(2);
+  totalRawPnlEl.textContent = rawPnl.toFixed(2) + '%';
+  totalPnlEl.textContent = netPnl.toFixed(2) + '%';
+  customTotalPnlEl.textContent = customPnlPct.toFixed(2) + '%';
+  customTotalPnlDollarsEl.textContent = '$' + customPnlDollars.toFixed(2);
 }
 
 function showDetails(signal) {
-  const { customNetPnlDollars, customNetPnlPct } = calculateCustomNetPnl(signal);
+  const { customPnlDollars, customPnlPct } = calculateCustomPnL(signal);
+  
+  // Raw PnL
   let rawPnlHTML = '-';
   if (signal.raw_pnl_percentage !== null && signal.raw_pnl_percentage !== undefined) {
     const pnlClass = signal.raw_pnl_percentage > 0 ? 'pnl-positive' : signal.raw_pnl_percentage < 0 ? 'pnl-negative' : '';
     const pnlSign = signal.raw_pnl_percentage > 0 ? '+' : '';
     rawPnlHTML = `<span class="${pnlClass}">${pnlSign}${signal.raw_pnl_percentage.toFixed(2)}%</span>`;
   }
+  
+  // Net PnL (stored in DB)
   let netPnlHTML = '-';
   if (signal.pnl_percentage !== null && signal.pnl_percentage !== undefined) {
     const pnlClass = signal.pnl_percentage > 0 ? 'pnl-positive' : signal.pnl_percentage < 0 ? 'pnl-negative' : '';
     const pnlSign = signal.pnl_percentage > 0 ? '+' : '';
     netPnlHTML = `<span class="${pnlClass}">${pnlSign}${signal.pnl_percentage.toFixed(2)}%</span>`;
   }
-  let customNetPnlHTML = '-';
-  if (customNetPnlDollars !== 0) {
-    const pnlClass = customNetPnlDollars > 0 ? 'pnl-positive' : customNetPnlDollars < 0 ? 'pnl-negative' : '';
-    const pnlSign = customNetPnlDollars > 0 ? '+' : '';
-    customNetPnlHTML = `<span class="${pnlClass}">${pnlSign}${customNetPnlDollars.toFixed(2)}</span>`;
+  
+  // Custom PnL (calculated)
+  let customPnlHTMLPercent = '-';
+  let customPnlHTMLDollars = '-';
+  if (customPnlDollars !== 0) {
+    const pnlClass = customPnlDollars > 0 ? 'pnl-positive' : customPnlDollars < 0 ? 'pnl-negative' : '';
+    const pnlSign = customPnlDollars > 0 ? '+' : '';
+    customPnlHTMLPercent = `<span class="${pnlClass}">${pnlSign}${customPnlPct.toFixed(2)}%</span>`;
+    customPnlHTMLDollars = `<span class="${pnlClass}">${pnlSign}$${customPnlDollars.toFixed(2)}</span>`;
   }
+  
   sheetContent.innerHTML = `
     <h3>Trade Details</h3>
     <p><strong>Timestamp:</strong> ${formatTime(signal.timestamp)}</p>
@@ -173,15 +214,22 @@ function showDetails(signal) {
     <p><strong>TP1:</strong> ${signal.tp1 ? signal.tp1.toFixed(4) : '-'}</p>
     <p><strong>TP2:</strong> ${signal.tp2 ? signal.tp2.toFixed(4) : '-'}</p>
     <p><strong>SL:</strong> ${signal.sl ? signal.sl.toFixed(4) : '-'}</p>
-    <p><strong>Position Size:</strong> ${signal.position_size ? signal.position_size.toFixed(2) : '-'}</p>
-    <p><strong>Leverage:</strong> ${signal.leverage || '-'}</p>
+    <p><strong>Position Size:</strong> ${signal.position_size ? '$' + signal.position_size.toFixed(2) : '-'}</p>
+    <p><strong>Leverage:</strong> ${signal.leverage || '-'}x</p>
+    <p><strong>Remaining Position:</strong> ${signal.remaining_position !== null && signal.remaining_position !== undefined ? (signal.remaining_position * 100).toFixed(0) + '%' : '100%'}</p>
     <p><strong>Status:</strong> <span class="status-badge ${getStatusClass(signal.status)}">${signal.status.charAt(0).toUpperCase() + signal.status.slice(1)}</span></p>
     <p><strong>Open Time:</strong> ${formatTime(signal.open_time)}</p>
     <p><strong>Close Time:</strong> ${formatTime(signal.close_time)}</p>
     <p><strong>Exit Price:</strong> ${signal.exit_price ? signal.exit_price.toFixed(4) : '-'}</p>
+    <hr style="margin: 15px 0; border: none; border-top: 1px solid #e0e0e0;">
+    <h4 style="margin-bottom: 10px;">PnL Breakdown</h4>
     <p><strong>Raw PnL (%):</strong> ${rawPnlHTML}</p>
+    <p style="font-size: 0.9em; color: #666; margin-left: 20px;">Price change only, no fees</p>
     <p><strong>Net PnL (%):</strong> ${netPnlHTML}</p>
-    <p><strong>Custom Net PnL ($):</strong> ${customNetPnlHTML}</p>
+    <p style="font-size: 0.9em; color: #666; margin-left: 20px;">With fees, based on signal position size</p>
+    <p><strong>Custom PnL (%):</strong> ${customPnlHTMLPercent}</p>
+    <p><strong>Custom PnL ($):</strong> ${customPnlHTMLDollars}</p>
+    <p style="font-size: 0.9em; color: #666; margin-left: 20px;">Based on your custom position size (${customPositionSizeInput.value || 100}) and leverage (${customLeverageInput.value || 10}x)</p>
   `;
   sideSheet.classList.add('active');
 }
