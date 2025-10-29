@@ -5,7 +5,7 @@ const { supabase } = require('./logsService'); // Use exported supabase client
 const { symbols } = require('../config');
 const client = Binance();
 
-const TAKER_FEE = 0.04 / 100; // 0.04%
+const TAKER_FEE = 0.0004; // 0.04%
 
 // Global handler for unhandled promise rejections (prevents crashes and logs details)
 process.on('unhandledRejection', (reason, promise) => {
@@ -68,7 +68,7 @@ async function updateTradeStatus() {
       const price = await client.avgPrice({ symbol: trade.symbol });
       const currentPrice = parseFloat(price.price);
       const isBuy = trade.signal_type === 'Buy';
-      const leverage = trade.leverage || 10;
+      const leverage = trade.leverage || 20;
       const positionSize = trade.position_size || 0; // Margin in dollars
       const remainingFraction = trade.remaining_position || 1.0;
       const currentSl = trade.updated_sl || trade.sl;
