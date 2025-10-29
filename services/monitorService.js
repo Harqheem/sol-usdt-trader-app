@@ -27,23 +27,23 @@ function calculatePnL(entryPrice, exitPrice, isBuy, positionSize, leverage, frac
   
   // Calculate for the fraction of position being closed
   const fractionalPositionSize = positionSize * fraction;
-  const notional = fractionalPositionSize * leverage;
   
-  // Net PnL (%) - accounts for fees without leverage effect
-  // Fees are paid on notional value
-  const entryFee = notional * TAKER_FEE;
-  const exitFee = notional * TAKER_FEE;
-  const totalFees = entryFee + exitFee;
-  
-  // Fee impact as percentage of position size (margin)
-  const feePct = (totalFees / fractionalPositionSize) * 100;
+  // Net PnL (%) - accounts for fees without leverage effect (leverage=1 for fees)
+  const notionalUnlev = fractionalPositionSize * 1;
+  const entryFeeUnlev = notionalUnlev * TAKER_FEE;
+  const exitFeeUnlev = notionalUnlev * TAKER_FEE;
+  const totalFeesUnlev = entryFeeUnlev + exitFeeUnlev;
+  const feePct = (totalFeesUnlev / fractionalPositionSize) * 100;
   const netPnlPct = rawPnlPct - feePct;
   
-  // Custom PnL ($) - actual dollar P&L based on quantity filled
-  // Quantity = (Position Size * Leverage) / Entry Price
+  // Custom PnL ($) - actual dollar P&L based on quantity filled, with leverage
+  const notional = fractionalPositionSize * leverage;
   const quantity = notional / entryPrice;
   const priceChange = isBuy ? (exitPrice - entryPrice) : (entryPrice - exitPrice);
   const rawPnlDollar = quantity * priceChange;
+  const entryFee = notional * TAKER_FEE;
+  const exitFee = notional * TAKER_FEE;
+  const totalFees = entryFee + exitFee;
   const customPnl = rawPnlDollar - totalFees;
   
   return {
@@ -122,9 +122,9 @@ async function updateTradeStatus() {
             0.5
           );
           
-          // Total PnL = Partial (TP1) + Remaining (TP2)
-          const totalRawPnlPct = (trade.partial_raw_pnl_pct || 0) + remainingPnl.rawPnlPct;
-          const totalNetPnlPct = (trade.partial_net_pnl_pct || 0) + remainingPnl.netPnlPct;
+          // Total PnL = weighted average for raw/net (since unleveraged %), sum for custom ($)
+          const totalRawPnlPct = 0.5 * ((trade.partial_raw_pnl_pct || 0) + remainingPnl.rawPnlPct);
+          const totalNetPnlPct = 0.5 * ((trade.partial_net_pnl_pct || 0) + remainingPnl.netPnlPct);
           const totalCustomPnl = (trade.partial_custom_pnl || 0) + remainingPnl.customPnl;
           
           updates = { 
@@ -174,9 +174,9 @@ async function updateTradeStatus() {
               0.5
             );
             
-            // Total PnL = Partial (TP1) + Remaining (breakeven)
-            const totalRawPnlPct = (trade.partial_raw_pnl_pct || 0) + remainingPnl.rawPnlPct;
-            const totalNetPnlPct = (trade.partial_net_pnl_pct || 0) + remainingPnl.netPnlPct;
+            // Total PnL = weighted average for raw/net, sum for custom
+            const totalRawPnlPct = 0.5 * ((trade.partial_raw_pnl_pct || 0) + remainingPnl.rawPnlPct);
+            const totalNetPnlPct = 0.5 * ((trade.partial_net_pnl_pct || 0) + remainingPnl.netPnlPct);
             const totalCustomPnl = (trade.partial_custom_pnl || 0) + remainingPnl.customPnl;
             
             updates = { 
