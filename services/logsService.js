@@ -1,3 +1,5 @@
+// services/logsService.js
+
 const { createClient } = require('@supabase/supabase-js');
 
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -30,8 +32,12 @@ async function logSignal(symbol, signalData, status = 'pending', errorMessage = 
           updated_sl: sl,
           partial_pnl_percentage: null
         }
-      ]);
+      ])
+      .select(); // Ensure .select() to return inserted data
     if (error) throw error;
+    if (!data || data.length === 0) {
+      throw new Error('No data returned from insert');
+    }
     console.log(`✅ Signal logged for ${symbol} (ID: ${data[0].id})`);
     return data[0].id;
   } catch (err) {
