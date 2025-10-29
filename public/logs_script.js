@@ -45,7 +45,7 @@ function formatTime(isoTime) {
 }
 
 async function fetchSignals() {
-  tableBody.innerHTML = '<tr><td colspan="9">Loading...</td></tr>';
+  tableBody.innerHTML = '<tr><td colspan="10">Loading...</td></tr>';
   try {
     let url = '/signals?limit=100';
     if (symbolFilter.value) url += `&symbol=${symbolFilter.value}`;
@@ -60,7 +60,7 @@ async function fetchSignals() {
     renderTableAndSummary();
   } catch (err) {
     console.error('Fetch error:', err);
-    tableBody.innerHTML = '<tr><td colspan="9">Error loading logs: ' + err.message + '</td></tr>';
+    tableBody.innerHTML = '<tr><td colspan="10">Error loading logs: ' + err.message + '</td></tr>';
     updateSummary(0, 0, 0, 0, 0);
   }
 }
@@ -89,7 +89,7 @@ function calculateCustomPnL(signal) {
   totalFeeDollars += notional * TAKER_FEE;
   
   // Check if there was a partial close (TP1 hit)
-  const hadPartialClose = signal.remaining_position !== undefined && signal.remaining_position !== null && signal.remaining_position < 1.0;
+  const hadPartialClose = signal.partial_raw_pnl_pct !== null && signal.partial_raw_pnl_pct !== undefined;
   
   if (hadPartialClose) {
     // Partial close at TP1 (50%)
@@ -131,7 +131,7 @@ function calculateCustomPnL(signal) {
 function renderTableAndSummary() {
   tableBody.innerHTML = '';
   if (currentData.length === 0) {
-    tableBody.innerHTML = '<tr><td colspan="9">No logs found</td></tr>';
+    tableBody.innerHTML = '<tr><td colspan="10">No logs found</td></tr>';
     updateSummary(0, 0, 0, 0, 0);
     return;
   }
@@ -148,6 +148,7 @@ function renderTableAndSummary() {
       <td>${signal.sl ? signal.sl.toFixed(4) : '-'}</td>
       <td class="status-badge ${getStatusClass(signal.status)}">${signal.status.charAt(0).toUpperCase() + signal.status.slice(1)}</td>
       <td style="color: ${signal.raw_pnl_percentage > 0 ? 'green' : signal.raw_pnl_percentage < 0 ? 'red' : 'black'};">${signal.raw_pnl_percentage ? signal.raw_pnl_percentage.toFixed(2) + '%' : '-'}</td>
+      <td style="color: ${customPnlPct > 0 ? 'green' : customPnlPct < 0 ? 'red' : 'black'};">${customPnlPct !== 0 ? customPnlPct.toFixed(2) + '%' : '-'}</td>
       <td style="color: ${customPnlDollars > 0 ? 'green' : customPnlDollars < 0 ? 'red' : 'black'};">${customPnlDollars !== 0 ? '$' + customPnlDollars.toFixed(2) : '-'}</td>
     `;
     row.addEventListener('click', () => showDetails(signal));
@@ -229,7 +230,7 @@ function showDetails(signal) {
     <p style="font-size: 0.9em; color: #666; margin-left: 20px;">With fees, based on signal position size</p>
     <p><strong>Custom PnL (%):</strong> ${customPnlHTMLPercent}</p>
     <p><strong>Custom PnL ($):</strong> ${customPnlHTMLDollars}</p>
-    <p style="font-size: 0.9em; color: #666; margin-left: 20px;">Based on your custom position size (${customPositionSizeInput.value || 100}) and leverage (${customLeverageInput.value || 10}x)</p>
+    <p style="font-size: 0.9em; color: #666; margin-left: 20px;">Based on your custom position size (${customPositionSizeInput.value || 100}) and leverage (${customLeverageInput.value || 20}x)</p>
   `;
   sideSheet.classList.add('active');
 }
