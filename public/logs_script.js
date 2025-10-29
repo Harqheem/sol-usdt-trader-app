@@ -66,7 +66,6 @@ async function fetchSignals() {
 }
 
 /**
- /**
  * Calculate custom PnL based on user-defined position size and leverage
  * Matches exchange calculation method
  */
