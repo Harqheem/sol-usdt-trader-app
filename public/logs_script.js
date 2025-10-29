@@ -12,6 +12,8 @@ const customPositionSizeInput = document.getElementById('custom-position-size');
 const customLeverageInput = document.getElementById('custom-leverage');
 const customTotalPnlEl = document.getElementById('custom-total-pnl');
 const customTotalPnlDollarsEl = document.getElementById('custom-total-pnl-dollars');
+const customTotalFeesPctEl = document.getElementById('custom-total-fees-pct');
+const customTotalFeesDollarsEl = document.getElementById('custom-total-fees-dollars');
 const sideSheet = document.getElementById('side-sheet');
 const closeSheetBtn = document.getElementById('close-sheet');
 const sheetContent = document.getElementById('sheet-content');
@@ -146,7 +148,7 @@ function renderTableAndSummary() {
   tableBody.innerHTML = '';
   if (currentData.length === 0) {
     tableBody.innerHTML = '<tr><td colspan="10">No logs found</td></tr>';
-    updateSummary(0, 0, 0, 0, 0);
+    updateSummary(0, 0, 0, 0, 0, 0, 0);
     return;
   }
   
@@ -178,16 +180,21 @@ function renderTableAndSummary() {
   const customResults = closedTrades.map(s => calculateCustomPnL(s));
   const customTotalPnlPct = customResults.reduce((sum, r) => sum + r.customPnlPct, 0);
   const customTotalPnlDollars = customResults.reduce((sum, r) => sum + r.customPnlDollars, 0);
+  const customTotalFeesDollars = customResults.reduce((sum, r) => sum + r.totalFees, 0);
+  const customPosition = parseFloat(customPositionSizeInput.value) || 100;
+  const customTotalFeesPct = (customTotalFeesDollars / customPosition) * 100;
   
-  updateSummary(totalTrades, totalRawPnl, totalNetPnl, customTotalPnlPct, customTotalPnlDollars);
+  updateSummary(totalTrades, totalRawPnl, totalNetPnl, customTotalPnlPct, customTotalPnlDollars, customTotalFeesPct, customTotalFeesDollars);
 }
 
-function updateSummary(trades, rawPnl, netPnl, customPnlPct, customPnlDollars) {
+function updateSummary(trades, rawPnl, netPnl, customPnlPct, customPnlDollars, customFeesPct, customFeesDollars) {
   totalTradesEl.textContent = trades;
   totalRawPnlEl.textContent = rawPnl.toFixed(2) + '%';
   totalPnlEl.textContent = netPnl.toFixed(2) + '%';
   customTotalPnlEl.textContent = customPnlPct.toFixed(2) + '%';
   customTotalPnlDollarsEl.textContent = '$' + customPnlDollars.toFixed(2);
+  customTotalFeesPctEl.textContent = customFeesPct.toFixed(2) + '%';
+  customTotalFeesDollarsEl.textContent = '$' + customFeesDollars.toFixed(2);
 }
 
 function showDetails(signal) {
