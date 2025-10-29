@@ -61,18 +61,36 @@ function formatTime(isoTime) {
 
 function getOutcome(signal) {
   if (signal.status !== 'closed') return '-';
-  const hadPartial = signal.partial_raw_pnl_pct !== null;
+
+  const hadPartial = signal.partial_raw_pnl_pct !== null; // Indicates TP1 was hit
+
   if (!hadPartial) {
+    // No partial close means full SL hit
     return 'SL';
   }
+
   const entry = signal.entry;
   const exit = signal.exit_price;
-  if (!exit || !entry) return '-';
+  const isBuy = signal.signal_type === 'Buy';
+  const tp2 = signal.tp2;
+
+  if (!exit || !entry || !tp2) return '-';
+
   const relativeDiff = Math.abs(exit - entry) / entry;
+
   if (relativeDiff < 0.001) {
+    // Exit close to entry after TP1: BE (price went back to entry/SL after move to BE)
     return 'BE';
   } else {
-    return 'TP';
+    // After TP1, check if exit matches TP2 condition
+    const tp2Hit = isBuy ? exit >= tp2 : exit <= tp2;
+    if (tp2Hit) {
+      // Both TP1 and TP2 hit
+      return 'TP';
+    } else {
+      // Unexpected, but fallback to SL or BE logic
+      return 'SL';
+    }
   }
 }
 
