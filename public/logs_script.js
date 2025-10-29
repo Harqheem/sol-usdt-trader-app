@@ -111,28 +111,24 @@ function calculateCustomNetPnl(signal) {
   let totalRawPnl = 0;
   let totalFee = notional * takerFee; // Entry fee on full
 
-  // Check if partial close occurred (based on remaining_position or partial_pnl_percentage)
-  if (signal.remaining_position < 1.0 || (signal.partial_pnl_percentage !== null && signal.partial_pnl_percentage !== undefined)) {
-    // Half at TP1
+  // Partial close at TP1 (50%)
+  if (signal.tp1) {
     const halfNotional = notional * 0.5;
     const halfQuantity = quantity * 0.5;
-    const tp1Exit = signal.tp1; // Assume closed at TP1
-    const rawPnlHalf = isBuy ? (tp1Exit - signal.entry) * halfQuantity : (signal.entry - tp1Exit) * halfQuantity;
+    const tp1Exit = signal.tp1;
+    const rawPnlPctHalf = isBuy ? ((tp1Exit - signal.entry) / signal.entry) * 100 : ((signal.entry - tp1Exit) / signal.entry) * 100;
+    const rawPnlHalf = (rawPnlPctHalf / 100) * (customPosition * 0.5);
     totalRawPnl += rawPnlHalf;
     totalFee += halfNotional * takerFee; // Exit fee for half
-
-    // Remaining at exit_price (TP2 or BE/SL)
-    const remainingNotional = notional * 0.5;
-    const remainingQuantity = quantity * 0.5;
-    const rawPnlRemaining = isBuy ? (signal.exit_price - signal.entry) * remainingQuantity : (signal.entry - signal.exit_price) * remainingQuantity;
-    totalRawPnl += rawPnlRemaining;
-    totalFee += remainingNotional * takerFee; // Exit fee for remaining
-  } else {
-    // Full close at exit_price
-    const rawPnl = isBuy ? (signal.exit_price - signal.entry) * quantity : (signal.entry - signal.exit_price) * quantity;
-    totalRawPnl += rawPnl;
-    totalFee += notional * takerFee; // Exit fee full
   }
+
+  // Remaining close (at TP2 or SL/entry)
+  const remainingPosition = customPosition * 0.5;
+  const exitPrice = signal.exit_price || signal.entry; // Use entry if BE
+  const rawPnlPctRemaining = isBuy ? ((exitPrice - signal.entry) / signal.entry) * 100 : ((signal.entry - exitPrice) / signal.entry) * 100;
+  const rawPnlRemaining = (rawPnlPctRemaining / 100) * remainingPosition;
+  totalRawPnl += rawPnlRemaining;
+  totalFee += (notional * 0.5) * takerFee; // Exit fee for remaining
 
   const netPnl = totalRawPnl - totalFee;
   const netPnlPct = (netPnl / customPosition) * 100;
