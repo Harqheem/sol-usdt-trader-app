@@ -69,8 +69,8 @@ async function updateTradeStatus() {
   
   for (const trade of openTrades) {
     try {
-      const price = await client.futuresAvgPrice({ symbol: trade.symbol }); // Changed to futuresAvgPrice for leveraged trades
-      const currentPrice = parseFloat(price.price);
+      const ticker = await client.futuresTicker({ symbol: trade.symbol }); // Use futuresTicker for last price
+      const currentPrice = parseFloat(ticker.lastPrice);
       const isBuy = trade.signal_type === 'Buy';
       const leverage = trade.leverage || 20;
       const positionSize = trade.position_size || 0; // Margin in dollars
