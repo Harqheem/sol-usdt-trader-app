@@ -1,10 +1,11 @@
+// services/monitorService.js
+
 const Binance = require('binance-api-node').default;
-const db = require('./logsService').db; // Reuse DB connection
+const { supabase } = require('./logsService'); // Use exported supabase client
 const { symbols } = require('../config');
 const client = Binance();
 
-const TAKER_FEE = 0.04 / 100;
-const MAKER_FEE = 0.02 / 100; // Not used, but available
+const TAKER_FEE = 0.04 / 100; // 0.04%
 
 async function updateTradeStatus() {
   console.log('🔄 Monitoring trades...');
@@ -15,7 +16,7 @@ async function updateTradeStatus() {
       const currentPrice = parseFloat(price.price);
       const isBuy = trade.signal_type === 'Buy';
       const leverage = trade.leverage || 10;
-      const positionSize = trade.position_size || 0; // Margin $
+      const positionSize = trade.position_size || 0; // Margin in dollars
       const notional = positionSize * leverage;
       const remainingFraction = trade.remaining_position || 1.0;
       const remainingNotional = notional * remainingFraction;
@@ -35,7 +36,6 @@ async function updateTradeStatus() {
       // Check for opened trades
       if (trade.status === 'opened') {
         let updates = {};
-        let closeFull = false;
 
         // Check SL (original or updated)
         const slHit = isBuy ? currentPrice <= currentSl : currentPrice >= currentSl;
@@ -50,21 +50,20 @@ async function updateTradeStatus() {
             const rawPnlPct = (rawPnl / positionSize) * 100;
             const netPnlPct = (netPnl / positionSize) * 100;
             updates = { status: 'closed', close_time: new Date().toISOString(), exit_price: exitPrice, raw_pnl_percentage: rawPnlPct, pnl_percentage: netPnlPct, remaining_position: 0.0 };
-            closeFull = true;
           } else {
-            // Break even on remaining
-            const rawPnlRemaining = 0; // Since at entry
+            // Remaining at breakeven (SL moved to entry)
+            const rawPnlRemaining = isBuy ? (exitPrice - trade.entry) * (remainingNotional / trade.entry) : (trade.entry - exitPrice) * (remainingNotional / trade.entry); // Should be 0 if at entry
             const exitFee = remainingNotional * TAKER_FEE;
             const netPnlRemaining = rawPnlRemaining - exitFee;
-            const rawPnlPctRemaining = 0;
+            const rawPnlPctRemaining = (rawPnlRemaining / remainingPositionSize) * 100;
             const netPnlPctRemaining = (netPnlRemaining / remainingPositionSize) * 100;
-            const totalRawPnlPct = trade.partial_pnl_percentage + rawPnlPctRemaining;
-            const totalNetPnlPct = trade.partial_pnl_percentage + netPnlPctRemaining; // Partial already net? Adjust if not
+            // Total includes partial from TP1 (assuming partial_pnl_percentage is net for half)
+            const totalRawPnlPct = trade.partial_pnl_percentage + rawPnlPctRemaining; // Adjust if partial is raw
+            const totalNetPnlPct = trade.partial_pnl_percentage + netPnlPctRemaining;
             updates = { status: 'closed', close_time: new Date().toISOString(), exit_price: exitPrice, raw_pnl_percentage: totalRawPnlPct, pnl_percentage: totalNetPnlPct, remaining_position: 0.0 };
-            closeFull = true;
           }
         } else {
-          // Check TP1 if not partial
+          // Check TP1 if full position
           const tp1Hit = isBuy ? currentPrice >= trade.tp1 : currentPrice <= trade.tp1;
           if (tp1Hit && remainingFraction === 1.0) {
             const exitPrice = trade.tp1; // Or currentPrice
@@ -76,7 +75,7 @@ async function updateTradeStatus() {
             const netPnlHalf = rawPnlHalf - exitFeeHalf;
             const rawPnlPctHalf = (rawPnlHalf / halfPosition) * 100;
             const netPnlPctHalf = (netPnlHalf / halfPosition) * 100;
-            updates = { partial_pnl_percentage: netPnlPctHalf, remaining_position: 0.5, updated_sl: trade.entry }; // Use net for partial
+            updates = { partial_pnl_percentage: netPnlPctHalf, remaining_position: 0.5, updated_sl: trade.entry };
             console.log(`✅ Partial close at TP1 for ${trade.symbol}`);
           }
           // Check TP2 if partial
@@ -88,10 +87,9 @@ async function updateTradeStatus() {
             const netPnlRemaining = rawPnlRemaining - exitFeeRemaining;
             const rawPnlPctRemaining = (rawPnlRemaining / remainingPositionSize) * 100;
             const netPnlPctRemaining = (netPnlRemaining / remainingPositionSize) * 100;
-            const totalRawPnlPct = rawPnlPctRemaining + (trade.partial_pnl_percentage / 0.5 * 0.5); // Adjust if partial is net
+            const totalRawPnlPct = rawPnlPctRemaining + (trade.partial_pnl_percentage / 0.5 * 0.5); // Scale partial back
             const totalNetPnlPct = trade.partial_pnl_percentage + netPnlPctRemaining;
             updates = { status: 'closed', close_time: new Date().toISOString(), exit_price: exitPrice, raw_pnl_percentage: totalRawPnlPct, pnl_percentage: totalNetPnlPct, remaining_position: 0.0 };
-            closeFull = true;
           }
         }
 
@@ -106,23 +104,21 @@ async function updateTradeStatus() {
 }
 
 async function getOpenTrades() {
-  return new Promise((resolve, reject) => {
-    db.all("SELECT * FROM signals WHERE status IN ('pending', 'opened') ORDER BY timestamp DESC", (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows);
-    });
-  });
+  const { data, error } = await supabase
+    .from('signals')
+    .select('*')
+    .in('status', ['pending', 'opened'])
+    .order('timestamp', { ascending: false });
+  if (error) throw error;
+  return data;
 }
 
 async function updateTrade(id, updates) {
-  const fields = Object.keys(updates).map(k => `${k} = ?`).join(', ');
-  const values = [...Object.values(updates), id];
-  return new Promise((resolve, reject) => {
-    db.run(`UPDATE signals SET ${fields} WHERE id = ?`, values, err => {
-      if (err) reject(err);
-      else resolve();
-    });
-  });
+  const { error } = await supabase
+    .from('signals')
+    .update(updates)
+    .eq('id', id);
+  if (error) throw error;
 }
 
 // Start monitoring every 30 seconds

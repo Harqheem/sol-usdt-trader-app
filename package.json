@@ -19,6 +19,7 @@
   },
   "homepage": "https://github.com/Harqheem/sol-usdt-trader-app#readme",
   "dependencies": {
+    "@supabase/supabase-js": "^2.76.1",
     "axios": "^1.12.2",
     "binance-api-node": "^0.12.9",
     "dotenv": "^17.2.3",
