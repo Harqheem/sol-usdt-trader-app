@@ -98,7 +98,7 @@ function subscribeToSymbol(symbol) {
   if (subscriptions[symbol]) return; // Already subscribed
   
   const unsubscribe = client.ws.futuresTicker(symbol, ticker => {
-    const currentPrice = parseFloat(ticker.c); // Changed to ticker.c for last/close price
+    const currentPrice = parseFloat(ticker.close); // Changed to ticker.close for last/close price
     console.log(`📈 Price update for ${symbol}: ${currentPrice}`);
     
     // Find relevant trades for this symbol
