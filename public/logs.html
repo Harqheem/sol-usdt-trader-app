@@ -192,6 +192,22 @@
       font-weight: 500;
     }
 
+    .stats-section {
+      background: #ffffff;
+      padding: 24px;
+      border-radius: 8px;
+      margin-bottom: 32px;
+      border: 1px solid #e5e5e5;
+    }
+
+    .stats-section h3 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #e5e5e5;
+    }
+
     .minimal-table {
       width: 100%;
       border-collapse: collapse;
@@ -445,14 +461,22 @@
           <span class="value" id="total-trades">0</span>
         </div>
         <div class="summary-item">
+          <label>Closed Trades</label>
+          <span class="value" id="closed-trades">0</span>
+        </div>
+        <div class="summary-item">
+          <label>Win Rate</label>
+          <span class="value" id="win-rate">0.00%</span>
+        </div>
+        <div class="summary-item">
           <label>Total Raw PnL (%)</label>
           <span class="value" id="total-raw-pnl">0.00%</span>
         </div>
-        <!--<div class="summary-item">
+        <div class="summary-item">
           <label>Total Raw PnL ($)</label>
           <span class="value" id="total-pnl">$0.00</span>
         </div>
-      </div>-->
+      </div>
 
       <div id="outcomes-summary" class="summary-grid hidden" style="margin-top: 16px;">
         <div class="summary-item">
@@ -468,9 +492,35 @@
           <span class="value" id="tp-trades">0</span>
         </div>
       </div>
+    </div>
+
+    <div class="stats-section">
+      <h3>Direction Statistics</h3>
+      <div class="summary-grid">
+        <div class="summary-item">
+          <label>Long Trades</label>
+          <span class="value" id="long-trades">0</span>
+        </div>
+        <div class="summary-item">
+          <label>Long Win Rate</label>
+          <span class="value" id="long-win-rate">0.00%</span>
+        </div>
+        <div class="summary-item">
+          <label>Short Trades</label>
+          <span class="value" id="short-trades">0</span>
+        </div>
+        <div class="summary-item">
+          <label>Short Win Rate</label>
+          <span class="value" id="short-win-rate">0.00%</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="stats-section">
+      <h3>Custom Position Settings</h3>
       
       <div class="custom-inputs">
-        <label>Custom Position Size ($):</label>
+        <label>Position Size ($):</label>
         <input type="number" id="custom-position-size" value="100" min="1" step="10">
         <label>Leverage:</label>
         <input type="number" id="custom-leverage" value="20" min="1" max="125">

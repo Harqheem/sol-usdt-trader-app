@@ -17,10 +17,10 @@ process.on('unhandledRejection', (reason, promise) => {
  * @param {number} entryPrice - Entry price
  * @param {number} exitPrice - Exit price
  * @param {boolean} isBuy - True for long, false for short
- * @param {number} positionSize - Position size in dollars
+ * @param {number} positionSize - Position size in dollars (margin)
  * @param {number} leverage - Leverage multiplier
  * @param {number} fraction - Fraction of position (0.5 for half, 1.0 for full)
- * @returns {object} - Contains rawPnlPct, netPnlPct, customPnl
+ * @returns {object} - Contains rawPnlPct, netPnlPct, customPnl, fees
  */
 function calculatePnL(entryPrice, exitPrice, isBuy, positionSize, leverage, fraction = 1.0) {
   // Raw PnL (%) - pure price change percentage (NO leverage applied)
@@ -33,23 +33,26 @@ function calculatePnL(entryPrice, exitPrice, isBuy, positionSize, leverage, frac
   // Calculate for the fraction of position being closed
   const fractionalPositionSize = positionSize * fraction;
   
-  // Net PnL (%) - accounts for fees without leverage effect (leverage=1 for fees)
-  const notionalUnlev = fractionalPositionSize * 1;
-  const entryFeeUnlev = notionalUnlev * TAKER_FEE;
-  const exitFeeUnlev = notionalUnlev * TAKER_FEE;
-  const totalFeesUnlev = entryFeeUnlev + exitFeeUnlev;
-  const feePct = (totalFeesUnlev / fractionalPositionSize) * 100;
-  const netPnlPct = rawPnlPct - feePct;
-  
-  // Custom PnL ($) - actual dollar P&L based on quantity filled, with leverage
+  // Calculate quantity based on leveraged notional
   const notional = fractionalPositionSize * leverage;
   const quantity = notional / entryPrice;
+  
+  // Calculate raw dollar PnL (price change * quantity)
   const priceChange = isBuy ? (exitPrice - entryPrice) : (entryPrice - exitPrice);
   const rawPnlDollar = quantity * priceChange;
-  const entryFee = notional * TAKER_FEE;
-  const exitFee = notional * TAKER_FEE;
+  
+  // Calculate fees based on notional value at entry and exit
+  const notionalEntry = quantity * entryPrice;
+  const notionalExit = quantity * exitPrice;
+  const entryFee = notionalEntry * TAKER_FEE;
+  const exitFee = notionalExit * TAKER_FEE;
   const totalFees = entryFee + exitFee;
+  
+  // Net dollar PnL
   const customPnl = rawPnlDollar - totalFees;
+  
+  // Net PnL (%) - based on margin (position size without leverage)
+  const netPnlPct = (customPnl / fractionalPositionSize) * 100;
   
   return {
     rawPnlPct,

@@ -24,6 +24,12 @@ const outcomesSummary = document.getElementById('outcomes-summary');
 const slTradesEl = document.getElementById('sl-trades');
 const beTradesEl = document.getElementById('be-trades');
 const tpTradesEl = document.getElementById('tp-trades');
+const closedTradesEl = document.getElementById('closed-trades');
+const winRateEl = document.getElementById('win-rate');
+const longTradesEl = document.getElementById('long-trades');
+const longWinRateEl = document.getElementById('long-win-rate');
+const shortTradesEl = document.getElementById('short-trades');
+const shortWinRateEl = document.getElementById('short-win-rate');
 
 let currentData = []; // Store fetched data for recalculation
 let currentTab = 'logs';
@@ -92,13 +98,13 @@ async function fetchSignals() {
   } catch (err) {
     console.error('Fetch error:', err);
     tableBody.innerHTML = '<tr><td colspan="10">Error loading logs: ' + err.message + '</td></tr>';
-    updateSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    updateSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
   }
 }
 
 /**
  * Calculate custom PnL based on user-defined position size and leverage
- * Matches exchange calculation method
+ * Optimized calculation matching exchange behavior
  */
 function calculateCustomPnL(signal) {
   if (signal.status !== 'closed' || !signal.entry) {
@@ -122,45 +128,49 @@ function calculateCustomPnL(signal) {
   if (hadPartialClose) {
     // Partial close at TP1 (50%)
     const halfQuantity = quantity * 0.5;
-    const halfNotional = notional * 0.5;
     const tp1Exit = signal.tp1;
     
-    // Entry fee for half position
-    totalFeeDollars += halfNotional * TAKER_FEE;
+    // Entry fee for half position (calculated on notional at entry)
+    const halfNotionalEntry = halfQuantity * signal.entry;
+    totalFeeDollars += halfNotionalEntry * TAKER_FEE;
     
     const priceChange1 = isBuy ? (tp1Exit - signal.entry) : (signal.entry - tp1Exit);
     const pnlDollars1 = halfQuantity * priceChange1;
     totalPnlDollars += pnlDollars1;
     
     // Exit fee for half position at TP1
-    totalFeeDollars += halfNotional * TAKER_FEE;
+    const halfNotionalExit = halfQuantity * tp1Exit;
+    totalFeeDollars += halfNotionalExit * TAKER_FEE;
     
     // Remaining close at TP2 or SL (breakeven)
     const remainingQuantity = quantity * 0.5;
-    const remainingNotional = notional * 0.5;
     const exitPrice = signal.exit_price || signal.entry;
     
     // Entry fee for remaining half
-    totalFeeDollars += remainingNotional * TAKER_FEE;
+    const remainingNotionalEntry = remainingQuantity * signal.entry;
+    totalFeeDollars += remainingNotionalEntry * TAKER_FEE;
     
     const priceChange2 = isBuy ? (exitPrice - signal.entry) : (signal.entry - exitPrice);
     const pnlDollars2 = remainingQuantity * priceChange2;
     totalPnlDollars += pnlDollars2;
     
     // Exit fee for remaining half
-    totalFeeDollars += remainingNotional * TAKER_FEE;
+    const remainingNotionalExit = remainingQuantity * exitPrice;
+    totalFeeDollars += remainingNotionalExit * TAKER_FEE;
   } else {
     // Full position closed at once (either full SL or full TP)
     const exitPrice = signal.exit_price || signal.entry;
     
-    // Entry fee
-    totalFeeDollars += notional * TAKER_FEE;
+    // Entry fee (on notional at entry)
+    const notionalEntry = quantity * signal.entry;
+    totalFeeDollars += notionalEntry * TAKER_FEE;
     
     const priceChange = isBuy ? (exitPrice - signal.entry) : (signal.entry - exitPrice);
     totalPnlDollars = quantity * priceChange;
     
-    // Exit fee
-    totalFeeDollars += notional * TAKER_FEE;
+    // Exit fee (on notional at exit)
+    const notionalExit = quantity * exitPrice;
+    totalFeeDollars += notionalExit * TAKER_FEE;
   }
   
   const netPnlDollars = totalPnlDollars - totalFeeDollars;
@@ -177,7 +187,7 @@ function renderTableAndSummary() {
   tableBody.innerHTML = '';
   if (currentData.length === 0) {
     tableBody.innerHTML = '<tr><td colspan="10">No logs found</td></tr>';
-    updateSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    updateSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     return;
   }
   
@@ -208,6 +218,7 @@ function renderTableAndSummary() {
   const totalRawPnl = closedTrades.reduce((sum, s) => sum + (s.raw_pnl_percentage || 0), 0);
   const totalRawPnlDollars = closedTrades.reduce((sum, s) => sum + ((s.raw_pnl_percentage || 0) / 100 * (s.position_size || 0)), 0);
   
+  // Calculate outcomes
   const outcomes = closedTrades.reduce((acc, s) => {
     const out = getOutcome(s);
     if (out !== '-') {
@@ -219,14 +230,53 @@ function renderTableAndSummary() {
   const beCount = outcomes['BE'] || 0;
   const tpCount = outcomes['TP'] || 0;
   
+  // Calculate win rate (TP + BE are considered wins)
+  const winningTrades = tpCount + beCount;
+  const winRate = closedTrades.length > 0 ? (winningTrades / closedTrades.length) * 100 : 0;
+  
+  // Calculate direction statistics
+  const longTrades = closedTrades.filter(s => s.signal_type === 'Buy');
+  const shortTrades = closedTrades.filter(s => s.signal_type === 'Sell');
+  
+  const longWins = longTrades.filter(s => {
+    const out = getOutcome(s);
+    return out === 'TP' || out === 'BE';
+  }).length;
+  
+  const shortWins = shortTrades.filter(s => {
+    const out = getOutcome(s);
+    return out === 'TP' || out === 'BE';
+  }).length;
+  
+  const longWinRate = longTrades.length > 0 ? (longWins / longTrades.length) * 100 : 0;
+  const shortWinRate = shortTrades.length > 0 ? (shortWins / shortTrades.length) * 100 : 0;
+  
+  // Calculate custom PnL
   const customResults = closedTrades.map(s => calculateCustomPnL(s));
   const customTotalPnlPct = customResults.reduce((sum, r) => sum + r.customPnlPct, 0);
   const customTotalPnlDollars = customResults.reduce((sum, r) => sum + r.customPnlDollars, 0);
   const customTotalFeesDollars = customResults.reduce((sum, r) => sum + r.totalFees, 0);
   const customPosition = parseFloat(customPositionSizeInput.value) || 100;
-  const customTotalFeesPct = (customTotalFeesDollars / customPosition) * 100;
+  const customTotalFeesPct = closedTrades.length > 0 ? (customTotalFeesDollars / (customPosition * closedTrades.length)) * 100 : 0;
   
-  updateSummary(totalTrades, totalRawPnl, totalRawPnlDollars, customTotalPnlPct, customTotalPnlDollars, customTotalFeesPct, customTotalFeesDollars, slCount, beCount, tpCount);
+  updateSummary(
+    totalTrades, 
+    closedTrades.length,
+    totalRawPnl, 
+    totalRawPnlDollars, 
+    customTotalPnlPct, 
+    customTotalPnlDollars, 
+    customTotalFeesPct, 
+    customTotalFeesDollars, 
+    slCount, 
+    beCount, 
+    tpCount,
+    winRate,
+    longTrades.length,
+    longWinRate,
+    shortTrades.length,
+    shortWinRate
+  );
   
   if (currentTab === 'results') {
     outcomesSummary.classList.remove('hidden');
@@ -235,8 +285,9 @@ function renderTableAndSummary() {
   }
 }
 
-function updateSummary(trades, rawPnl, rawPnlDollars, customPnlPct, customPnlDollars, customFeesPct, customFeesDollars, slCount, beCount, tpCount) {
+function updateSummary(trades, closedTrades, rawPnl, rawPnlDollars, customPnlPct, customPnlDollars, customFeesPct, customFeesDollars, slCount, beCount, tpCount, winRate, longCount, longWinRate, shortCount, shortWinRate) {
   totalTradesEl.textContent = trades;
+  closedTradesEl.textContent = closedTrades;
   totalRawPnlEl.textContent = rawPnl.toFixed(2) + '%';
   totalPnlEl.textContent = '$' + rawPnlDollars.toFixed(2);
   customTotalPnlEl.textContent = customPnlPct.toFixed(2) + '%';
@@ -246,6 +297,11 @@ function updateSummary(trades, rawPnl, rawPnlDollars, customPnlPct, customPnlDol
   slTradesEl.textContent = slCount;
   beTradesEl.textContent = beCount;
   tpTradesEl.textContent = tpCount;
+  winRateEl.textContent = winRate.toFixed(2) + '%';
+  longTradesEl.textContent = longCount;
+  longWinRateEl.textContent = longWinRate.toFixed(2) + '%';
+  shortTradesEl.textContent = shortCount;
+  shortWinRateEl.textContent = shortWinRate.toFixed(2) + '%';
 }
 
 function showDetails(signal) {
@@ -303,7 +359,7 @@ function showDetails(signal) {
     <p style="font-size: 0.9em; color: #666; margin-left: 20px;">With fees, based on signal position size</p>
     <p><strong>Custom PnL (%):</strong> ${customPnlHTMLPercent}</p>
     <p><strong>Custom PnL ($):</strong> ${customPnlHTMLDollars}</p>
-    <p style="font-size: 0.9em; color: #666; margin-left: 20px;">Based on your custom position size (${customPositionSizeInput.value || 100}) and leverage (${customLeverageInput.value || 20}x)</p>
+    <p style="font-size: 0.9em; color: #666; margin-left: 20px;">Based on your custom position size ($${customPositionSizeInput.value || 100}) and leverage (${customLeverageInput.value || 20}x)</p>
   `;
   sideSheet.classList.add('active');
 }
