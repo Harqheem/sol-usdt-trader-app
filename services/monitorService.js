@@ -65,10 +65,11 @@ function calculatePnL(entryPrice, exitPrice, isBuy, positionSize, leverage, frac
 async function updateTradeStatus() {
   console.log('🔄 Monitoring trades...');
   const openTrades = await getOpenTrades();
+  console.log(`Found ${openTrades.length} open/pending trades.`); // Added debug
   
   for (const trade of openTrades) {
     try {
-      const price = await client.avgPrice({ symbol: trade.symbol });
+      const price = await client.futuresAvgPrice({ symbol: trade.symbol }); // Changed to futuresAvgPrice for leveraged trades
       const currentPrice = parseFloat(price.price);
       const isBuy = trade.signal_type === 'Buy';
       const leverage = trade.leverage || 20;
@@ -76,9 +77,12 @@ async function updateTradeStatus() {
       const remainingFraction = trade.remaining_position || 1.0;
       const currentSl = trade.updated_sl || trade.sl;
 
+      console.log(`Monitoring ${trade.symbol}: Current futures price = ${currentPrice}, Status = ${trade.status}, Entry = ${trade.entry}, TP1 = ${trade.tp1}, TP2 = ${trade.tp2}, SL = ${currentSl}, Remaining = ${remainingFraction}`); // Enhanced debug log
+
       // Check entry hit (if pending)
       if (trade.status === 'pending') {
         const entryHit = isBuy ? currentPrice <= trade.entry : currentPrice >= trade.entry;
+        console.log(`Pending check: entryHit = ${entryHit}`); // Debug
         if (entryHit) {
           await updateTrade(trade.id, { 
             status: 'opened', 
@@ -96,6 +100,7 @@ async function updateTradeStatus() {
 
         // Check TP1 if full position remains
         const tp1Hit = isBuy ? currentPrice >= trade.tp1 : currentPrice <= trade.tp1;
+        console.log(`TP1 check: tp1Hit = ${tp1Hit}, remainingFraction = ${remainingFraction === 1.0}`); // Debug
         if (tp1Hit && remainingFraction === 1.0) {
           // Close 50% at TP1
           const partialPnl = calculatePnL(
@@ -119,6 +124,7 @@ async function updateTradeStatus() {
 
         // Check TP2 if partial position remains
         const tp2Hit = isBuy ? currentPrice >= trade.tp2 : currentPrice <= trade.tp2;
+        console.log(`TP2 check: tp2Hit = ${tp2Hit}, remainingFraction = ${remainingFraction < 1.0}`); // Debug
         if (tp2Hit && remainingFraction < 1.0) {
           // Close remaining 50% at TP2
           const remainingPnl = calculatePnL(
@@ -149,6 +155,7 @@ async function updateTradeStatus() {
 
         // Check SL (original or updated)
         const slHit = isBuy ? currentPrice <= currentSl : currentPrice >= currentSl;
+        console.log(`SL check: slHit = ${slHit}`); // Debug
         if (slHit) {
           if (remainingFraction === 1.0) {
             // Full position stopped out
@@ -201,7 +208,10 @@ async function updateTradeStatus() {
         }
 
         if (Object.keys(updates).length > 0) {
+          console.log(`Updating trade ${trade.id} with:`, updates); // Debug update
           await updateTrade(trade.id, updates);
+        } else {
+          console.log(`No updates needed for ${trade.symbol}`); // Debug no action
         }
       }
     } catch (err) {
@@ -216,7 +226,10 @@ async function getOpenTrades() {
     .select('*')
     .in('status', ['pending', 'opened'])
     .order('timestamp', { ascending: false });
-  if (error) throw error;
+  if (error) {
+    console.error('Error fetching open trades:', error);
+    throw error;
+  }
   return data;
 }
 
@@ -225,10 +238,13 @@ async function updateTrade(id, updates) {
     .from('signals')
     .update(updates)
     .eq('id', id);
-  if (error) throw error;
+  if (error) {
+    console.error('Error updating trade:', error);
+    throw error;
+  }
 }
 
-// Start monitoring every 1 minutes (wrap in catch to handle top-level rejections)
+// Start monitoring every 1 minute (wrap in catch to handle top-level rejections)
 setInterval(() => {
   updateTradeStatus().catch(err => console.error('Monitor cycle failed:', err));
 }, 60000);

@@ -4,7 +4,6 @@ const routes = require('./routes');
 const { initDataService, updateCache } = require('./services/dataService');
 const config = require('./config');
 const { updateTradeStatus } = require('./services/monitorService');
-require('dotenv').config();
 
 const { symbols } = config;
 
@@ -14,6 +13,7 @@ app.use(routes);
 
 let isShuttingDown = false;
 let server; // Declare here
+let failureCount = {};
 
 setInterval(updateCache, 300000);
 setInterval(() => {
@@ -38,7 +38,7 @@ async function gracefulShutdown() {
   try {
     await initDataService();
     const port = process.env.PORT || 3000;
-    const server = app.listen(port, () => {
+    server = app.listen(port, () => {
       console.log(`✅ Server running on http://localhost:${port}`);
       console.log(`📊 Monitoring ${symbols.length} symbols: ${symbols.join(', ')}`);
       console.log(`🔄 Cache updates every 5 minutes`);
