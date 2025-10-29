@@ -165,6 +165,15 @@
       font-size: 13px;
       color: #666;
       font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .info-icon {
+      font-size: 12px;
+      cursor: help;
+      color: #888;
     }
 
     .summary-item .value {
@@ -457,38 +466,34 @@
       <h3>Trade Summary</h3>
       <div class="summary-grid">
         <div class="summary-item">
-          <label>Total Trades</label>
+          <label>Total Trades <span class="info-icon" title="The total number of trades, including open and closed.">ℹ️</span></label>
           <span class="value" id="total-trades">0</span>
         </div>
         <div class="summary-item">
-          <label>Closed Trades</label>
+          <label>Closed Trades <span class="info-icon" title="The number of trades that have been closed.">ℹ️</span></label>
           <span class="value" id="closed-trades">0</span>
         </div>
         <div class="summary-item">
-          <label>Win Rate</label>
+          <label>Win Rate <span class="info-icon" title="The percentage of closed trades that resulted in a win (TP or BE).">ℹ️</span></label>
           <span class="value" id="win-rate">0.00%</span>
         </div>
         <div class="summary-item">
-          <label>Total Raw PnL (%)</label>
+          <label>Total Raw PnL (%) <span class="info-icon" title="The total raw profit and loss percentage across all closed trades, based on price change only (no fees or leverage).">ℹ️</span></label>
           <span class="value" id="total-raw-pnl">0.00%</span>
-        </div>
-        <div class="summary-item">
-          <label>Total Raw PnL ($)</label>
-          <span class="value" id="total-pnl">$0.00</span>
         </div>
       </div>
 
       <div id="outcomes-summary" class="summary-grid hidden" style="margin-top: 16px;">
         <div class="summary-item">
-          <label>SL Trades</label>
+          <label>SL Trades <span class="info-icon" title="Number of trades that hit Stop Loss.">ℹ️</span></label>
           <span class="value" id="sl-trades">0</span>
         </div>
         <div class="summary-item">
-          <label>BE Trades</label>
+          <label>BE Trades <span class="info-icon" title="Number of trades that closed at Break Even.">ℹ️</span></label>
           <span class="value" id="be-trades">0</span>
         </div>
         <div class="summary-item">
-          <label>TP Trades</label>
+          <label>TP Trades <span class="info-icon" title="Number of trades that hit Take Profit.">ℹ️</span></label>
           <span class="value" id="tp-trades">0</span>
         </div>
       </div>
@@ -498,19 +503,19 @@
       <h3>Direction Statistics</h3>
       <div class="summary-grid">
         <div class="summary-item">
-          <label>Long Trades</label>
+          <label>Long Trades <span class="info-icon" title="Number of long (buy) trades.">ℹ️</span></label>
           <span class="value" id="long-trades">0</span>
         </div>
         <div class="summary-item">
-          <label>Long Win Rate</label>
+          <label>Long Win Rate <span class="info-icon" title="Win rate for long trades.">ℹ️</span></label>
           <span class="value" id="long-win-rate">0.00%</span>
         </div>
         <div class="summary-item">
-          <label>Short Trades</label>
+          <label>Short Trades <span class="info-icon" title="Number of short (sell) trades.">ℹ️</span></label>
           <span class="value" id="short-trades">0</span>
         </div>
         <div class="summary-item">
-          <label>Short Win Rate</label>
+          <label>Short Win Rate <span class="info-icon" title="Win rate for short trades.">ℹ️</span></label>
           <span class="value" id="short-win-rate">0.00%</span>
         </div>
       </div>
@@ -528,19 +533,19 @@
       
       <div class="summary-grid" style="margin-top: 16px;">
         <div class="summary-item">
-          <label>Custom Total PnL (%)</label>
+          <label>Custom Total PnL (%) <span class="info-icon" title="The total profit and loss percentage based on custom position size and leverage, net of fees.">ℹ️</span></label>
           <span class="value" id="custom-total-pnl">0.00%</span>
         </div>
         <div class="summary-item">
-          <label>Custom Total PnL ($)</label>
+          <label>Custom Total PnL ($) <span class="info-icon" title="The total profit and loss in dollars based on custom position size and leverage, net of fees.">ℹ️</span></label>
           <span class="value" id="custom-total-pnl-dollars">$0.00</span>
         </div>
         <div class="summary-item">
-          <label>Total Fees Paid (%)</label>
+          <label>Total Fees Paid (%) <span class="info-icon" title="The total fees paid as a percentage of the custom position size across all closed trades.">ℹ️</span></label>
           <span class="value" id="custom-total-fees-pct">0.00%</span>
         </div>
         <div class="summary-item">
-          <label>Total Fees Paid ($)</label>
+          <label>Total Fees Paid ($) <span class="info-icon" title="The total fees paid in dollars across all closed trades based on custom settings.">ℹ️</span></label>
           <span class="value" id="custom-total-fees-dollars">$0.00</span>
         </div>
       </div>
@@ -555,11 +560,12 @@
           <th>TP1</th>
           <th>TP2</th>
           <th>SL</th>
-          <th>Status</th>
+          <th>Filled Qty</th>
           <th id="outcome-header" style="display: none;">Outcome</th>
           <th>Raw PnL (%)</th>
           <th>Custom PnL (%)</th>
           <th>Custom PnL ($)</th>
+          <th>Status</th>
         </tr>
       </thead>
       <tbody>

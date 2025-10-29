@@ -7,7 +7,6 @@ const refreshBtn = document.getElementById('refresh-btn');
 const statusFilter = document.getElementById('status-filter');
 const totalTradesEl = document.getElementById('total-trades');
 const totalRawPnlEl = document.getElementById('total-raw-pnl');
-const totalPnlEl = document.getElementById('total-pnl');
 const customPositionSizeInput = document.getElementById('custom-position-size');
 const customLeverageInput = document.getElementById('custom-leverage');
 const customTotalPnlEl = document.getElementById('custom-total-pnl');
@@ -98,7 +97,7 @@ async function fetchSignals() {
   } catch (err) {
     console.error('Fetch error:', err);
     tableBody.innerHTML = '<tr><td colspan="10">Error loading logs: ' + err.message + '</td></tr>';
-    updateSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    updateSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
   }
 }
 
@@ -183,16 +182,27 @@ function calculateCustomPnL(signal) {
   };
 }
 
+function calculateFilledQty(signal) {
+  if (!signal.entry) return '-';
+  const customPosition = parseFloat(customPositionSizeInput.value) || 100;
+  const customLeverage = parseFloat(customLeverageInput.value) || 20;
+  const notional = customPosition * customLeverage;
+  const qty = notional / signal.entry;
+  const base = signal.symbol.replace('USDT', '');
+  return qty.toFixed(6) + ' ' + base;
+}
+
 function renderTableAndSummary() {
   tableBody.innerHTML = '';
   if (currentData.length === 0) {
     tableBody.innerHTML = '<tr><td colspan="10">No logs found</td></tr>';
-    updateSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    updateSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     return;
   }
   
   currentData.forEach((signal, index) => {
     const { customPnlDollars, customPnlPct } = calculateCustomPnL(signal);
+    const filledQty = calculateFilledQty(signal);
     const outcomeTd = currentTab === 'results' ? `<td>${getOutcome(signal)}</td>` : '';
     const row = document.createElement('tr');
     row.innerHTML = `
@@ -202,11 +212,12 @@ function renderTableAndSummary() {
       <td>${signal.tp1 ? signal.tp1.toFixed(4) : '-'}</td>
       <td>${signal.tp2 ? signal.tp2.toFixed(4) : '-'}</td>
       <td>${signal.sl ? signal.sl.toFixed(4) : '-'}</td>
-      <td class="status-badge ${getStatusClass(signal.status)}">${signal.status.charAt(0).toUpperCase() + signal.status.slice(1)}</td>
+      <td>${filledQty}</td>
       ${outcomeTd}
       <td style="color: ${signal.raw_pnl_percentage > 0 ? 'green' : signal.raw_pnl_percentage < 0 ? 'red' : 'black'};">${signal.raw_pnl_percentage ? signal.raw_pnl_percentage.toFixed(2) + '%' : '-'}</td>
       <td style="color: ${customPnlPct > 0 ? 'green' : customPnlPct < 0 ? 'red' : 'black'};">${customPnlPct !== 0 ? customPnlPct.toFixed(2) + '%' : '-'}</td>
       <td style="color: ${customPnlDollars > 0 ? 'green' : customPnlDollars < 0 ? 'red' : 'black'};">${customPnlDollars !== 0 ? '$' + customPnlDollars.toFixed(2) : '-'}</td>
+      <td class="status-badge ${getStatusClass(signal.status)}">${signal.status.charAt(0).toUpperCase() + signal.status.slice(1)}</td>
     `;
     row.addEventListener('click', () => showDetails(signal));
     tableBody.appendChild(row);
@@ -216,7 +227,6 @@ function renderTableAndSummary() {
   const totalTrades = currentData.length;
   const closedTrades = currentData.filter(s => s.status === 'closed');
   const totalRawPnl = closedTrades.reduce((sum, s) => sum + (s.raw_pnl_percentage || 0), 0);
-  const totalRawPnlDollars = closedTrades.reduce((sum, s) => sum + ((s.raw_pnl_percentage || 0) / 100 * (s.position_size || 0)), 0);
   
   // Calculate outcomes
   const outcomes = closedTrades.reduce((acc, s) => {
@@ -263,7 +273,6 @@ function renderTableAndSummary() {
     totalTrades, 
     closedTrades.length,
     totalRawPnl, 
-    totalRawPnlDollars, 
     customTotalPnlPct, 
     customTotalPnlDollars, 
     customTotalFeesPct, 
@@ -285,11 +294,10 @@ function renderTableAndSummary() {
   }
 }
 
-function updateSummary(trades, closedTrades, rawPnl, rawPnlDollars, customPnlPct, customPnlDollars, customFeesPct, customFeesDollars, slCount, beCount, tpCount, winRate, longCount, longWinRate, shortCount, shortWinRate) {
+function updateSummary(trades, closedTrades, rawPnl, customPnlPct, customPnlDollars, customFeesPct, customFeesDollars, slCount, beCount, tpCount, winRate, longCount, longWinRate, shortCount, shortWinRate) {
   totalTradesEl.textContent = trades;
   closedTradesEl.textContent = closedTrades;
   totalRawPnlEl.textContent = rawPnl.toFixed(2) + '%';
-  totalPnlEl.textContent = '$' + rawPnlDollars.toFixed(2);
   customTotalPnlEl.textContent = customPnlPct.toFixed(2) + '%';
   customTotalPnlDollarsEl.textContent = '$' + customPnlDollars.toFixed(2);
   customTotalFeesPctEl.textContent = customFeesPct.toFixed(2) + '%';
@@ -306,6 +314,7 @@ function updateSummary(trades, closedTrades, rawPnl, rawPnlDollars, customPnlPct
 
 function showDetails(signal) {
   const { customPnlDollars, customPnlPct } = calculateCustomPnL(signal);
+  const filledQty = calculateFilledQty(signal);
   
   // Raw PnL
   let rawPnlHTML = '-';
@@ -340,6 +349,7 @@ function showDetails(signal) {
     <p><strong>Signal:</strong> ${signal.signal_type}</p>
     <p><strong>Notes:</strong> ${signal.notes || '-'}</p>
     <p><strong>Entry:</strong> ${signal.entry ? signal.entry.toFixed(4) : '-'}</p>
+    <p><strong>Filled Qty:</strong> ${filledQty}</p>
     <p><strong>TP1:</strong> ${signal.tp1 ? signal.tp1.toFixed(4) : '-'}</p>
     <p><strong>TP2:</strong> ${signal.tp2 ? signal.tp2.toFixed(4) : '-'}</p>
     <p><strong>SL:</strong> ${signal.sl ? signal.sl.toFixed(4) : '-'}</p>

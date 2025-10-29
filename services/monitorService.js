@@ -228,9 +228,9 @@ async function updateTrade(id, updates) {
   if (error) throw error;
 }
 
-// Start monitoring every 30 seconds (wrap in catch to handle top-level rejections)
+// Start monitoring every 1 minutes (wrap in catch to handle top-level rejections)
 setInterval(() => {
   updateTradeStatus().catch(err => console.error('Monitor cycle failed:', err));
-}, 30000);
+}, 60000);
 
 module.exports = { updateTradeStatus };
