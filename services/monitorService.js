@@ -18,7 +18,9 @@ const TAKER_FEE = 0.04 / 100; // 0.04%
  * @returns {object} - Contains rawPnlPct, netPnlPct, customPnl
  */
 function calculatePnL(entryPrice, exitPrice, isBuy, positionSize, leverage, fraction = 1.0) {
-  // Raw PnL (%) - price change percentage
+  // Raw PnL (%) - pure price change percentage (NO leverage applied)
+  // For longs: (Exit - Entry) / Entry
+  // For shorts: (Entry - Exit) / Entry
   const rawPnlPct = isBuy 
     ? ((exitPrice - entryPrice) / entryPrice) * 100
     : ((entryPrice - exitPrice) / entryPrice) * 100;
