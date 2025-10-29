@@ -3,7 +3,7 @@ const express = require('express');
 const routes = require('./routes');
 const { initDataService, updateCache } = require('./services/dataService');
 const config = require('./config');
-const { updateTradeStatus } = require('./services/monitorService');
+require('./services/monitorService'); // Require to start internal monitoring
 
 const { symbols } = config;
 
@@ -43,7 +43,6 @@ async function gracefulShutdown() {
       console.log(`📊 Monitoring ${symbols.length} symbols: ${symbols.join(', ')}`);
       console.log(`🔄 Cache updates every 5 minutes`);
       console.log(`🏥 Health check: http://localhost:${port}/health`);
-      updateTradeStatus(); // Start monitoring immediately
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);
