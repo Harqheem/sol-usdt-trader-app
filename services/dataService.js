@@ -404,12 +404,12 @@ async function getData(symbol) {
       if (bearishPenalty !== 0) bearishReasons.push(`Multi-TF ${bearishPenalty > 0 ? 'bonus' : 'penalty'} (${bearishPenalty})`);
 
       // Threshold logic - ALIGNED WITH SERVER.JS
-      let threshold = 11, thresholdNote = '';
+      let threshold = 12, thresholdNote = '';
       if (adx > 30) { 
-        threshold = 10; 
+        threshold = 11; 
         thresholdNote = ' (lower, strong ADX)'; 
       } else if (adx < 20) { 
-        threshold = 12; 
+        threshold = 13; 
         thresholdNote = ' (higher, weak ADX)'; 
       }
 
