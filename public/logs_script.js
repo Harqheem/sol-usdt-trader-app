@@ -75,7 +75,7 @@ function calculateCustomPnL(signal) {
   }
 
   const customPosition = parseFloat(customPositionSizeInput.value) || 100;
-  const customLeverage = parseFloat(customLeverageInput.value) || 10;
+  const customLeverage = parseFloat(customLeverageInput.value) || 20;
   const isBuy = signal.signal_type === 'Buy';
   const TAKER_FEE = 0.0004; // 0.04%
   

@@ -10,7 +10,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 async function logSignal(symbol, signalData, status = 'pending', errorMessage = null) {
   try {
-    const { signal, notes, entry, tp1, tp2, sl, positionSize, leverage = 10 } = signalData;
+    const { signal, notes, entry, tp1, tp2, sl, positionSize, leverage = 20 } = signalData;
     const timestamp = new Date().toISOString();
     const { data, error } = await supabase
       .from('signals')
