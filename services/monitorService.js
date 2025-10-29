@@ -12,6 +12,10 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
+// Store active subscriptions and open trades cache
+const subscriptions = {};
+let openTradesCache = [];
+
 /**
  * Calculate PnL for a trade segment
  * @param {number} entryPrice - Entry price
@@ -62,165 +66,8 @@ function calculatePnL(entryPrice, exitPrice, isBuy, positionSize, leverage, frac
   };
 }
 
-async function updateTradeStatus() {
-  console.log('🔄 Monitoring trades...');
-  const openTrades = await getOpenTrades();
-  console.log(`Found ${openTrades.length} open/pending trades.`); // Added debug
-  
-  for (const trade of openTrades) {
-    try {
-      const ticker = await client.futuresTicker({ symbol: trade.symbol }); // Use futuresTicker for last price
-      const currentPrice = parseFloat(ticker.lastPrice);
-      const isBuy = trade.signal_type === 'Buy';
-      const leverage = trade.leverage || 20;
-      const positionSize = trade.position_size || 0; // Margin in dollars
-      const remainingFraction = trade.remaining_position || 1.0;
-      const currentSl = trade.updated_sl || trade.sl;
-
-      console.log(`Monitoring ${trade.symbol}: Current futures price = ${currentPrice}, Status = ${trade.status}, Entry = ${trade.entry}, TP1 = ${trade.tp1}, TP2 = ${trade.tp2}, SL = ${currentSl}, Remaining = ${remainingFraction}`); // Enhanced debug log
-
-      // Check entry hit (if pending)
-      if (trade.status === 'pending') {
-        const entryHit = isBuy ? currentPrice <= trade.entry : currentPrice >= trade.entry;
-        console.log(`Pending check: entryHit = ${entryHit}`); // Debug
-        if (entryHit) {
-          await updateTrade(trade.id, { 
-            status: 'opened', 
-            open_time: new Date().toISOString(), 
-            entry: currentPrice 
-          });
-          console.log(`✅ Opened ${trade.symbol} at ${currentPrice}`);
-        }
-        continue;
-      }
-
-      // Check for opened trades
-      if (trade.status === 'opened') {
-        let updates = {};
-
-        // Check TP1 if full position remains
-        const tp1Hit = isBuy ? currentPrice >= trade.tp1 : currentPrice <= trade.tp1;
-        console.log(`TP1 check: tp1Hit = ${tp1Hit}, remainingFraction = ${remainingFraction === 1.0}`); // Debug
-        if (tp1Hit && remainingFraction === 1.0) {
-          // Close 50% at TP1
-          const partialPnl = calculatePnL(
-            trade.entry, 
-            trade.tp1, 
-            isBuy, 
-            positionSize, 
-            leverage, 
-            0.5
-          );
-          
-          updates = { 
-            partial_raw_pnl_pct: partialPnl.rawPnlPct,
-            partial_net_pnl_pct: partialPnl.netPnlPct,
-            partial_custom_pnl: partialPnl.customPnl,
-            remaining_position: 0.5, 
-            updated_sl: trade.entry 
-          };
-          console.log(`✅ Partial close at TP1 for ${trade.symbol}, SL moved to entry`);
-        }
-
-        // Check TP2 if partial position remains
-        const tp2Hit = isBuy ? currentPrice >= trade.tp2 : currentPrice <= trade.tp2;
-        console.log(`TP2 check: tp2Hit = ${tp2Hit}, remainingFraction = ${remainingFraction < 1.0}`); // Debug
-        if (tp2Hit && remainingFraction < 1.0) {
-          // Close remaining 50% at TP2
-          const remainingPnl = calculatePnL(
-            trade.entry, 
-            trade.tp2, 
-            isBuy, 
-            positionSize, 
-            leverage, 
-            0.5
-          );
-          
-          // Total PnL = weighted average for raw/net (since unleveraged %), sum for custom ($)
-          const totalRawPnlPct = 0.5 * ((trade.partial_raw_pnl_pct || 0) + remainingPnl.rawPnlPct);
-          const totalNetPnlPct = 0.5 * ((trade.partial_net_pnl_pct || 0) + remainingPnl.netPnlPct);
-          const totalCustomPnl = (trade.partial_custom_pnl || 0) + remainingPnl.customPnl;
-          
-          updates = { 
-            status: 'closed', 
-            close_time: new Date().toISOString(), 
-            exit_price: trade.tp2, 
-            raw_pnl_percentage: totalRawPnlPct, 
-            pnl_percentage: totalNetPnlPct,
-            custom_pnl: totalCustomPnl,
-            remaining_position: 0.0 
-          };
-          console.log(`✅ Closed remaining at TP2 for ${trade.symbol}`);
-        }
-
-        // Check SL (original or updated)
-        const slHit = isBuy ? currentPrice <= currentSl : currentPrice >= currentSl;
-        console.log(`SL check: slHit = ${slHit}`); // Debug
-        if (slHit) {
-          if (remainingFraction === 1.0) {
-            // Full position stopped out
-            const fullLoss = calculatePnL(
-              trade.entry, 
-              currentSl, 
-              isBuy, 
-              positionSize, 
-              leverage, 
-              1.0
-            );
-            
-            updates = { 
-              status: 'closed', 
-              close_time: new Date().toISOString(), 
-              exit_price: currentSl, 
-              raw_pnl_percentage: fullLoss.rawPnlPct, 
-              pnl_percentage: fullLoss.netPnlPct,
-              custom_pnl: fullLoss.customPnl,
-              remaining_position: 0.0 
-            };
-            console.log(`✅ Closed full at SL for ${trade.symbol}`);
-          } else {
-            // Remaining 50% at breakeven (SL moved to entry)
-            const remainingPnl = calculatePnL(
-              trade.entry, 
-              currentSl, // Should be at entry
-              isBuy, 
-              positionSize, 
-              leverage, 
-              0.5
-            );
-            
-            // Total PnL = weighted average for raw/net, sum for custom
-            const totalRawPnlPct = 0.5 * ((trade.partial_raw_pnl_pct || 0) + remainingPnl.rawPnlPct);
-            const totalNetPnlPct = 0.5 * ((trade.partial_net_pnl_pct || 0) + remainingPnl.netPnlPct);
-            const totalCustomPnl = (trade.partial_custom_pnl || 0) + remainingPnl.customPnl;
-            
-            updates = { 
-              status: 'closed', 
-              close_time: new Date().toISOString(), 
-              exit_price: currentSl, 
-              raw_pnl_percentage: totalRawPnlPct, 
-              pnl_percentage: totalNetPnlPct,
-              custom_pnl: totalCustomPnl,
-              remaining_position: 0.0 
-            };
-            console.log(`✅ Closed remaining at BE SL for ${trade.symbol}`);
-          }
-        }
-
-        if (Object.keys(updates).length > 0) {
-          console.log(`Updating trade ${trade.id} with:`, updates); // Debug update
-          await updateTrade(trade.id, updates);
-        } else {
-          console.log(`No updates needed for ${trade.symbol}`); // Debug no action
-        }
-      }
-    } catch (err) {
-      console.error(`Monitor error for ${trade.symbol}:`, err); // Log full error for better debugging
-    }
-  }
-}
-
-async function getOpenTrades() {
+async function refreshOpenTrades() {
+  console.log('🔄 Refreshing open trades...');
   const { data, error } = await supabase
     .from('signals')
     .select('*')
@@ -228,9 +75,191 @@ async function getOpenTrades() {
     .order('timestamp', { ascending: false });
   if (error) {
     console.error('Error fetching open trades:', error);
-    throw error;
+    return;
   }
-  return data;
+  openTradesCache = data || [];
+  console.log(`Found ${openTradesCache.length} open/pending trades.`);
+  
+  // Subscribe to WebSockets for unique symbols
+  const uniqueSymbols = [...new Set(openTradesCache.map(t => t.symbol))];
+  uniqueSymbols.forEach(subscribeToSymbol);
+  
+  // Unsubscribe from symbols with no open trades
+  Object.keys(subscriptions).forEach(sym => {
+    if (!uniqueSymbols.includes(sym)) {
+      subscriptions[sym](); // Unsubscribe
+      delete subscriptions[sym];
+      console.log(`Unsubscribed from ${sym}`);
+    }
+  });
+}
+
+function subscribeToSymbol(symbol) {
+  if (subscriptions[symbol]) return; // Already subscribed
+  
+  const unsubscribe = client.ws.futuresTicker(symbol, ticker => {
+    const currentPrice = parseFloat(ticker.lastPrice);
+    console.log(`📈 Price update for ${symbol}: ${currentPrice}`);
+    
+    // Find relevant trades for this symbol
+    const relevantTrades = openTradesCache.filter(t => t.symbol === symbol);
+    
+    relevantTrades.forEach(trade => processPriceUpdate(trade, currentPrice));
+  });
+  
+  subscriptions[symbol] = unsubscribe;
+  console.log(`✅ Subscribed to ${symbol} futures ticker`);
+}
+
+async function processPriceUpdate(trade, currentPrice) {
+  try {
+    const isBuy = trade.signal_type === 'Buy';
+    const leverage = trade.leverage || 20;
+    const positionSize = trade.position_size || 0; // Margin in dollars
+    const remainingFraction = trade.remaining_position || 1.0;
+    const currentSl = trade.updated_sl || trade.sl;
+
+    // Check entry hit (if pending)
+    if (trade.status === 'pending') {
+      const entryHit = isBuy ? currentPrice <= trade.entry : currentPrice >= trade.entry;
+      if (entryHit) {
+        const updates = { 
+          status: 'opened', 
+          open_time: new Date().toISOString(), 
+          entry: currentPrice 
+        };
+        await updateTrade(trade.id, updates);
+        // Update cache
+        Object.assign(trade, updates);
+        console.log(`✅ Opened ${trade.symbol} at ${currentPrice}`);
+      }
+      return;
+    }
+
+    // Check for opened trades
+    if (trade.status === 'opened') {
+      let updates = {};
+
+      // Check TP1 if full position remains
+      const tp1Hit = isBuy ? currentPrice >= trade.tp1 : currentPrice <= trade.tp1;
+      if (tp1Hit && remainingFraction === 1.0) {
+        // Close 50% at TP1
+        const partialPnl = calculatePnL(
+          trade.entry, 
+          trade.tp1, 
+          isBuy, 
+          positionSize, 
+          leverage, 
+          0.5
+        );
+        
+        updates = { 
+          partial_raw_pnl_pct: partialPnl.rawPnlPct,
+          partial_net_pnl_pct: partialPnl.netPnlPct,
+          partial_custom_pnl: partialPnl.customPnl,
+          remaining_position: 0.5, 
+          updated_sl: trade.entry 
+        };
+        console.log(`✅ Partial close at TP1 for ${trade.symbol}, SL moved to entry`);
+      }
+
+      // Check TP2 if partial position remains
+      const tp2Hit = isBuy ? currentPrice >= trade.tp2 : currentPrice <= trade.tp2;
+      if (tp2Hit && remainingFraction < 1.0) {
+        // Close remaining 50% at TP2
+        const remainingPnl = calculatePnL(
+          trade.entry, 
+          trade.tp2, 
+          isBuy, 
+          positionSize, 
+          leverage, 
+          0.5
+        );
+        
+        // Total PnL = weighted average for raw/net (since unleveraged %), sum for custom ($)
+        const totalRawPnlPct = 0.5 * ((trade.partial_raw_pnl_pct || 0) + remainingPnl.rawPnlPct);
+        const totalNetPnlPct = 0.5 * ((trade.partial_net_pnl_pct || 0) + remainingPnl.netPnlPct);
+        const totalCustomPnl = (trade.partial_custom_pnl || 0) + remainingPnl.customPnl;
+        
+        updates = { 
+          status: 'closed', 
+          close_time: new Date().toISOString(), 
+          exit_price: trade.tp2, 
+          raw_pnl_percentage: totalRawPnlPct, 
+          pnl_percentage: totalNetPnlPct,
+          custom_pnl: totalCustomPnl,
+          remaining_position: 0.0 
+        };
+        console.log(`✅ Closed remaining at TP2 for ${trade.symbol}`);
+      }
+
+      // Check SL (original or updated)
+      const slHit = isBuy ? currentPrice <= currentSl : currentPrice >= currentSl;
+      if (slHit) {
+        let exitPrice = currentSl; // Use currentSl as exit, but in real could be currentPrice if slippage
+        if (remainingFraction === 1.0) {
+          // Full position stopped out
+          const fullLoss = calculatePnL(
+            trade.entry, 
+            exitPrice, 
+            isBuy, 
+            positionSize, 
+            leverage, 
+            1.0
+          );
+          
+          updates = { 
+            status: 'closed', 
+            close_time: new Date().toISOString(), 
+            exit_price: exitPrice, 
+            raw_pnl_percentage: fullLoss.rawPnlPct, 
+            pnl_percentage: fullLoss.netPnlPct,
+            custom_pnl: fullLoss.customPnl,
+            remaining_position: 0.0 
+          };
+          console.log(`✅ Closed full at SL for ${trade.symbol} at ${exitPrice}`);
+        } else {
+          // Remaining 50% at breakeven (SL moved to entry)
+          const remainingPnl = calculatePnL(
+            trade.entry, 
+            exitPrice, 
+            isBuy, 
+            positionSize, 
+            leverage, 
+            0.5
+          );
+          
+          // Total PnL = weighted average for raw/net, sum for custom
+          const totalRawPnlPct = 0.5 * ((trade.partial_raw_pnl_pct || 0) + remainingPnl.rawPnlPct);
+          const totalNetPnlPct = 0.5 * ((trade.partial_net_pnl_pct || 0) + remainingPnl.netPnlPct);
+          const totalCustomPnl = (trade.partial_custom_pnl || 0) + remainingPnl.customPnl;
+          
+          updates = { 
+            status: 'closed', 
+            close_time: new Date().toISOString(), 
+            exit_price: exitPrice, 
+            raw_pnl_percentage: totalRawPnlPct, 
+            pnl_percentage: totalNetPnlPct,
+            custom_pnl: totalCustomPnl,
+            remaining_position: 0.0 
+          };
+          console.log(`✅ Closed remaining at BE SL for ${trade.symbol} at ${exitPrice}`);
+        }
+      }
+
+      if (Object.keys(updates).length > 0) {
+        await updateTrade(trade.id, updates);
+        // Update cache
+        Object.assign(trade, updates);
+        if (updates.status === 'closed') {
+          // Remove from cache
+          openTradesCache = openTradesCache.filter(t => t.id !== trade.id);
+        }
+      }
+    }
+  } catch (err) {
+    console.error(`Processing error for ${trade.symbol}:`, err);
+  }
 }
 
 async function updateTrade(id, updates) {
@@ -238,15 +267,13 @@ async function updateTrade(id, updates) {
     .from('signals')
     .update(updates)
     .eq('id', id);
-  if (error) {
-    console.error('Error updating trade:', error);
-    throw error;
-  }
+  if (error) console.error('Update trade error:', error);
 }
 
-// Start monitoring every 1 minute (wrap in catch to handle top-level rejections)
-setInterval(() => {
-  updateTradeStatus().catch(err => console.error('Monitor cycle failed:', err));
-}, 60000);
+// Periodically refresh open trades and manage subscriptions (every 60 seconds)
+setInterval(refreshOpenTrades, 60000);
 
-module.exports = { updateTradeStatus };
+// Initial refresh
+refreshOpenTrades().catch(err => console.error('Initial refresh failed:', err));
+
+module.exports = { }; // No need for exported function now, as it's running internally
