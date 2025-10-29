@@ -66,12 +66,13 @@ async function fetchSignals() {
 }
 
 /**
+ /**
  * Calculate custom PnL based on user-defined position size and leverage
  * Matches exchange calculation method
  */
 function calculateCustomPnL(signal) {
   if (signal.status !== 'closed' || !signal.entry) {
-    return { customPnlDollars: 0, customPnlPct: 0 };
+    return { customPnlDollars: 0, customPnlPct: 0, totalFees: 0 };
   }
 
   const customPosition = parseFloat(customPositionSizeInput.value) || 100;
@@ -85,9 +86,6 @@ function calculateCustomPnL(signal) {
   let totalPnlDollars = 0;
   let totalFeeDollars = 0;
   
-  // Entry fee on full position
-  totalFeeDollars += notional * TAKER_FEE;
-  
   // Check if there was a partial close (TP1 hit)
   const hadPartialClose = signal.partial_raw_pnl_pct !== null && signal.partial_raw_pnl_pct !== undefined;
   
@@ -97,9 +95,14 @@ function calculateCustomPnL(signal) {
     const halfNotional = notional * 0.5;
     const tp1Exit = signal.tp1;
     
+    // Entry fee for half position
+    totalFeeDollars += halfNotional * TAKER_FEE;
+    
     const priceChange1 = isBuy ? (tp1Exit - signal.entry) : (signal.entry - tp1Exit);
     const pnlDollars1 = halfQuantity * priceChange1;
     totalPnlDollars += pnlDollars1;
+    
+    // Exit fee for half position at TP1
     totalFeeDollars += halfNotional * TAKER_FEE;
     
     // Remaining close at TP2 or SL (breakeven)
@@ -107,16 +110,27 @@ function calculateCustomPnL(signal) {
     const remainingNotional = notional * 0.5;
     const exitPrice = signal.exit_price || signal.entry;
     
+    // Entry fee for remaining half
+    totalFeeDollars += remainingNotional * TAKER_FEE;
+    
     const priceChange2 = isBuy ? (exitPrice - signal.entry) : (signal.entry - exitPrice);
     const pnlDollars2 = remainingQuantity * priceChange2;
     totalPnlDollars += pnlDollars2;
+    
+    // Exit fee for remaining half
     totalFeeDollars += remainingNotional * TAKER_FEE;
   } else {
     // Full position closed at once (either full SL or full TP)
     const exitPrice = signal.exit_price || signal.entry;
+    
+    // Entry fee
+    totalFeeDollars += notional * TAKER_FEE;
+    
     const priceChange = isBuy ? (exitPrice - signal.entry) : (signal.entry - exitPrice);
     totalPnlDollars = quantity * priceChange;
-    totalFeeDollars += notional * TAKER_FEE; // Exit fee
+    
+    // Exit fee
+    totalFeeDollars += notional * TAKER_FEE;
   }
   
   const netPnlDollars = totalPnlDollars - totalFeeDollars;
@@ -124,7 +138,8 @@ function calculateCustomPnL(signal) {
   
   return {
     customPnlDollars: netPnlDollars,
-    customPnlPct: netPnlPct
+    customPnlPct: netPnlPct,
+    totalFees: totalFeeDollars
   };
 }
 
