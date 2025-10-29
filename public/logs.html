@@ -53,6 +53,32 @@
       background: #f5f5f5;
     }
 
+    .tabs {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 32px;
+    }
+
+    .tabs button {
+      padding: 8px 16px;
+      background: #ffffff;
+      border: 1px solid #e5e5e5;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .tabs button:hover {
+      background: #f5f5f5;
+    }
+
+    .tabs button.active {
+      background: #1a1a1a;
+      color: #ffffff;
+      border-color: #1a1a1a;
+    }
+
     .symbol-selector {
       display: flex;
       gap: 12px;
@@ -331,6 +357,10 @@
       border-top: 1px solid #e5e5e5;
     }
 
+    .hidden {
+      display: none;
+    }
+
     /* Responsive */
     @media (max-width: 768px) {
       .dashboard {
@@ -383,6 +413,11 @@
       <h1>Signal Logs</h1>
       <a href="/">Back to Dashboard</a>
     </div>
+
+    <div class="tabs">
+      <button id="logs-tab" class="active">Logs</button>
+      <button id="results-tab">Results</button>
+    </div>
     
     <div class="symbol-selector">
       <h3>Filter by</h3>
@@ -413,9 +448,24 @@
           <label>Total Raw PnL (%)</label>
           <span class="value" id="total-raw-pnl">0.00%</span>
         </div>
+        <!--<div class="summary-item">
+          <label>Total Raw PnL ($)</label>
+          <span class="value" id="total-pnl">$0.00</span>
+        </div>
+      </div>-->
+
+      <div id="outcomes-summary" class="summary-grid hidden" style="margin-top: 16px;">
         <div class="summary-item">
-          <label>Total Net PnL (%)</label>
-          <span class="value" id="total-pnl">0.00%</span>
+          <label>SL Trades</label>
+          <span class="value" id="sl-trades">0</span>
+        </div>
+        <div class="summary-item">
+          <label>BE Trades</label>
+          <span class="value" id="be-trades">0</span>
+        </div>
+        <div class="summary-item">
+          <label>TP Trades</label>
+          <span class="value" id="tp-trades">0</span>
         </div>
       </div>
       
@@ -456,6 +506,7 @@
           <th>TP2</th>
           <th>SL</th>
           <th>Status</th>
+          <th id="outcome-header" style="display: none;">Outcome</th>
           <th>Raw PnL (%)</th>
           <th>Custom PnL (%)</th>
           <th>Custom PnL ($)</th>

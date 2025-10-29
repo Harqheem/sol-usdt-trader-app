@@ -17,8 +17,16 @@ const customTotalFeesDollarsEl = document.getElementById('custom-total-fees-doll
 const sideSheet = document.getElementById('side-sheet');
 const closeSheetBtn = document.getElementById('close-sheet');
 const sheetContent = document.getElementById('sheet-content');
+const logsTab = document.getElementById('logs-tab');
+const resultsTab = document.getElementById('results-tab');
+const outcomeHeader = document.getElementById('outcome-header');
+const outcomesSummary = document.getElementById('outcomes-summary');
+const slTradesEl = document.getElementById('sl-trades');
+const beTradesEl = document.getElementById('be-trades');
+const tpTradesEl = document.getElementById('tp-trades');
 
 let currentData = []; // Store fetched data for recalculation
+let currentTab = 'logs';
 
 // Populate symbol options from config (hardcoded for now)
 const symbols = ['SOLUSDT', 'XRPUSDT', 'ADAUSDT', 'BNBUSDT', 'DOGEUSDT'];
@@ -46,13 +54,34 @@ function formatTime(isoTime) {
   return date.toLocaleString('default', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
+function getOutcome(signal) {
+  if (signal.status !== 'closed') return '-';
+  const hadPartial = signal.partial_raw_pnl_pct !== null;
+  if (!hadPartial) {
+    return 'SL';
+  }
+  const entry = signal.entry;
+  const exit = signal.exit_price;
+  if (!exit || !entry) return '-';
+  const relativeDiff = Math.abs(exit - entry) / entry;
+  if (relativeDiff < 0.001) {
+    return 'BE';
+  } else {
+    return 'TP';
+  }
+}
+
 async function fetchSignals() {
   tableBody.innerHTML = '<tr><td colspan="10">Loading...</td></tr>';
   try {
     let url = '/signals?limit=100';
     if (symbolFilter.value) url += `&symbol=${symbolFilter.value}`;
     if (fromDateInput.value) url += `&fromDate=${fromDateInput.value}T00:00:00Z`;
-    if (statusFilter && statusFilter.value) url += `&status=${statusFilter.value}`;
+    if (currentTab === 'results') {
+      url += `&status=closed`;
+    } else {
+      if (statusFilter && statusFilter.value) url += `&status=${statusFilter.value}`;
+    }
     console.log('Fetching URL:', url);
     const res = await fetch(url);
     if (!res.ok) throw new Error('Fetch failed');
@@ -63,7 +92,7 @@ async function fetchSignals() {
   } catch (err) {
     console.error('Fetch error:', err);
     tableBody.innerHTML = '<tr><td colspan="10">Error loading logs: ' + err.message + '</td></tr>';
-    updateSummary(0, 0, 0, 0, 0);
+    updateSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
   }
 }
 
@@ -148,12 +177,13 @@ function renderTableAndSummary() {
   tableBody.innerHTML = '';
   if (currentData.length === 0) {
     tableBody.innerHTML = '<tr><td colspan="10">No logs found</td></tr>';
-    updateSummary(0, 0, 0, 0, 0, 0, 0);
+    updateSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     return;
   }
   
   currentData.forEach((signal, index) => {
     const { customPnlDollars, customPnlPct } = calculateCustomPnL(signal);
+    const outcomeTd = currentTab === 'results' ? `<td>${getOutcome(signal)}</td>` : '';
     const row = document.createElement('tr');
     row.innerHTML = `
       <td>${formatTime(signal.timestamp)}</td>
@@ -163,6 +193,7 @@ function renderTableAndSummary() {
       <td>${signal.tp2 ? signal.tp2.toFixed(4) : '-'}</td>
       <td>${signal.sl ? signal.sl.toFixed(4) : '-'}</td>
       <td class="status-badge ${getStatusClass(signal.status)}">${signal.status.charAt(0).toUpperCase() + signal.status.slice(1)}</td>
+      ${outcomeTd}
       <td style="color: ${signal.raw_pnl_percentage > 0 ? 'green' : signal.raw_pnl_percentage < 0 ? 'red' : 'black'};">${signal.raw_pnl_percentage ? signal.raw_pnl_percentage.toFixed(2) + '%' : '-'}</td>
       <td style="color: ${customPnlPct > 0 ? 'green' : customPnlPct < 0 ? 'red' : 'black'};">${customPnlPct !== 0 ? customPnlPct.toFixed(2) + '%' : '-'}</td>
       <td style="color: ${customPnlDollars > 0 ? 'green' : customPnlDollars < 0 ? 'red' : 'black'};">${customPnlDollars !== 0 ? '$' + customPnlDollars.toFixed(2) : '-'}</td>
@@ -175,7 +206,18 @@ function renderTableAndSummary() {
   const totalTrades = currentData.length;
   const closedTrades = currentData.filter(s => s.status === 'closed');
   const totalRawPnl = closedTrades.reduce((sum, s) => sum + (s.raw_pnl_percentage || 0), 0);
-  const totalNetPnl = closedTrades.reduce((sum, s) => sum + (s.pnl_percentage || 0), 0);
+  const totalRawPnlDollars = closedTrades.reduce((sum, s) => sum + ((s.raw_pnl_percentage || 0) / 100 * (s.position_size || 0)), 0);
+  
+  const outcomes = closedTrades.reduce((acc, s) => {
+    const out = getOutcome(s);
+    if (out !== '-') {
+      acc[out] = (acc[out] || 0) + 1;
+    }
+    return acc;
+  }, {});
+  const slCount = outcomes['SL'] || 0;
+  const beCount = outcomes['BE'] || 0;
+  const tpCount = outcomes['TP'] || 0;
   
   const customResults = closedTrades.map(s => calculateCustomPnL(s));
   const customTotalPnlPct = customResults.reduce((sum, r) => sum + r.customPnlPct, 0);
@@ -184,17 +226,26 @@ function renderTableAndSummary() {
   const customPosition = parseFloat(customPositionSizeInput.value) || 100;
   const customTotalFeesPct = (customTotalFeesDollars / customPosition) * 100;
   
-  updateSummary(totalTrades, totalRawPnl, totalNetPnl, customTotalPnlPct, customTotalPnlDollars, customTotalFeesPct, customTotalFeesDollars);
+  updateSummary(totalTrades, totalRawPnl, totalRawPnlDollars, customTotalPnlPct, customTotalPnlDollars, customTotalFeesPct, customTotalFeesDollars, slCount, beCount, tpCount);
+  
+  if (currentTab === 'results') {
+    outcomesSummary.classList.remove('hidden');
+  } else {
+    outcomesSummary.classList.add('hidden');
+  }
 }
 
-function updateSummary(trades, rawPnl, netPnl, customPnlPct, customPnlDollars, customFeesPct, customFeesDollars) {
+function updateSummary(trades, rawPnl, rawPnlDollars, customPnlPct, customPnlDollars, customFeesPct, customFeesDollars, slCount, beCount, tpCount) {
   totalTradesEl.textContent = trades;
   totalRawPnlEl.textContent = rawPnl.toFixed(2) + '%';
-  totalPnlEl.textContent = netPnl.toFixed(2) + '%';
+  totalPnlEl.textContent = '$' + rawPnlDollars.toFixed(2);
   customTotalPnlEl.textContent = customPnlPct.toFixed(2) + '%';
   customTotalPnlDollarsEl.textContent = '$' + customPnlDollars.toFixed(2);
   customTotalFeesPctEl.textContent = customFeesPct.toFixed(2) + '%';
   customTotalFeesDollarsEl.textContent = '$' + customFeesDollars.toFixed(2);
+  slTradesEl.textContent = slCount;
+  beTradesEl.textContent = beCount;
+  tpTradesEl.textContent = tpCount;
 }
 
 function showDetails(signal) {
@@ -240,6 +291,7 @@ function showDetails(signal) {
     <p><strong>Leverage:</strong> ${signal.leverage || '-'}x</p>
     <p><strong>Remaining Position:</strong> ${signal.remaining_position !== null && signal.remaining_position !== undefined ? (signal.remaining_position * 100).toFixed(0) + '%' : '100%'}</p>
     <p><strong>Status:</strong> <span class="status-badge ${getStatusClass(signal.status)}">${signal.status.charAt(0).toUpperCase() + signal.status.slice(1)}</span></p>
+    <p><strong>Outcome:</strong> ${getOutcome(signal)}</p>
     <p><strong>Open Time:</strong> ${formatTime(signal.open_time)}</p>
     <p><strong>Close Time:</strong> ${formatTime(signal.close_time)}</p>
     <p><strong>Exit Price:</strong> ${signal.exit_price ? signal.exit_price.toFixed(4) : '-'}</p>
@@ -258,6 +310,27 @@ function showDetails(signal) {
 
 closeSheetBtn.addEventListener('click', () => {
   sideSheet.classList.remove('active');
+});
+
+// Tab event listeners
+logsTab.addEventListener('click', () => {
+  if (currentTab === 'logs') return;
+  currentTab = 'logs';
+  logsTab.classList.add('active');
+  resultsTab.classList.remove('active');
+  statusFilter.classList.remove('hidden');
+  outcomeHeader.style.display = 'none';
+  fetchSignals();
+});
+
+resultsTab.addEventListener('click', () => {
+  if (currentTab === 'results') return;
+  currentTab = 'results';
+  resultsTab.classList.add('active');
+  logsTab.classList.remove('active');
+  statusFilter.classList.add('hidden');
+  outcomeHeader.style.display = 'table-cell';
+  fetchSignals();
 });
 
 // Event listeners
