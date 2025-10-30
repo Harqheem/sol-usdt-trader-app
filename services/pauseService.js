@@ -61,7 +61,7 @@ setInterval(() => {
       console.log('⏰ Auto-resumed trading after 8 hours');
     }
   }
-}, 60000); // Check every minute
+}, 300000); // Check every minute
 
 module.exports = {
   pauseTrading,
