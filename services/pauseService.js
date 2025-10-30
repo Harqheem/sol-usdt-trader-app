@@ -68,5 +68,5 @@ module.exports = {
   resumeTrading,
   toggleTrading,
   getStatus,
-  get isPaused() { return isPaused; }
+  isPaused: () => isPaused
 };

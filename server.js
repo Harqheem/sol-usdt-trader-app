@@ -35,19 +35,67 @@ async function gracefulShutdown() {
   process.exit(0);
 }
 
+
+
 // Get trading status
 app.get('/trading-status', (req, res) => {
-  res.json(pauseService.getStatus());
+  try {
+    const status = pauseService.getStatus();
+    console.log('📊 Status requested:', status); // Debug log
+    res.json(status);
+  } catch (err) {
+    console.error('❌ Status error:', err);
+    res.status(500).json({ 
+      error: err.message,
+      isPaused: false,
+      pauseStartTime: null,
+      pauseDuration: 0,
+      timeUntilAutoResume: 0
+    });
+  }
 });
 
 // Toggle trading pause
 app.post('/toggle-trading', (req, res) => {
-  const newState = pauseService.toggleTrading();
-  res.json({
-    success: true,
-    isPaused: newState,
-    message: newState ? 'Trading paused' : 'Trading resumed'
-  });
+  try {
+    const newState = pauseService.toggleTrading();
+    const message = newState ? 'Trading paused successfully' : 'Trading resumed successfully';
+    console.log('🔄', message, '- New state:', newState); // Debug log
+    res.json({
+      success: true,
+      isPaused: newState,
+      message: message
+    });
+  } catch (err) {
+    console.error('❌ Toggle error:', err);
+    res.status(500).json({ 
+      success: false,
+      error: err.message 
+    });
+  }
+});
+
+// Optional: Manual pause/resume endpoints for testing
+app.post('/pause-trading', (req, res) => {
+  try {
+    pauseService.pauseTrading();
+    console.log('🛑 Trading paused manually');
+    res.json({ success: true, message: 'Trading paused' });
+  } catch (err) {
+    console.error('❌ Pause error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/resume-trading', (req, res) => {
+  try {
+    pauseService.resumeTrading();
+    console.log('▶️ Trading resumed manually');
+    res.json({ success: true, message: 'Trading resumed' });
+  } catch (err) {
+    console.error('❌ Resume error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 (async () => {

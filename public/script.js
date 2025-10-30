@@ -112,7 +112,7 @@ function updateUI(data) {
   currentData = data;
 }
 
-// Fetch price
+// Fetch price and update trading status
 async function fetchPrice() {
   try {
     const res = await fetch(`/price?symbol=${selectedSymbol}`);
@@ -146,6 +146,92 @@ async function fetchPrice() {
   }
 }
 
+// Update pause status display
+async function updatePauseStatus() {
+  try {
+    const res = await fetch('/trading-status');
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
+    const status = await res.json();
+    console.log('Trading status:', status); // Debug log
+    
+    const pauseBtn = document.getElementById('pause-btn');
+    const pauseStatusEl = document.getElementById('pause-status');
+    
+    if (!pauseBtn || !pauseStatusEl) {
+      console.error('Pause button or status element not found');
+      return;
+    }
+    
+    if (status.isPaused) {
+      pauseBtn.textContent = '▶️ Resume Trading';
+      pauseBtn.style.background = '#ef4444';
+      
+      const elapsed = Math.floor(status.pauseDuration / 60000); // minutes
+      const remaining = Math.floor(status.timeUntilAutoResume / 60000); // minutes
+      pauseStatusEl.textContent = `⏸️ Paused for ${elapsed}m (auto-resume in ${remaining}m)`;
+      pauseStatusEl.style.color = '#ef4444';
+    } else {
+      pauseBtn.textContent = '⏸️ Pause Trading';
+      pauseBtn.style.background = '#10b981';
+      pauseStatusEl.textContent = '▶️ Trading Active';
+      pauseStatusEl.style.color = '#10b981';
+    }
+  } catch (err) {
+    console.error('Status fetch error:', err);
+    // Show error in UI
+    const pauseStatusEl = document.getElementById('pause-status');
+    if (pauseStatusEl) {
+      pauseStatusEl.textContent = '⚠️ Status unavailable';
+      pauseStatusEl.style.color = '#f59e0b';
+    }
+  }
+}
+
+// Toggle trading pause
+async function toggleTrading() {
+  const pauseBtn = document.getElementById('pause-btn');
+  
+  // Disable button during request
+  if (pauseBtn) {
+    pauseBtn.disabled = true;
+    pauseBtn.style.opacity = '0.5';
+  }
+  
+  try {
+    console.log('Toggling trading...'); // Debug log
+    const res = await fetch('/toggle-trading', { 
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
+    
+    const result = await res.json();
+    console.log('Trading toggled:', result); // Debug log
+    
+    // Show success feedback
+    alert(result.message || (result.isPaused ? 'Trading paused successfully' : 'Trading resumed successfully'));
+    
+    // Update UI immediately
+    await updatePauseStatus();
+  } catch (err) {
+    console.error('Toggle error:', err);
+    alert('Failed to toggle trading: ' + err.message);
+  } finally {
+    // Re-enable button
+    if (pauseBtn) {
+      pauseBtn.disabled = false;
+      pauseBtn.style.opacity = '1';
+    }
+  }
+}
+
 // Fetch data
 async function fetchData() {
   try {
@@ -153,6 +239,7 @@ async function fetchData() {
     const data = await res.json();
     updateUI(data);
     fetchPrice();
+    updatePauseStatus(); // Update status whenever we fetch data
   } catch (err) {
     console.error('Data fetch error:', err);
     document.getElementById('signal').textContent = '❌ Network Error';
@@ -169,10 +256,28 @@ document.querySelectorAll('input[name="symbol"]').forEach(radio => {
   });
 });
 
+// Add event listener for pause button
+document.addEventListener('DOMContentLoaded', () => {
+  const pauseBtn = document.getElementById('pause-btn');
+  if (pauseBtn) {
+    pauseBtn.addEventListener('click', toggleTrading);
+    console.log('Pause button event listener attached');
+  } else {
+    console.error('Pause button not found on page load');
+  }
+  
+  // Initial load
+  fetchData();
+  
+  // Update pause status more frequently (every 30 seconds)
+  setInterval(updatePauseStatus, 30000);
+});
+
 // Initial and intervals
 fetchData();
 setInterval(fetchData, 300000); // 5 min full refresh
 setInterval(fetchPrice, 1000); // 1 sec price
+setInterval(updatePauseStatus, 30000); // 30 sec pause status
 
 document.getElementById('copy-btn').addEventListener('click', () => {
   navigator.clipboard.writeText(JSON.stringify(currentData, null, 2));

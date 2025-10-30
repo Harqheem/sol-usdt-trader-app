@@ -439,10 +439,10 @@ async function getData(symbol) {
       let threshold = 12, thresholdNote = '';
       if (adx > 30) { 
         threshold = 11; 
-        thresholdNote = ' (lower, strong ADX)'; 
+        thresholdNote = ' (lower threshold, strong ADX)'; 
       } else if (adx < 20) { 
         threshold = 13; 
-        thresholdNote = ' (higher, weak ADX)'; 
+        thresholdNote = ' (higher threshold, weak ADX)'; 
       }
 
       // Entry/TP/SL calculation - WITH IMPROVEMENTS
@@ -560,58 +560,59 @@ async function getData(symbol) {
         console.log(symbol, 'Time reset', 'reset');
       }
 
-      // Send notification if conditions met AND trading not paused
-      if (signal.startsWith('✅') && signal !== previousSignal[symbol] && 
-          (!lastNotificationTime[symbol] || now - lastNotificationTime[symbol] > 300000) && 
-          sendCounts[symbol] < 6 && !getTradingPaused) {
-        
-        const nonAligningText = nonAligningIndicators.length > 0 ? 
-          `\nNon-aligning:\n- ${nonAligningIndicators.join('\n- ')}` : '';
-        
-        const firstMessage = `${symbol}\nLEVERAGE: 20\nEntry: ${entry}\nTP1: ${tp1}\nTP2: ${tp2}\nSL: ${sl}\nLast candle: ${candlePattern} (${candleDirection})\nPSAR: ${suggestion}`;
-        const secondMessage = `Notes: ${notes}${nonAligningText}\n${positionSizingNote}\nTrailing: ${trailingLogic}`;
-        
-        sendTelegramNotification(firstMessage, secondMessage, symbol).catch(err => 
-          console.error(`TG failed ${symbol}:`, err.message)
-        );
-        
-        previousSignal[symbol] = signal;
-        lastNotificationTime[symbol] = now;
-        lastSignalTime[symbol] = now;
-        sendCounts[symbol]++;
-        console.log(symbol, `Signal sent, count ${sendCounts[symbol]}`, 'signal');
+// Send notification if conditions met AND trading not paused
+if (signal.startsWith('✅') && signal !== previousSignal[symbol] && 
+    (!lastNotificationTime[symbol] || now - lastNotificationTime[symbol] > 300000) && 
+    sendCounts[symbol] < 6 && !getTradingPaused()) {  // ← NOTE THE () HERE!
+  
+  const nonAligningText = nonAligningIndicators.length > 0 ? 
+    `\nNon-aligning:\n- ${nonAligningIndicators.join('\n- ')}` : '';
+  
+  const firstMessage = `${symbol}\nLEVERAGE: 20\nEntry: ${entry}\nTP1: ${tp1}\nTP2: ${tp2}\nSL: ${sl}\nLast candle: ${candlePattern} (${candleDirection})\nPSAR: ${suggestion}`;
+  const secondMessage = `Notes: ${notes}${nonAligningText}\n${positionSizingNote}\nTrailing: ${trailingLogic}`;
+  
+  sendTelegramNotification(firstMessage, secondMessage, symbol).catch(err => 
+    console.error(`TG failed ${symbol}:`, err.message)
+  );
+  
+  previousSignal[symbol] = signal;
+  lastNotificationTime[symbol] = now;
+  lastSignalTime[symbol] = now;
+  sendCounts[symbol]++;
+  console.log(symbol, `Signal sent, count ${sendCounts[symbol]}`, 'signal');
 
-        try {
-          await logSignal(symbol, {
-            signal: signal,
-            notes: notes,
-            entry: parseFloat(entry),
-            tp1: parseFloat(tp1),
-            tp2: parseFloat(tp2),
-            sl: parseFloat(sl),
-            positionSize: parseFloat(positionSize)
-          });
-        } catch (logErr) {
-          console.error(`Failed to log signal for ${symbol}:`, logErr.message);
-        }
-        
-        // Queue management - reset oldest when reaching limit
-        if (sendCounts[symbol] === 6) {
-          if (pausedQueue.length > 0) {
-            let resetSym = pausedQueue.shift();
-            sendCounts[resetSym] = 0;
-            console.log(resetSym, `Reset by ${symbol}`, 'reset');
-          }
-          pausedQueue.push(symbol);
-        }
-      } else if (getTradingPaused && signal.startsWith('✅')) {
-        console.log(symbol, 'Signal generated but trading is PAUSED', 'paused');
-        previousSignal[symbol] = signal; // Still update to prevent spam when resumed
-      } else if (sendCounts[symbol] >= 6) {
-        console.log(symbol, 'Limit reached', 'limit');
-      } else if (!signal.startsWith('✅')) {
-        previousSignal[symbol] = signal;
-      }
+  try {
+    await logSignal(symbol, {
+      signal: signal,
+      notes: notes,
+      entry: parseFloat(entry),
+      tp1: parseFloat(tp1),
+      tp2: parseFloat(tp2),
+      sl: parseFloat(sl),
+      positionSize: parseFloat(positionSize)
+    });
+  } catch (logErr) {
+    console.error(`Failed to log signal for ${symbol}:`, logErr.message);
+  }
+  
+  // Queue management - reset oldest when reaching limit
+  if (sendCounts[symbol] === 6) {
+    if (pausedQueue.length > 0) {
+      let resetSym = pausedQueue.shift();
+      sendCounts[resetSym] = 0;
+      console.log(resetSym, `Reset by ${symbol}`, 'reset');
+    }
+    pausedQueue.push(symbol);
+  }
+} else if (getTradingPaused() && signal.startsWith('✅')) {  // ← NOTE THE () HERE TOO!
+  console.log(symbol, 'Signal generated but trading is PAUSED ⏸️', 'paused');
+  previousSignal[symbol] = signal; // Still update to prevent spam when resumed
+} else if (sendCounts[symbol] >= 6) {
+  console.log(symbol, 'Limit reached', 'limit');
+} else if (!signal.startsWith('✅')) {
+  previousSignal[symbol] = signal;
+}
+
 
       // Trade logging
       if (signal.startsWith('✅')) {
