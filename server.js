@@ -9,6 +9,8 @@ require('./services/monitorService'); // Require to start internal monitoring
 const { symbols } = config;
 
 const app = express();
+app.use(express.json()); // ADD THIS LINE - parses JSON request bodies
+app.use(express.urlencoded({ extended: true })); // ADD THIS LINE - parses URL-encoded bodies
 app.use(express.static('public'));
 app.use(routes);
 
