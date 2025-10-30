@@ -580,24 +580,24 @@ async function getData(symbol) {
       }
 
       // Trade logging
-      if (signal.startsWith('✅')) {
-        const log = {
-          timestamp: new Date().toLocaleString(),
-          signal,
-          bullishScore,
-          bearishScore,
-          bullishPenalty,
-          bearishPenalty,
-          rsiDivergence,
-          adx: adx.toFixed(2),
-          thresholdUsed: threshold,
-          atrMultiplierUsed: atrMultiplier,
-          multiTFAlignment: `${trend1h} / ${trend4h}`,
-          reasons: { adx: adx.toFixed(2), rsi: rsi.toFixed(2), atr: atr.toFixed(2), cmf: cmf.toFixed(2), macd: macd.MACD.toFixed(2) },
-          levels: { entry, tp1, tp2, sl, positionSize }
-        };
-        console.log(symbol, JSON.stringify(log, null, 2), 'TRADE');
-      }
+      //if (signal.startsWith('✅')) {
+      //  const log = {
+      //    timestamp: new Date().toLocaleString(),
+      //    signal,
+      //    bullishScore,
+      //    bearishScore,
+      //    bullishPenalty,
+      //    bearishPenalty,
+      //    rsiDivergence,
+      //    adx: adx.toFixed(2),
+      //    thresholdUsed: threshold,
+      //    atrMultiplierUsed: atrMultiplier,
+      //    multiTFAlignment: `${trend1h} / ${trend4h}`,
+      //    reasons: { adx: adx.toFixed(2), rsi: rsi.toFixed(2), atr: atr.toFixed(2), cmf: cmf.toFixed(2), macd: macd.MACD.toFixed(2) },
+      //    levels: { entry, tp1, tp2, sl, positionSize }
+      //  };
+      //  console.log(symbol, JSON.stringify(log, null, 2), 'TRADE');
+      //}
 
       // Format all numeric values for display
       const formattedLast5 = last15Candles.slice(-5).map(candle => ({
