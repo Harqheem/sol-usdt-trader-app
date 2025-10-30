@@ -330,16 +330,36 @@ async function getData(symbol) {
         nonAligningIndicators.push('EMAs mixed');
       }
 
-      // RSI (weight: 2 for neutral, penalty for extremes)
+      // IMPROVED RSI LOGIC - Zone-based scoring (only affects grading)
       if (rsi >= 40 && rsi <= 60) { 
         bullishScore += 2; 
         bearishScore += 2; 
         bullishReasons.push(`Neutral RSI (${rsi.toFixed(2)})`); 
         bearishReasons.push(`Neutral RSI (${rsi.toFixed(2)})`); 
-      } else if (rsi > 70) {
-        nonAligningIndicators.push(`RSI overbought (${rsi.toFixed(2)})`);
-      } else if (rsi < 30) {
+      } else if (rsi < 40) {
+        // Oversold - favorable for longs, unfavorable for shorts
+        bullishScore += 2;
+        bullishReasons.push(`Oversold RSI (${rsi.toFixed(2)}) - favorable for long`);
+        bearishScore += 0; // Neutral for shorts when oversold
         nonAligningIndicators.push(`RSI oversold (${rsi.toFixed(2)})`);
+      } else if (rsi > 60 && rsi <= 70) {
+        // Elevated - favorable for shorts
+        bearishScore += 2;
+        bearishReasons.push(`Elevated RSI (${rsi.toFixed(2)}) - favorable for short`);
+        bullishScore += 1; // Still acceptable for longs
+        bullishReasons.push(`Moderate RSI (${rsi.toFixed(2)})`);
+      } else if (rsi > 70) {
+        // Strongly overbought - penalty for longs, bonus for shorts
+        bullishScore -= 1;
+        nonAligningIndicators.push(`RSI overbought (${rsi.toFixed(2)}) - caution for long`);
+        bearishScore += 2;
+        bearishReasons.push(`Overbought RSI (${rsi.toFixed(2)}) - favorable for short`);
+      } else if (rsi < 30) {
+        // Strongly oversold - bonus for longs, penalty for shorts
+        bullishScore += 2;
+        bullishReasons.push(`Deeply oversold RSI (${rsi.toFixed(2)}) - strong for long`);
+        bearishScore -= 1;
+        nonAligningIndicators.push(`RSI oversold (${rsi.toFixed(2)}) - caution for short`);
       }
 
       // ATR (weight: 2)

@@ -37,6 +37,11 @@ async function gracefulShutdown() {
 
 
 
+// Add these routes to your server.js file
+// Place them BEFORE app.listen()
+
+const pauseService = require('./services/pauseService');
+
 // Get trading status
 app.get('/trading-status', (req, res) => {
   try {
@@ -98,7 +103,7 @@ app.post('/resume-trading', (req, res) => {
   }
 });
 
-// Terminate trade endpoint
+// Terminate trade endpoint - ONLY PENDING TRADES
 app.post('/terminate-trade/:id', async (req, res) => {
   try {
     const tradeId = req.params.id;
@@ -114,11 +119,11 @@ app.post('/terminate-trade/:id', async (req, res) => {
     if (fetchError) throw fetchError;
     if (!trade) throw new Error('Trade not found');
     
-    // Only allow terminating pending or opened trades
-    if (trade.status !== 'pending' && trade.status !== 'opened') {
+    // ONLY allow terminating PENDING trades
+    if (trade.status !== 'pending') {
       return res.status(400).json({ 
         success: false, 
-        error: 'Can only terminate pending or opened trades' 
+        error: 'Can only terminate pending trades. Opened trades cannot be terminated.' 
       });
     }
     
@@ -141,6 +146,66 @@ app.post('/terminate-trade/:id', async (req, res) => {
     res.json({ success: true, message: 'Trade terminated successfully' });
   } catch (err) {
     console.error('❌ Terminate trade error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Bulk terminate trades endpoint - ONLY PENDING TRADES
+app.post('/terminate-trades-bulk', async (req, res) => {
+  try {
+    const { tradeIds } = req.body;
+    if (!tradeIds || !Array.isArray(tradeIds) || tradeIds.length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid trade IDs provided' 
+      });
+    }
+    
+    const { supabase } = require('./services/logsService');
+    
+    // Get all trades first to check status
+    const { data: trades, error: fetchError } = await supabase
+      .from('signals')
+      .select('*')
+      .in('id', tradeIds);
+    
+    if (fetchError) throw fetchError;
+    
+    // Filter to only pending trades
+    const pendingTrades = trades.filter(t => t.status === 'pending');
+    const pendingIds = pendingTrades.map(t => t.id);
+    
+    if (pendingIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'No pending trades found in selection'
+      });
+    }
+    
+    // Terminate only pending trades
+    const { error: updateError } = await supabase
+      .from('signals')
+      .update({
+        status: 'terminated',
+        close_time: new Date().toISOString(),
+        raw_pnl_percentage: 0,
+        pnl_percentage: 0,
+        custom_pnl: 0,
+        remaining_position: 0
+      })
+      .in('id', pendingIds);
+    
+    if (updateError) throw updateError;
+    
+    console.log(`🚫 Bulk terminated ${pendingIds.length} trades`);
+    res.json({ 
+      success: true, 
+      terminated: pendingIds.length,
+      skipped: tradeIds.length - pendingIds.length,
+      message: `Terminated ${pendingIds.length} pending trade(s)` 
+    });
+  } catch (err) {
+    console.error('❌ Bulk terminate error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
