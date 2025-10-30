@@ -77,18 +77,33 @@ router.get('/price', async (req, res) => {
 
 router.get('/signals', async (req, res) => {
   try {
+    const { symbol, limit, fromDate, status } = req.query;
+    
     const options = {
-      symbol: req.query.symbol,
-      limit: parseInt(req.query.limit) || 50,
-      fromDate: req.query.fromDate,
-      status: req.query.status
+      symbol: symbol || undefined,
+      limit: parseInt(limit) || 50,
+      fromDate: fromDate || undefined
     };
+    
+    // Handle comma-separated status values
+    if (status) {
+      // If status contains comma, it's multiple statuses
+      if (status.includes(',')) {
+        const statuses = status.split(',').map(s => s.trim());
+        // Fetch all and filter in memory for multiple statuses
+        const allSignals = await getSignals(options);
+        const filtered = allSignals.filter(s => statuses.includes(s.status));
+        return res.json(filtered);
+      } else {
+        options.status = status;
+      }
+    }
+    
     const signals = await getSignals(options);
     res.json(signals);
   } catch (err) {
-    console.error('Signals fetch error:', err.message);
-    res.status(500).json({ error: 'Failed to fetch signals' });
+    console.error('Error fetching signals:', err);
+    res.status(500).json({ error: err.message });
   }
 });
-
 module.exports = router;

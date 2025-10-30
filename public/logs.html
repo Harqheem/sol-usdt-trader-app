@@ -156,6 +156,21 @@
       box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
 
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .terminate-btn {
+      background: #ef4444;
+    }
+
+    .terminate-btn:hover:not(:disabled) {
+      background: #dc2626;
+    }
+
     .summary-panel, .stats-section {
       background: white;
       padding: 24px;
@@ -228,6 +243,35 @@
       font-weight: 600;
     }
 
+    .pagination-controls {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 20px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      justify-content: space-between;
+    }
+
+    .pagination-controls .left-controls {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .pagination-controls .page-info {
+      font-size: 14px;
+      color: #666;
+      font-weight: 500;
+    }
+
+    .pagination-controls button {
+      padding: 8px 16px;
+    }
+
     .minimal-table {
       width: 100%;
       border-collapse: separate;
@@ -271,6 +315,17 @@
 
     .minimal-table tbody tr:last-child {
       border-bottom: none;
+    }
+
+    .checkbox-cell {
+      width: 40px;
+      text-align: center;
+    }
+
+    .checkbox-cell input[type="checkbox"] {
+      cursor: pointer;
+      width: 18px;
+      height: 18px;
     }
 
     /* Status badges */
@@ -458,6 +513,11 @@
         flex-direction: column;
         align-items: stretch;
       }
+
+      .pagination-controls {
+        flex-direction: column;
+        align-items: stretch;
+      }
     }
 
     /* Additional polish */
@@ -514,10 +574,10 @@
         <option value="failed">Failed</option>
       </select>
       <button id="refresh-btn">🔄 Refresh</button>
-      <button id="bulk-terminate-btn" style="background: #ef4444; display: none;">🚫 Terminate Selected</button>
+      <button id="bulk-terminate-btn" class="terminate-btn hidden">🚫 Terminate Selected</button>
     </div>
     
-    <div id="summary" class="summary-panel">
+        <div id="summary" class="summary-panel">
       <h3>📈 Trade Summary</h3>
       <div class="summary-grid">
         <div class="summary-item">
@@ -550,6 +610,10 @@
         <div class="summary-item">
           <label>TP Trades <span class="info-icon" title="Trades that hit take profit">ℹ️</span></label>
           <span class="value" id="tp-trades">0</span>
+        </div>
+        <div class="summary-item">
+          <label>Terminated <span class="info-icon" title="Trades manually terminated">ℹ️</span></label>
+          <span class="value" id="terminated-trades">0</span>
         </div>
       </div>
     </div>
@@ -609,6 +673,9 @@
     <table id="signals-table" class="minimal-table">
       <thead>
         <tr>
+          <th class="checkbox-cell" id="checkbox-header" style="display: none;">
+            <input type="checkbox" id="select-all-checkbox">
+          </th>
           <th>Time</th>
           <th>Symbol</th>
           <th>Signal</th>
@@ -627,6 +694,26 @@
         <!-- Rows will be populated by JS -->
       </tbody>
     </table>
+
+    <div class="pagination-controls">
+      <div class="left-controls">
+        <label for="page-size">Rows per page:</label>
+        <select id="page-size">
+          <option value="10">10</option>
+          <option value="25" selected>25</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+          <option value="200">200</option>
+        </select>
+      </div>
+      <div class="page-info">
+        <span id="page-info-text">Page 1 of 1 (0 trades)</span>
+      </div>
+      <div class="pagination-buttons">
+        <button id="prev-page">← Previous</button>
+        <button id="next-page">Next →</button>
+      </div>
+    </div>
     
     <div id="side-sheet" class="side-sheet">
       <button id="close-sheet">✕ Close</button>
