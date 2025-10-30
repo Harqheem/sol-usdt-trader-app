@@ -98,6 +98,53 @@ app.post('/resume-trading', (req, res) => {
   }
 });
 
+// Terminate trade endpoint
+app.post('/terminate-trade/:id', async (req, res) => {
+  try {
+    const tradeId = req.params.id;
+    const { supabase } = require('./services/logsService');
+    
+    // Get the trade first
+    const { data: trade, error: fetchError } = await supabase
+      .from('signals')
+      .select('*')
+      .eq('id', tradeId)
+      .single();
+    
+    if (fetchError) throw fetchError;
+    if (!trade) throw new Error('Trade not found');
+    
+    // Only allow terminating pending or opened trades
+    if (trade.status !== 'pending' && trade.status !== 'opened') {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Can only terminate pending or opened trades' 
+      });
+    }
+    
+    // Update to terminated status with no PnL or fees
+    const { error: updateError } = await supabase
+      .from('signals')
+      .update({
+        status: 'terminated',
+        close_time: new Date().toISOString(),
+        raw_pnl_percentage: 0,
+        pnl_percentage: 0,
+        custom_pnl: 0,
+        remaining_position: 0
+      })
+      .eq('id', tradeId);
+    
+    if (updateError) throw updateError;
+    
+    console.log(`🚫 Trade ${tradeId} terminated for ${trade.symbol}`);
+    res.json({ success: true, message: 'Trade terminated successfully' });
+  } catch (err) {
+    console.error('❌ Terminate trade error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 (async () => {
   try {
     await initDataService();

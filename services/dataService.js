@@ -144,11 +144,6 @@ async function getData(symbol) {
       const rsiDivergence = closes.length >= 3 && rsiCalcFull.length >= 3 ? 
         utils.detectRSIDivergence(closes.slice(-3), rsiCalcFull.slice(-3)) : 'None';
       
-      // Volume analysis
-      const avgVolume = volumes.slice(-20).reduce((a, b) => a + b, 0) / 20;
-      const currentVolume = volumes[volumes.length - 1];
-      const volumeRatio = currentVolume / avgVolume;
-      
       // 15-candle analysis with error handling
       let last15Candles;
       try {
@@ -284,8 +279,8 @@ async function getData(symbol) {
         avgATR = atr;
       }
       
-      const recentLows = lows.slice(-10); // Extended from 5 to 10 for better swing detection
-      const recentHighs = highs.slice(-10);
+      const recentLows = lows.slice(-5);
+      const recentHighs = highs.slice(-5);
       
       if (recentLows.length === 0 || recentHighs.length === 0) {
         throw new Error('No recent highs/lows available');
@@ -298,7 +293,7 @@ async function getData(symbol) {
         throw new Error(`Invalid pullback level: ${pullbackLevel}`);
       }
 
-      // Signal scoring - WITH IMPROVEMENTS
+      // Signal scoring - ORIGINAL LOGIC
       let bullishScore = 0, bearishScore = 0;
       const bullishReasons = [], bearishReasons = [], nonAligningIndicators = [];
 
@@ -335,32 +330,16 @@ async function getData(symbol) {
         nonAligningIndicators.push('EMAs mixed');
       }
 
-      // IMPROVED RSI LOGIC - Zone-based scoring
+      // RSI (weight: 2 for neutral, penalty for extremes)
       if (rsi >= 40 && rsi <= 60) { 
         bullishScore += 2; 
         bearishScore += 2; 
         bullishReasons.push(`Neutral RSI (${rsi.toFixed(2)})`); 
         bearishReasons.push(`Neutral RSI (${rsi.toFixed(2)})`); 
-      } else if (rsi < 40) {
-        // Oversold - good for longs, bad for shorts
-        bullishScore += 1;
-        bullishReasons.push(`Oversold RSI (${rsi.toFixed(2)}) - favorable for long`);
-        bearishScore -= 1;
-        nonAligningIndicators.push(`RSI oversold (${rsi.toFixed(2)}) - unfavorable for short`);
-      } else if (rsi > 60 && rsi <= 70) {
-        // Mildly overbought - neutral to slightly bearish
-        bearishScore += 1;
-        bearishReasons.push(`Elevated RSI (${rsi.toFixed(2)}) - favorable for short`);
       } else if (rsi > 70) {
-        // Strongly overbought - bad for longs
-        bullishScore -= 2;
-        nonAligningIndicators.push(`RSI overbought (${rsi.toFixed(2)}) - unfavorable for long`);
-        bearishScore += 1;
-        bearishReasons.push(`Overbought RSI (${rsi.toFixed(2)}) - favorable for short`);
+        nonAligningIndicators.push(`RSI overbought (${rsi.toFixed(2)})`);
       } else if (rsi < 30) {
-        // Strongly oversold - bad for shorts
-        bearishScore -= 2;
-        nonAligningIndicators.push(`RSI oversold (${rsi.toFixed(2)}) - unfavorable for short`);
+        nonAligningIndicators.push(`RSI oversold (${rsi.toFixed(2)})`);
       }
 
       // ATR (weight: 2)
@@ -417,16 +396,6 @@ async function getData(symbol) {
         nonAligningIndicators.push('No RSI divergence');
       }
 
-      // Volume filter
-      if (volumeRatio < 0.8) {
-        nonAligningIndicators.push(`Low volume (${(volumeRatio * 100).toFixed(0)}% of avg)`);
-      } else if (volumeRatio > 2.0) {
-        bullishScore += 1;
-        bearishScore += 1;
-        bullishReasons.push(`High volume surge (${(volumeRatio * 100).toFixed(0)}%)`);
-        bearishReasons.push(`High volume surge (${(volumeRatio * 100).toFixed(0)}%)`);
-      }
-
       // Apply multi-timeframe penalties/bonuses
       bullishScore += bullishPenalty;
       bearishScore += bearishPenalty;
@@ -435,17 +404,17 @@ async function getData(symbol) {
       if (bullishPenalty !== 0) bullishReasons.push(`Multi-TF ${bullishPenalty > 0 ? 'bonus' : 'penalty'} (${bullishPenalty})`);
       if (bearishPenalty !== 0) bearishReasons.push(`Multi-TF ${bearishPenalty > 0 ? 'bonus' : 'penalty'} (${bearishPenalty})`);
 
-      // Threshold logic
+      // Threshold logic - ORIGINAL
       let threshold = 12, thresholdNote = '';
       if (adx > 30) { 
         threshold = 11; 
-        thresholdNote = ' (lower threshold, strong ADX)'; 
+        thresholdNote = ' (lower, strong ADX)'; 
       } else if (adx < 20) { 
         threshold = 13; 
-        thresholdNote = ' (higher threshold, weak ADX)'; 
+        thresholdNote = ' (higher, weak ADX)'; 
       }
 
-      // Entry/TP/SL calculation - WITH IMPROVEMENTS
+      // Entry/TP/SL calculation - ORIGINAL LOGIC
       let entry = 'N/A', tp1 = 'N/A', tp2 = 'N/A', sl = 'N/A', positionSize = 'N/A';
       const accountBalance = 1000;
       let riskPercent = 0.01;
@@ -459,20 +428,8 @@ async function getData(symbol) {
       const riskAmount = accountBalance * riskPercent;
 
       let entryNote = '', slNote = '', atrMultiplier = 1;
-      let tp1Multiplier = 0.5, tp2Multiplier = 1.0;
 
       if (isBullish || isBearish) {
-        // IMPROVED TP MULTIPLIERS based on ADX
-        if (adx > 30) {
-          tp1Multiplier = 0.75;
-          tp2Multiplier = 1.5;
-          slNote += ' (extended TPs, strong trend)';
-        } else if (adx < 20) {
-          tp1Multiplier = 0.3;
-          tp2Multiplier = 0.7;
-          slNote += ' (reduced TPs, weak trend)';
-        }
-
         let optimalEntry = (pullbackLevel + currentPrice) / 2;
 
         if (Math.abs(currentPrice - pullbackLevel) > 2 * atr) {
@@ -496,51 +453,40 @@ async function getData(symbol) {
 
         entry = optimalEntry.toFixed(decimals);
 
-        // IMPROVED SL using swing points
-        const recentSwingLow = Math.min(...recentLows);
-        const recentSwingHigh = Math.max(...recentHighs);
+        const minLow = Math.min(...recentLows);
+        const maxHigh = Math.max(...recentHighs);
 
         if (adx > 30) { 
           atrMultiplier = 0.75; 
-          slNote += ' (tight SL, strong ADX)'; 
+          slNote = ' (tight SL, strong ADX)'; 
         } else if (adx < 20) { 
           atrMultiplier = 1.5; 
-          slNote += ' (wide SL, weak ADX)'; 
+          slNote = ' (wide SL, weak ADX)'; 
         }
 
         if (isBullish) {
-          // Use the lower of: ATR-based SL or swing low with buffer
-          const atrBasedSL = parseFloat(entry) - atr * atrMultiplier;
-          const swingBasedSL = recentSwingLow - atr * 0.2;
-          sl = Math.min(atrBasedSL, swingBasedSL).toFixed(decimals);
-          slNote += ' (swing-protected)';
-          
-          tp1 = (parseFloat(entry) + atr * tp1Multiplier).toFixed(decimals);
-          tp2 = (parseFloat(entry) + atr * tp2Multiplier).toFixed(decimals);
+          sl = Math.min(parseFloat(entry) - atr * atrMultiplier, minLow - atr * atrMultiplier).toFixed(decimals);
+          tp1 = (parseFloat(entry) + atr * 0.5).toFixed(decimals);
+          tp2 = (parseFloat(entry) + atr * 1.0).toFixed(decimals);
           const riskPerUnit = parseFloat(entry) - parseFloat(sl);
           positionSize = riskPerUnit > 0 ? (riskAmount / riskPerUnit).toFixed(2) : 'Invalid';
         } else {
-          // Use the higher of: ATR-based SL or swing high with buffer
-          const atrBasedSL = parseFloat(entry) + atr * atrMultiplier;
-          const swingBasedSL = recentSwingHigh + atr * 0.2;
-          sl = Math.max(atrBasedSL, swingBasedSL).toFixed(decimals);
-          slNote += ' (swing-protected)';
-          
-          tp1 = (parseFloat(entry) - atr * tp1Multiplier).toFixed(decimals);
-          tp2 = (parseFloat(entry) - atr * tp2Multiplier).toFixed(decimals);
+          sl = Math.max(parseFloat(entry) + atr * atrMultiplier, maxHigh + atr * atrMultiplier).toFixed(decimals);
+          tp1 = (parseFloat(entry) - atr * 0.5).toFixed(decimals);
+          tp2 = (parseFloat(entry) - atr * 1.0).toFixed(decimals);
           const riskPerUnit = parseFloat(sl) - parseFloat(entry);
           positionSize = riskPerUnit > 0 ? (riskAmount / riskPerUnit).toFixed(2) : 'Invalid';
         }
       }
 
-      // Signal generation
+      // Signal generation - ORIGINAL
       let signal = '⌛ No Trade', notes = 'Mixed signals. Wait for breakout.';
       let suggestion = parseFloat(entry) > psar ? 'long' : 'short';
       let candleDirection = bullishPatterns.includes(candlePattern) ? 'bullish' : bearishPatterns.includes(candlePattern) ? 'bearish' : 'neutral';
       let trailingLogic = isBullish ? 
         'Trail SL to entry after 1 ATR, then 1.5x ATR below high. After TP1, SL to entry + 0.5 ATR.' : 
         'Trail SL to entry after 1 ATR, then 1.5x ATR above low. After TP1, SL to entry - 0.5 ATR.';
-      let positionSizingNote = `Position: ${riskPercent * 100}% risk (score ${score}/18), ${riskAmount}, ${positionSize} units.`;
+      let positionSizingNote = `Position: ${riskPercent * 100}% risk (score ${score}/18), $${riskAmount}, ${positionSize} units.`;
 
       if (isBullish || isBearish) {
         signal = isBullish ? '✅ Enter Long' : '✅ Enter Short';
@@ -560,59 +506,58 @@ async function getData(symbol) {
         console.log(symbol, 'Time reset', 'reset');
       }
 
-// Send notification if conditions met AND trading not paused
-if (signal.startsWith('✅') && signal !== previousSignal[symbol] && 
-    (!lastNotificationTime[symbol] || now - lastNotificationTime[symbol] > 300000) && 
-    sendCounts[symbol] < 6 && !getTradingPaused()) {  // ← NOTE THE () HERE!
-  
-  const nonAligningText = nonAligningIndicators.length > 0 ? 
-    `\nNon-aligning:\n- ${nonAligningIndicators.join('\n- ')}` : '';
-  
-  const firstMessage = `${symbol}\nLEVERAGE: 20\nEntry: ${entry}\nTP1: ${tp1}\nTP2: ${tp2}\nSL: ${sl}\nLast candle: ${candlePattern} (${candleDirection})\nPSAR: ${suggestion}`;
-  const secondMessage = `Notes: ${notes}${nonAligningText}\n${positionSizingNote}\nTrailing: ${trailingLogic}`;
-  
-  sendTelegramNotification(firstMessage, secondMessage, symbol).catch(err => 
-    console.error(`TG failed ${symbol}:`, err.message)
-  );
-  
-  previousSignal[symbol] = signal;
-  lastNotificationTime[symbol] = now;
-  lastSignalTime[symbol] = now;
-  sendCounts[symbol]++;
-  console.log(symbol, `Signal sent, count ${sendCounts[symbol]}`, 'signal');
+      // Send notification if conditions met AND trading not paused
+      if (signal.startsWith('✅') && signal !== previousSignal[symbol] && 
+          (!lastNotificationTime[symbol] || now - lastNotificationTime[symbol] > 300000) && 
+          sendCounts[symbol] < 6 && !getTradingPaused()) {
+        
+        const nonAligningText = nonAligningIndicators.length > 0 ? 
+          `\nNon-aligning:\n- ${nonAligningIndicators.join('\n- ')}` : '';
+        
+        const firstMessage = `${symbol}\nLEVERAGE: 20\nEntry: ${entry}\nTP1: ${tp1}\nTP2: ${tp2}\nSL: ${sl}\nLast candle: ${candlePattern} (${candleDirection})\nPSAR: ${suggestion}`;
+        const secondMessage = `Notes: ${notes}${nonAligningText}\n${positionSizingNote}\nTrailing: ${trailingLogic}`;
+        
+        sendTelegramNotification(firstMessage, secondMessage, symbol).catch(err => 
+          console.error(`TG failed ${symbol}:`, err.message)
+        );
+        
+        previousSignal[symbol] = signal;
+        lastNotificationTime[symbol] = now;
+        lastSignalTime[symbol] = now;
+        sendCounts[symbol]++;
+        console.log(symbol, `Signal sent, count ${sendCounts[symbol]}`, 'signal');
 
-  try {
-    await logSignal(symbol, {
-      signal: signal,
-      notes: notes,
-      entry: parseFloat(entry),
-      tp1: parseFloat(tp1),
-      tp2: parseFloat(tp2),
-      sl: parseFloat(sl),
-      positionSize: parseFloat(positionSize)
-    });
-  } catch (logErr) {
-    console.error(`Failed to log signal for ${symbol}:`, logErr.message);
-  }
-  
-  // Queue management - reset oldest when reaching limit
-  if (sendCounts[symbol] === 6) {
-    if (pausedQueue.length > 0) {
-      let resetSym = pausedQueue.shift();
-      sendCounts[resetSym] = 0;
-      console.log(resetSym, `Reset by ${symbol}`, 'reset');
-    }
-    pausedQueue.push(symbol);
-  }
-} else if (getTradingPaused() && signal.startsWith('✅')) {  // ← NOTE THE () HERE TOO!
-  console.log(symbol, 'Signal generated but trading is PAUSED ⏸️', 'paused');
-  previousSignal[symbol] = signal; // Still update to prevent spam when resumed
-} else if (sendCounts[symbol] >= 6) {
-  console.log(symbol, 'Limit reached', 'limit');
-} else if (!signal.startsWith('✅')) {
-  previousSignal[symbol] = signal;
-}
-
+        try {
+          await logSignal(symbol, {
+            signal: signal,
+            notes: notes,
+            entry: parseFloat(entry),
+            tp1: parseFloat(tp1),
+            tp2: parseFloat(tp2),
+            sl: parseFloat(sl),
+            positionSize: parseFloat(positionSize)
+          });
+        } catch (logErr) {
+          console.error(`Failed to log signal for ${symbol}:`, logErr.message);
+        }
+        
+        // Queue management - reset oldest when reaching limit
+        if (sendCounts[symbol] === 6) {
+          if (pausedQueue.length > 0) {
+            let resetSym = pausedQueue.shift();
+            sendCounts[resetSym] = 0;
+            console.log(resetSym, `Reset by ${symbol}`, 'reset');
+          }
+          pausedQueue.push(symbol);
+        }
+      } else if (getTradingPaused() && signal.startsWith('✅')) {
+        console.log(symbol, 'Signal generated but trading is PAUSED ⏸️', 'paused');
+        previousSignal[symbol] = signal; // Still update to prevent spam when resumed
+      } else if (sendCounts[symbol] >= 6) {
+        console.log(symbol, 'Limit reached', 'limit');
+      } else if (!signal.startsWith('✅')) {
+        previousSignal[symbol] = signal;
+      }
 
       // Trade logging
       if (signal.startsWith('✅')) {
@@ -624,13 +569,9 @@ if (signal.startsWith('✅') && signal !== previousSignal[symbol] &&
           bullishPenalty,
           bearishPenalty,
           rsiDivergence,
-          rsi: rsi.toFixed(2),
           adx: adx.toFixed(2),
           thresholdUsed: threshold,
           atrMultiplierUsed: atrMultiplier,
-          tp1Multiplier,
-          tp2Multiplier,
-          volumeRatio: volumeRatio.toFixed(2),
           multiTFAlignment: `${trend1h} / ${trend4h}`,
           reasons: { adx: adx.toFixed(2), rsi: rsi.toFixed(2), atr: atr.toFixed(2), cmf: cmf.toFixed(2), macd: macd.MACD.toFixed(2) },
           levels: { entry, tp1, tp2, sl, positionSize }

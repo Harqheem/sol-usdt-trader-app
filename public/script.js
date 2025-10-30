@@ -269,15 +269,15 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initial load
   fetchData();
   
-  // Update pause status more frequently (every 30 seconds)
-  setInterval(updatePauseStatus, 30000);
+  // Update pause status more frequently (every 5 minutes)
+  setInterval(updatePauseStatus, 300000);
 });
 
 // Initial and intervals
 fetchData();
 setInterval(fetchData, 300000); // 5 min full refresh
 setInterval(fetchPrice, 1000); // 1 sec price
-setInterval(updatePauseStatus, 30000); // 30 sec pause status
+setInterval(updatePauseStatus, 300000); // 5 min pause status
 
 document.getElementById('copy-btn').addEventListener('click', () => {
   navigator.clipboard.writeText(JSON.stringify(currentData, null, 2));
