@@ -36,12 +36,6 @@ async function gracefulShutdown() {
 }
 
 
-
-// Add these routes to your server.js file
-// Place them BEFORE app.listen()
-
-const pauseService = require('./services/pauseService');
-
 // Get trading status
 app.get('/trading-status', (req, res) => {
   try {
