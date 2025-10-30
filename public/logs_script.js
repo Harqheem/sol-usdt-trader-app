@@ -38,15 +38,14 @@ const pageInfoText = document.getElementById('page-info-text');
 const prevPageBtn = document.getElementById('prev-page');
 const nextPageBtn = document.getElementById('next-page');
 
-let currentData = []; // Store fetched data for recalculation
-let allData = []; // Store all fetched data before pagination
+let currentData = [];
+let allData = [];
 let currentTab = 'logs';
 let selectedTradeIds = new Set();
 let currentPage = 1;
 let pageSize = 25;
 let totalPages = 1;
 
-// Populate symbol options from config (hardcoded for now)
 const symbols = ['SOLUSDT', 'XRPUSDT', 'ADAUSDT', 'BNBUSDT', 'DOGEUSDT'];
 symbols.forEach(sym => {
   const opt = document.createElement('option');
@@ -107,7 +106,13 @@ function getOutcome(signal) {
 async function fetchSignals() {
   tableBody.innerHTML = '<tr><td colspan="13">Loading...</td></tr>';
   try {
-    let url = '/signals?limit=1000';
+    let fetchLimit = 500;
+    
+    if (fromDateInput.value || symbolFilter.value) {
+      fetchLimit = 200;
+    }
+    
+    let url = `/signals?limit=${fetchLimit}`;
     if (symbolFilter.value) url += `&symbol=${symbolFilter.value}`;
     if (fromDateInput.value) url += `&fromDate=${fromDateInput.value}T00:00:00Z`;
     if (currentTab === 'results') {
@@ -119,7 +124,7 @@ async function fetchSignals() {
     const res = await fetch(url);
     if (!res.ok) throw new Error('Fetch failed');
     const data = await res.json();
-    console.log('Received data:', data);
+    console.log(`Received ${data.length} trades`);
     allData = data;
     currentPage = 1;
     paginateData();
@@ -134,7 +139,6 @@ function paginateData() {
   pageSize = parseInt(pageSizeSelect.value);
   totalPages = Math.ceil(allData.length / pageSize);
   
-  // Clamp current page
   if (currentPage < 1) currentPage = 1;
   if (currentPage > totalPages && totalPages > 0) currentPage = totalPages;
   
@@ -142,7 +146,6 @@ function paginateData() {
   const endIdx = startIdx + pageSize;
   currentData = allData.slice(startIdx, endIdx);
   
-  // Update pagination UI
   pageInfoText.textContent = `Page ${currentPage} of ${totalPages || 1} (${allData.length} trades)`;
   prevPageBtn.disabled = currentPage <= 1;
   nextPageBtn.disabled = currentPage >= totalPages;
@@ -228,10 +231,11 @@ function calculateFilledQty(signal) {
 }
 
 function renderTableAndSummary() {
+  const startTime = performance.now();
+  
   tableBody.innerHTML = '';
   selectedTradeIds.clear();
   
-  // Show/hide checkbox column and bulk terminate button
   const hasPendingTrades = currentData.some(s => s.status === 'pending');
   if (hasPendingTrades && currentTab === 'logs') {
     checkboxHeader.style.display = 'table-cell';
@@ -248,7 +252,9 @@ function renderTableAndSummary() {
     return;
   }
   
-  currentData.forEach((signal, index) => {
+  const fragment = document.createDocumentFragment();
+  
+  currentData.forEach((signal) => {
     const { customPnlDollars, customPnlPct } = calculateCustomPnL(signal);
     const filledQty = calculateFilledQty(signal);
     const outcomeTd = currentTab === 'results' ? `<td>${getOutcome(signal)}</td>` : '';
@@ -281,21 +287,20 @@ function renderTableAndSummary() {
         showDetails(signal);
       }
     });
-    tableBody.appendChild(row);
+    fragment.appendChild(row);
   });
   
-  // Add checkbox event listeners
+  tableBody.appendChild(fragment);
+  
   document.querySelectorAll('.trade-checkbox').forEach(cb => {
     cb.addEventListener('change', handleCheckboxChange);
   });
   
-  // Calculate summary based on ALL data, not just current page
   const totalTrades = allData.length;
   const closedTrades = allData.filter(s => s.status === 'closed' || s.status === 'terminated');
-  const actualClosedTrades = allData.filter(s => s.status === 'closed'); // Exclude terminated from PnL
+  const actualClosedTrades = allData.filter(s => s.status === 'closed');
   const totalRawPnl = actualClosedTrades.reduce((sum, s) => sum + (s.raw_pnl_percentage || 0), 0);
   
-  // Calculate outcomes
   const outcomes = closedTrades.reduce((acc, s) => {
     const out = getOutcome(s);
     if (out !== '-') {
@@ -308,12 +313,10 @@ function renderTableAndSummary() {
   const tpCount = outcomes['TP'] || 0;
   const terminatedCount = outcomes['Terminated'] || 0;
   
-  // Calculate win rate (TP + BE are considered wins, exclude terminated)
   const tradesToCount = closedTrades.filter(s => s.status !== 'terminated');
   const winningTrades = tpCount + beCount;
   const winRate = tradesToCount.length > 0 ? (winningTrades / tradesToCount.length) * 100 : 0;
   
-  // Calculate direction statistics (exclude terminated)
   const longTrades = actualClosedTrades.filter(s => s.signal_type === 'Buy');
   const shortTrades = actualClosedTrades.filter(s => s.signal_type === 'Sell');
   
@@ -330,7 +333,6 @@ function renderTableAndSummary() {
   const longWinRate = longTrades.length > 0 ? (longWins / longTrades.length) * 100 : 0;
   const shortWinRate = shortTrades.length > 0 ? (shortWins / shortTrades.length) * 100 : 0;
   
-  // Calculate custom PnL (exclude terminated)
   const customResults = actualClosedTrades.map(s => calculateCustomPnL(s));
   const customTotalPnlPct = customResults.reduce((sum, r) => sum + r.customPnlPct, 0);
   const customTotalPnlDollars = customResults.reduce((sum, r) => sum + r.customPnlDollars, 0);
@@ -362,6 +364,9 @@ function renderTableAndSummary() {
   } else {
     outcomesSummary.classList.add('hidden');
   }
+  
+  const endTime = performance.now();
+  console.log(`Rendered ${currentData.length} rows in ${(endTime - startTime).toFixed(2)}ms`);
 }
 
 function updateSummary(trades, closedTrades, rawPnl, customPnlPct, customPnlDollars, customFeesPct, customFeesDollars, slCount, beCount, tpCount, winRate, longCount, longWinRate, shortCount, shortWinRate, terminatedCount) {
@@ -382,7 +387,6 @@ function updateSummary(trades, closedTrades, rawPnl, customPnlPct, customPnlDoll
   shortTradesEl.textContent = shortCount;
   shortWinRateEl.textContent = shortWinRate.toFixed(2) + '%';
   
-  // Update color coding
   totalRawPnlEl.className = 'value ' + (rawPnl > 0 ? 'pnl-positive' : rawPnl < 0 ? 'pnl-negative' : '');
   customTotalPnlEl.className = 'value ' + (customPnlPct > 0 ? 'pnl-positive' : customPnlPct < 0 ? 'pnl-negative' : '');
   customTotalPnlDollarsEl.className = 'value ' + (customPnlDollars > 0 ? 'pnl-positive' : customPnlDollars < 0 ? 'pnl-negative' : '');
@@ -396,13 +400,11 @@ function handleCheckboxChange(e) {
     selectedTradeIds.delete(tradeId);
   }
   
-  // Update select all checkbox state
   const totalCheckboxes = document.querySelectorAll('.trade-checkbox').length;
   const checkedCheckboxes = document.querySelectorAll('.trade-checkbox:checked').length;
   selectAllCheckbox.checked = totalCheckboxes > 0 && checkedCheckboxes === totalCheckboxes;
   selectAllCheckbox.indeterminate = checkedCheckboxes > 0 && checkedCheckboxes < totalCheckboxes;
   
-  // Update bulk terminate button text
   bulkTerminateBtn.textContent = selectedTradeIds.size > 0 
     ? `🚫 Terminate Selected (${selectedTradeIds.size})` 
     : '🚫 Terminate Selected';
@@ -490,7 +492,6 @@ function showDetails(signal) {
     customPnlHTMLDollars = `<span class="${pnlClass}">${pnlSign}$${customPnlDollars.toFixed(2)}</span>`;
   }
   
-  // Terminate button for pending trades only
   const terminateButton = signal.status === 'pending' 
     ? `<button id="terminate-trade-btn" style="background: #ef4444; margin-top: 20px;">🚫 Terminate This Trade</button>` 
     : '';
@@ -526,7 +527,6 @@ function showDetails(signal) {
     ${terminateButton}
   `;
   
-  // Add terminate button listener if present
   if (signal.status === 'pending') {
     setTimeout(() => {
       const termBtn = document.getElementById('terminate-trade-btn');
@@ -568,7 +568,6 @@ closeSheetBtn.addEventListener('click', () => {
   sideSheet.classList.remove('active');
 });
 
-// Tab event listeners
 logsTab.addEventListener('click', () => {
   if (currentTab === 'logs') return;
   currentTab = 'logs';
@@ -589,7 +588,6 @@ resultsTab.addEventListener('click', () => {
   fetchSignals();
 });
 
-// Pagination event listeners
 pageSizeSelect.addEventListener('change', () => {
   currentPage = 1;
   paginateData();
@@ -609,7 +607,6 @@ nextPageBtn.addEventListener('click', () => {
   }
 });
 
-// Event listeners
 refreshBtn.addEventListener('click', fetchSignals);
 symbolFilter.addEventListener('change', fetchSignals);
 fromDateInput.addEventListener('change', fetchSignals);
@@ -617,8 +614,6 @@ if (statusFilter) statusFilter.addEventListener('change', fetchSignals);
 customPositionSizeInput.addEventListener('input', renderTableAndSummary);
 customLeverageInput.addEventListener('input', renderTableAndSummary);
 
-// Initial fetch
 fetchSignals();
 
-// Poll every 5 minutes for updates
 setInterval(fetchSignals, 300000);
