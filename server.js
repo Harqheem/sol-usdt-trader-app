@@ -3,6 +3,7 @@ const express = require('express');
 const routes = require('./routes');
 const { initDataService, updateCache } = require('./services/dataService');
 const config = require('./config');
+const pauseService = require('./services/pauseService');
 require('./services/monitorService'); // Require to start internal monitoring
 
 const { symbols } = config;
@@ -33,6 +34,21 @@ async function gracefulShutdown() {
   console.log('✅ Shutdown complete');
   process.exit(0);
 }
+
+// Get trading status
+app.get('/trading-status', (req, res) => {
+  res.json(pauseService.getStatus());
+});
+
+// Toggle trading pause
+app.post('/toggle-trading', (req, res) => {
+  const newState = pauseService.toggleTrading();
+  res.json({
+    success: true,
+    isPaused: newState,
+    message: newState ? 'Trading paused' : 'Trading resumed'
+  });
+});
 
 (async () => {
   try {
