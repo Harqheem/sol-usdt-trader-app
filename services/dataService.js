@@ -708,22 +708,15 @@ async function getData(symbol) {
 • 4H: ${trend4h} (EMA99: ${parseFloat(ema99_4h).toFixed(decimals)}, ADX: ${adx4h.toFixed(1)})
 ${multiTFWarnings.length > 0 ? '• MTF Warnings:\n  ' + multiTFWarnings.join('\n  ') : '• ✅ Multi-timeframe aligned'}`;
 
-        // Build structure levels info
-        const structureLevels = `
-🏗️ KEY LEVELS:
-• Support: ${keySupport.toFixed(decimals)} (${((currentPrice - keySupport) / atr).toFixed(2)} ATR below)
-• Resistance: ${keyResistance.toFixed(decimals)} (${((keyResistance - currentPrice) / atr).toFixed(2)} ATR above)
-• Entry Distance: ${entryDistanceATR.toFixed(2)} ATR ${entryDistanceATR < 0.5 ? '⚠️ Close' : entryDistanceATR > 2 ? '⚠️ Far' : '✅'}`;
-
+        
         // Build trade setup details
         const tradeSetup = `
 📈 TRADE SETUP (${isBullish ? 'LONG' : 'SHORT'}):
 Entry: ${entry}${entryNote}
-TP1: ${tp1} (${rrTP1}:1 R/R) - Close 50% 💰
-TP2: ${tp2} (${rrTP2}:1 R/R) - Close 50% 🎯
-SL: ${sl} (${slDistanceATR.toFixed(2)} ATR)${slNote}
-Risk: ${(riskAmount).toFixed(decimals)} (${(riskAmount / currentPrice * 100).toFixed(2)}% of entry)
-Position: ${positionSize} units @ ${riskPercent * 100}% account risk (${riskAmount})`;
+TP1: ${tp1}
+TP2: ${tp2}
+SL: ${sl} 
+`;
 
         // Build score breakdown
         const scoreBreakdown = `
@@ -760,14 +753,13 @@ PSAR: ${parseFloat(psar).toFixed(decimals)} ${psarPosition}`;
 
         // First message - Core trade info
         const firstMessage = `
-🚨 ${symbol} SIGNAL 🚨
+${symbol}
+
 ${signal}
 
 ${tradeSetup}
 
-${candleInfo}
-
-${structureLevels}`;
+${candleInfo}`;
 
         // Second message - Detailed analysis
         const secondMessage = `
@@ -782,10 +774,8 @@ ${htfAnalysis}
 
 ${trailingInstructions}
 
-${riskWarning}
+${riskWarning}`;
 
-⏰ Signal Time: ${timestamp}
-📊 Trade Count: ${sendCounts[symbol] + 1}/6`;
         
         sendTelegramNotification(firstMessage, secondMessage, symbol).catch(err => 
           console.error(`TG failed ${symbol}:`, err.message)
