@@ -709,9 +709,10 @@ async function getData(symbol) {
 ${multiTFWarnings.length > 0 ? '• MTF Warnings:\n  ' + multiTFWarnings.join('\n  ') : '• ✅ Multi-timeframe aligned'}`;
 
         
-        // Build trade setup details
-        const tradeSetup = `
-📈 TRADE SETUP (${isBullish ? 'LONG' : 'SHORT'}):
+// Build trade setup details
+
+const tradeSetup = `
+
 Entry: ${entry}
 
 TP1: ${tp1}
@@ -720,41 +721,26 @@ TP2: ${tp2}
 
 SL: ${sl}`;
 
-        // Build score breakdown
-        const scoreBreakdown = `
+// Build score breakdown
+const scoreBreakdown = `
 ⚖️ SIGNAL STRENGTH:
 Final Score: ${score}/18 (Threshold: ${threshold}${thresholdNote})
 ${isBullish ? 'Bullish' : 'Bearish'} Reasons (Top ${Math.min(5, reasons.length)}):
 ${reasons.slice(0, 5).map((r, i) => `${i + 1}. ${r}`).join('\n')}`;
 
-        // Build non-aligning indicators (if any)
-        const nonAligningText = nonAligningIndicators.length > 0 ? 
-          `\n⚠️ NON-ALIGNING (${nonAligningIndicators.length}):\n${nonAligningIndicators.slice(0, 5).map((r, i) => `${i + 1}. ${r}`).join('\n')}` : '';
+// Build non-aligning indicators (if any)
+const nonAligningText = nonAligningIndicators.length > 0 ? 
+`\n⚠️ NON-ALIGNING (${nonAligningIndicators.length}):\n${nonAligningIndicators.slice(0, 5).map((r, i) => `${i + 1}. ${r}`).join('\n')}` : '';
 
-        // Build trailing stop instructions
-        const trailingInstructions = `
-🎯 TRADE MANAGEMENT:
-1️⃣ After +${atr.toFixed(decimals)} (1 ATR profit):
-   → Trail SL to ${isBullish ? '0.5 ATR below recent swing high' : '0.5 ATR above recent swing low'}
-2️⃣ After TP1 hit:
-   → Move SL to ${isBullish ? `entry + ${(atr * 0.3).toFixed(decimals)}` : `entry - ${(atr * 0.3).toFixed(decimals)}`} (RISK-FREE ✅)
-3️⃣ Let TP2 run - don't close early!`;
-
-        // Build risk warning
-        const riskWarning = `
-⚠️ RISK DISCLOSURE:
-• Max Loss: ${riskAmount} (${riskPercent * 100}% account)
-• Expected Win Rate: ~40% (6/10 trades may lose)
-• Profit Factor Target: 1.12x
-• Leverage: 20x - liquidation ${isBullish ? 'below' : 'above'} ${(parseFloat(entry) * (isBullish ? 0.95 : 1.05)).toFixed(decimals)}`;
-
-        // Build candle pattern info
-        const candleInfo = `
+        
+// Build candle pattern info
+const candleInfo = `
 🕯️ PATTERN: ${candlePattern} (${candleDirection})
 PSAR: ${parseFloat(psar).toFixed(decimals)} ${psarPosition}`;
 
-        // First message - Core trade info
-        const firstMessage = `
+ // First message - Core trade info
+ 
+ const firstMessage = `
 
 ${symbol}
 
@@ -762,24 +748,23 @@ ${signal}
 
 LEVERAGE: 20
 
-${tradeSetup}
+${tradeSetup}`;
 
-${candleInfo}`;
+// Second message - Detailed analysis
 
-        // Second message - Detailed analysis
-        const secondMessage = `
+const secondMessage = `
 ${symbol} - DETAILED ANALYSIS
 
 ${scoreBreakdown}
+
+${candleInfo}
+
 ${nonAligningText}
 
 ${technicalSummary}
 
 ${htfAnalysis}
-
-${trailingInstructions}
-
-${riskWarning}`;
+`;
 
         
         sendTelegramNotification(firstMessage, secondMessage, symbol).catch(err => 
