@@ -52,7 +52,7 @@ function getStatus() {
   };
 }
 
-// Check every minute if auto-resume is needed
+// Check every 30 minutes if auto-resume is needed
 setInterval(() => {
   if (isPaused && pauseStartTime) {
     const elapsed = Date.now() - pauseStartTime;
@@ -61,7 +61,7 @@ setInterval(() => {
       console.log('⏰ Auto-resumed trading after 8 hours');
     }
   }
-}, 300000); // Check every minute
+}, 1800000); // Check every 30 minutes
 
 module.exports = {
   pauseTrading,

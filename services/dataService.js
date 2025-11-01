@@ -139,10 +139,10 @@ async function getData(symbol) {
       const psarPosition = currentPrice > psar ? 'Below Price (Bullish)' : 'Above Price (Bearish)';
       const cmf = utils.calculateCMF(highs, lows, closes, volumes);
       
-      // RSI divergence with validation
+      // RSI divergence with validation - UPDATED to use 5 candles
       const rsiCalcFull = TI.RSI.calculate({ period: 14, values: closes });
-      const rsiDivergence = closes.length >= 3 && rsiCalcFull.length >= 3 ? 
-        utils.detectRSIDivergence(closes.slice(-3), rsiCalcFull.slice(-3)) : 'None';
+      const rsiDivergence = closes.length >= 5 && rsiCalcFull.length >= 5 ? 
+        utils.detectRSIDivergence(closes.slice(-5), rsiCalcFull.slice(-5)) : 'None';
       
       // 15-candle analysis with error handling
       let last15Candles;
@@ -678,11 +678,114 @@ async function getData(symbol) {
           (!lastNotificationTime[symbol] || now - lastNotificationTime[symbol] > 300000) && 
           sendCounts[symbol] < 6 && !getTradingPaused()) {
         
-        const nonAligningText = nonAligningIndicators.length > 0 ? 
-          `\nNon-aligning:\n- ${nonAligningIndicators.join('\n- ')}` : '';
+        // Calculate risk/reward ratios
+        const riskAmount = Math.abs(parseFloat(entry) - parseFloat(sl));
+        const rewardTP1 = Math.abs(parseFloat(tp1) - parseFloat(entry));
+        const rewardTP2 = Math.abs(parseFloat(tp2) - parseFloat(entry));
+        const rrTP1 = (rewardTP1 / riskAmount).toFixed(2);
+        const rrTP2 = (rewardTP2 / riskAmount).toFixed(2);
         
-        const firstMessage = `${symbol}\nLEVERAGE: 20\nEntry: ${entry}\nTP1: ${tp1}\nTP2: ${tp2} \nSL: ${sl}\nLast candle: ${candlePattern} (${candleDirection})\nPSAR: ${suggestion}`;
-        const secondMessage = `Notes: ${notes}${nonAligningText}\n${positionSizingNote}\nTrailing: ${trailingLogic}`;
+        // Calculate distances in ATR
+        const entryDistanceATR = Math.abs(parseFloat(entry) - currentPrice) / atr;
+        const slDistanceATR = riskAmount / atr;
+        
+        // Build detailed technical summary
+        const technicalSummary = `
+📊 TECHNICAL SNAPSHOT:
+• Price: ${currentPrice.toFixed(decimals)} | ATR: ${atr.toFixed(decimals)}
+• EMA Stack: 7(${parseFloat(ema7).toFixed(decimals)}) > 25(${parseFloat(ema25).toFixed(decimals)}) > 99(${parseFloat(ema99).toFixed(decimals)})${ema7 > ema25 && ema25 > ema99 ? ' ✅' : ema7 < ema25 && ema25 < ema99 ? ' ❌' : ' ⚠️'}
+• SMA: 50(${parseFloat(sma50).toFixed(decimals)}) | 200(${parseFloat(sma200).toFixed(decimals)})
+• ADX: ${adx.toFixed(1)} ${adx > 30 ? '🔥 Strong' : adx > 25 ? '✅ Trending' : adx > 20 ? '⚠️ Moderate' : '❌ Weak'}
+• RSI: ${rsi.toFixed(1)} ${rsi < 30 ? '🔵 Oversold' : rsi < 40 ? '🟢 Bullish Zone' : rsi < 60 ? '⚪ Neutral' : rsi < 70 ? '🟡 Elevated' : '🔴 Overbought'}
+• MACD: ${macd.MACD.toFixed(4)} ${macd.MACD > macd.signal ? '🟢 Bullish' : '🔴 Bearish'}
+• CMF: ${cmf.toFixed(3)} ${cmf > 0.1 ? '🟢 Strong Buy' : cmf > 0 ? '✅ Accumulation' : cmf > -0.1 ? '⚠️ Distribution' : '🔴 Strong Sell'}
+• Bollinger: U(${parseFloat(bb.upper).toFixed(decimals)}) M(${parseFloat(bb.middle).toFixed(decimals)}) L(${parseFloat(bb.lower).toFixed(decimals)})`;
+
+        // Build higher timeframe analysis
+        const htfAnalysis = `
+⏰ HIGHER TIMEFRAMES:
+• 1H: ${trend1h} (EMA99: ${parseFloat(ema99_1h).toFixed(decimals)}, ADX: ${adx1h.toFixed(1)})
+• 4H: ${trend4h} (EMA99: ${parseFloat(ema99_4h).toFixed(decimals)}, ADX: ${adx4h.toFixed(1)})
+${multiTFWarnings.length > 0 ? '• MTF Warnings:\n  ' + multiTFWarnings.join('\n  ') : '• ✅ Multi-timeframe aligned'}`;
+
+        // Build structure levels info
+        const structureLevels = `
+🏗️ KEY LEVELS:
+• Support: ${keySupport.toFixed(decimals)} (${((currentPrice - keySupport) / atr).toFixed(2)} ATR below)
+• Resistance: ${keyResistance.toFixed(decimals)} (${((keyResistance - currentPrice) / atr).toFixed(2)} ATR above)
+• Entry Distance: ${entryDistanceATR.toFixed(2)} ATR ${entryDistanceATR < 0.5 ? '⚠️ Close' : entryDistanceATR > 2 ? '⚠️ Far' : '✅'}`;
+
+        // Build trade setup details
+        const tradeSetup = `
+📈 TRADE SETUP (${isBullish ? 'LONG' : 'SHORT'}):
+Entry: ${entry}${entryNote}
+TP1: ${tp1} (${rrTP1}:1 R/R) - Close 50% 💰
+TP2: ${tp2} (${rrTP2}:1 R/R) - Close 50% 🎯
+SL: ${sl} (${slDistanceATR.toFixed(2)} ATR)${slNote}
+Risk: ${(riskAmount).toFixed(decimals)} (${(riskAmount / currentPrice * 100).toFixed(2)}% of entry)
+Position: ${positionSize} units @ ${riskPercent * 100}% account risk (${riskAmount})`;
+
+        // Build score breakdown
+        const scoreBreakdown = `
+⚖️ SIGNAL STRENGTH:
+Final Score: ${score}/18 (Threshold: ${threshold}${thresholdNote})
+${isBullish ? 'Bullish' : 'Bearish'} Reasons (Top ${Math.min(5, reasons.length)}):
+${reasons.slice(0, 5).map((r, i) => `${i + 1}. ${r}`).join('\n')}`;
+
+        // Build non-aligning indicators (if any)
+        const nonAligningText = nonAligningIndicators.length > 0 ? 
+          `\n⚠️ NON-ALIGNING (${nonAligningIndicators.length}):\n${nonAligningIndicators.slice(0, 5).map((r, i) => `${i + 1}. ${r}`).join('\n')}` : '';
+
+        // Build trailing stop instructions
+        const trailingInstructions = `
+🎯 TRADE MANAGEMENT:
+1️⃣ After +${atr.toFixed(decimals)} (1 ATR profit):
+   → Trail SL to ${isBullish ? '0.5 ATR below recent swing high' : '0.5 ATR above recent swing low'}
+2️⃣ After TP1 hit:
+   → Move SL to ${isBullish ? `entry + ${(atr * 0.3).toFixed(decimals)}` : `entry - ${(atr * 0.3).toFixed(decimals)}`} (RISK-FREE ✅)
+3️⃣ Let TP2 run - don't close early!`;
+
+        // Build risk warning
+        const riskWarning = `
+⚠️ RISK DISCLOSURE:
+• Max Loss: ${riskAmount} (${riskPercent * 100}% account)
+• Expected Win Rate: ~40% (6/10 trades may lose)
+• Profit Factor Target: 1.12x
+• Leverage: 20x - liquidation ${isBullish ? 'below' : 'above'} ${(parseFloat(entry) * (isBullish ? 0.95 : 1.05)).toFixed(decimals)}`;
+
+        // Build candle pattern info
+        const candleInfo = `
+🕯️ PATTERN: ${candlePattern} (${candleDirection})
+PSAR: ${parseFloat(psar).toFixed(decimals)} ${psarPosition}`;
+
+        // First message - Core trade info
+        const firstMessage = `
+🚨 ${symbol} SIGNAL 🚨
+${signal}
+
+${tradeSetup}
+
+${candleInfo}
+
+${structureLevels}`;
+
+        // Second message - Detailed analysis
+        const secondMessage = `
+${symbol} - DETAILED ANALYSIS
+
+${scoreBreakdown}
+${nonAligningText}
+
+${technicalSummary}
+
+${htfAnalysis}
+
+${trailingInstructions}
+
+${riskWarning}
+
+⏰ Signal Time: ${timestamp}
+📊 Trade Count: ${sendCounts[symbol] + 1}/6`;
         
         sendTelegramNotification(firstMessage, secondMessage, symbol).catch(err => 
           console.error(`TG failed ${symbol}:`, err.message)

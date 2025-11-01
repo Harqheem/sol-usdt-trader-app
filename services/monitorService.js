@@ -273,8 +273,8 @@ async function updateTrade(id, updates) {
   if (error) console.error('Update trade error:', error);
 }
 
-// Periodically refresh open trades and manage subscriptions (every 60 seconds)
-setInterval(refreshOpenTrades, 60000);
+// Periodically refresh open trades and manage subscriptions (every 5 minutes)
+setInterval(refreshOpenTrades, 300000);
 
 // Initial refresh
 refreshOpenTrades().catch(err => console.error('Initial refresh failed:', err));

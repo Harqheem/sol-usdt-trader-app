@@ -1,9 +1,66 @@
 function detectRSIDivergence(closes, rsis) {
-  if (closes.length < 3 || rsis.length < 3) return 'None';
-  const [c3, c2, c1] = closes.slice(-3);
-  const [r3, r2, r1] = rsis.slice(-3);
-  if (c1 < c2 && c2 < c3 && r1 > r2 && r2 < r3) return 'Bullish';
-  if (c1 > c2 && c2 > c3 && r1 < r2 && r2 > r3) return 'Bearish';
+  // Need at least 5 candles for meaningful divergence
+  if (closes.length < 5 || rsis.length < 5) return 'None';
+  
+  // Get last 5 values
+  const recentCloses = closes.slice(-5);
+  const recentRSI = rsis.slice(-5);
+  
+  // Find the lowest and highest price points in the last 5 candles
+  const minPriceIdx = recentCloses.indexOf(Math.min(...recentCloses));
+  const maxPriceIdx = recentCloses.indexOf(Math.max(...recentCloses));
+  
+  // Find the lowest and highest RSI points
+  const minRSIIdx = recentRSI.indexOf(Math.min(...recentRSI));
+  const maxRSIIdx = recentRSI.indexOf(Math.max(...recentRSI));
+  
+  const currentPrice = recentCloses[recentCloses.length - 1];
+  const currentRSI = recentRSI[recentRSI.length - 1];
+  const previousLowPrice = Math.min(...recentCloses.slice(0, -1));
+  const previousLowRSI = Math.min(...recentRSI.slice(0, -1));
+  const previousHighPrice = Math.max(...recentCloses.slice(0, -1));
+  const previousHighRSI = Math.max(...recentRSI.slice(0, -1));
+  
+  // BULLISH DIVERGENCE
+  // Price making lower lows, but RSI making higher lows
+  // This suggests weakening downward momentum - potential reversal up
+  if (minPriceIdx < recentCloses.length - 1) { // Low is not the current candle
+    const lowPrice = recentCloses[minPriceIdx];
+    const lowRSI = recentRSI[minPriceIdx];
+    
+    // Current price lower than or equal to previous low
+    // BUT current RSI higher than RSI at previous low
+    if (currentPrice <= lowPrice * 1.005 && currentRSI > lowRSI + 2) {
+      return 'Bullish';
+    }
+    
+    // Alternative: Check if we have two distinct lows
+    // Recent low is lower in price but RSI is higher
+    if (currentPrice < previousLowPrice && currentRSI > previousLowRSI + 3) {
+      return 'Bullish';
+    }
+  }
+  
+  // BEARISH DIVERGENCE
+  // Price making higher highs, but RSI making lower highs
+  // This suggests weakening upward momentum - potential reversal down
+  if (maxPriceIdx < recentCloses.length - 1) { // High is not the current candle
+    const highPrice = recentCloses[maxPriceIdx];
+    const highRSI = recentRSI[maxPriceIdx];
+    
+    // Current price higher than or equal to previous high
+    // BUT current RSI lower than RSI at previous high
+    if (currentPrice >= highPrice * 0.995 && currentRSI < highRSI - 2) {
+      return 'Bearish';
+    }
+    
+    // Alternative: Check if we have two distinct highs
+    // Recent high is higher in price but RSI is lower
+    if (currentPrice > previousHighPrice && currentRSI < previousHighRSI - 3) {
+      return 'Bearish';
+    }
+  }
+  
   return 'None';
 }
 
