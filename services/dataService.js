@@ -712,11 +712,13 @@ ${multiTFWarnings.length > 0 ? '• MTF Warnings:\n  ' + multiTFWarnings.join('\
         // Build trade setup details
         const tradeSetup = `
 📈 TRADE SETUP (${isBullish ? 'LONG' : 'SHORT'}):
-Entry: ${entry}${entryNote}
+Entry: ${entry}
+
 TP1: ${tp1}
+
 TP2: ${tp2}
-SL: ${sl} 
-`;
+
+SL: ${sl}`;
 
         // Build score breakdown
         const scoreBreakdown = `
@@ -753,9 +755,12 @@ PSAR: ${parseFloat(psar).toFixed(decimals)} ${psarPosition}`;
 
         // First message - Core trade info
         const firstMessage = `
+
 ${symbol}
 
 ${signal}
+
+LEVERAGE: 20
 
 ${tradeSetup}
 
