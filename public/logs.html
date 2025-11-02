@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Multi-Symbol Trading Dashboard</title>
+  <title>Signal Logs</title>
   <style>
     * {
       margin: 0;
@@ -14,8 +14,6 @@
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
       background: #f8f9fa;
-      min-height: 100vh;
-      padding: 32px;
       color: #1a1a1a;
       line-height: 1.5;
     }
@@ -23,6 +21,7 @@
     .dashboard {
       max-width: 1600px;
       margin: 0 auto;
+      padding: 32px;
     }
 
     /* Header */
@@ -35,15 +34,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 32px;
-      flex-wrap: wrap;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-    }
-
-    .header-brand {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
     }
 
     .header h1 {
@@ -53,64 +44,118 @@
       letter-spacing: -0.01em;
     }
 
-    .header-subtitle {
+    .header a {
+      color: #667eea;
+      text-decoration: none;
       font-size: 13px;
-      color: #6b7280;
-      font-weight: 400;
+      font-weight: 500;
+      padding: 10px 20px;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      transition: all 0.2s ease;
+      background: white;
     }
 
-    .header-center {
+    .header a:hover {
+      background: #f9fafb;
+      border-color: #667eea;
+      color: #5568d3;
+    }
+
+    /* Tabs */
+    .tabs {
       display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
+      gap: 8px;
+      margin-bottom: 24px;
+      background: white;
+      padding: 16px;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      border: 1px solid #e5e7eb;
     }
 
-    .price-display {
-      font-size: 24px;
-      font-weight: 700;
-      color: #1a1a1a;
-      letter-spacing: -0.02em;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .time-display {
-      font-size: 12px;
+    .tabs button {
+      padding: 10px 24px;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
       color: #6b7280;
-      font-variant-numeric: tabular-nums;
+      font-family: inherit;
     }
 
-    .header-actions {
+    .tabs button:hover {
+      background: #f3f4f6;
+      border-color: #d1d5db;
+      color: #374151;
+    }
+
+    .tabs button.active {
+      background: #667eea;
+      color: white;
+      border-color: #667eea;
+      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+    }
+
+    /* Filters */
+    .symbol-selector {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 24px 32px;
+      margin-bottom: 24px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+
+    .filter-header {
+      font-size: 11px;
+      font-weight: 600;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 16px;
+    }
+
+    .filter-controls {
       display: flex;
       gap: 12px;
       align-items: center;
       flex-wrap: wrap;
     }
 
-    .status-indicator {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 16px;
-      background: #f0fdf4;
-      border: 1px solid #86efac;
+    select, input[type="date"], input[type="number"] {
+      padding: 10px 16px;
+      border: 1px solid #e5e7eb;
       border-radius: 6px;
       font-size: 13px;
       font-weight: 500;
-      color: #15803d;
+      background: white;
+      color: #374151;
+      outline: none;
+      transition: all 0.2s ease;
+      font-family: inherit;
     }
 
-    .status-dot {
-      width: 6px;
-      height: 6px;
-      background: #22c55e;
-      border-radius: 50%;
-      animation: pulse 2s ease-in-out infinite;
+    select:focus, input[type="date"]:focus, input[type="number"]:focus {
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
     }
 
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.5; }
+    select {
+      cursor: pointer;
+      min-width: 140px;
+    }
+
+    input[type="number"] {
+      width: 120px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    input[type="date"] {
+      font-variant-numeric: tabular-nums;
     }
 
     .btn {
@@ -129,7 +174,7 @@
       color: white;
     }
 
-    .btn-primary:hover {
+    .btn-primary:hover:not(:disabled) {
       background: #5568d3;
       transform: translateY(-1px);
       box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
@@ -141,13 +186,31 @@
       border: 1px solid #e5e7eb;
     }
 
-    .btn-secondary:hover {
+    .btn-secondary:hover:not(:disabled) {
       background: #f9fafb;
       border-color: #d1d5db;
     }
 
-    /* Symbol Selector */
-    .symbol-selector {
+    .btn-danger {
+      background: #ef4444;
+      color: white;
+    }
+
+    .btn-danger:hover:not(:disabled) {
+      background: #dc2626;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    /* Summary Panels */
+    .summary-panel, .stats-section {
       background: white;
       border: 1px solid #e5e7eb;
       border-radius: 8px;
@@ -156,84 +219,7 @@
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
     }
 
-    .symbol-selector-header {
-      font-size: 11px;
-      font-weight: 600;
-      color: #6b7280;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 16px;
-    }
-
-    .radio-group {
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-
-    .radio-item {
-      position: relative;
-    }
-
-    .radio-item input[type="radio"] {
-      position: absolute;
-      opacity: 0;
-      cursor: pointer;
-    }
-
-    .radio-label {
-      display: inline-block;
-      padding: 10px 24px;
-      background: #f9fafb;
-      border: 1px solid #e5e7eb;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      font-weight: 500;
-      font-size: 14px;
-      color: #374151;
-      user-select: none;
-    }
-
-    .radio-item input[type="radio"]:checked + .radio-label {
-      background: #667eea;
-      color: white;
-      border-color: #667eea;
-      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
-    }
-
-    .radio-label:hover {
-      border-color: #667eea;
-      background: #f3f4f6;
-    }
-
-    .radio-item input[type="radio"]:checked + .radio-label:hover {
-      background: #5568d3;
-    }
-
-    /* Grid Layout */
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(12, 1fr);
-      gap: 24px;
-      margin-bottom: 24px;
-    }
-
-    .card {
-      background: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      padding: 24px;
-      transition: all 0.2s ease;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-    }
-
-    .card:hover {
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-      transform: translateY(-2px);
-    }
-
-    .card-header {
+    .panel-header {
       font-size: 11px;
       font-weight: 600;
       color: #6b7280;
@@ -244,261 +230,381 @@
       border-bottom: 1px solid #f3f4f6;
     }
 
-    .metric {
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 24px;
+    }
+
+    .summary-item {
       display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      padding: 12px 0;
-      border-bottom: 1px solid #f9fafb;
+      flex-direction: column;
+      gap: 8px;
     }
 
-    .metric:last-child {
-      border-bottom: none;
-      padding-bottom: 0;
-    }
-
-    .metric-label {
+    .summary-item label {
       font-size: 13px;
-      font-weight: 500;
       color: #6b7280;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
 
-    .metric-value {
-      font-size: 15px;
-      font-weight: 600;
+    .info-icon {
+      font-size: 11px;
+      cursor: help;
+      color: #9ca3af;
+    }
+
+    .summary-item .value {
+      font-size: 24px;
+      font-weight: 700;
       color: #1a1a1a;
       font-variant-numeric: tabular-nums;
     }
 
-    /* Signal Card - Full Width */
-    .signal-card {
-      grid-column: 1 / -1;
-      background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
-      border: 1px solid #e5e7eb;
+    .custom-inputs {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid #f3f4f6;
+      flex-wrap: wrap;
     }
 
-    .signal-main {
-      font-size: 28px;
-      font-weight: 700;
+    .custom-inputs label {
+      font-size: 13px;
+      color: #6b7280;
+      font-weight: 500;
+    }
+
+    /* Pagination */
+    .pagination-controls {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 20px 32px;
+      margin-bottom: 24px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .left-controls {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .left-controls label {
+      font-size: 13px;
+      color: #6b7280;
+      font-weight: 500;
+    }
+
+    .page-info {
+      font-size: 13px;
+      color: #6b7280;
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .pagination-buttons {
+      display: flex;
+      gap: 8px;
+    }
+
+    /* Table */
+    .minimal-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      font-size: 13px;
+      background: white;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      border: 1px solid #e5e7eb;
+      margin-bottom: 24px;
+    }
+
+    .minimal-table thead {
+      background: #f9fafb;
+    }
+
+    .minimal-table th {
+      text-align: left;
+      padding: 14px 16px;
+      font-weight: 600;
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: #6b7280;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    .minimal-table tbody tr {
+      border-bottom: 1px solid #f9fafb;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .minimal-table tbody tr:hover {
+      background: #fafbfc;
+    }
+
+    .minimal-table td {
+      padding: 14px 16px;
+      color: #374151;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .minimal-table tbody tr:last-child {
+      border-bottom: none;
+    }
+
+    .checkbox-cell {
+      width: 40px;
       text-align: center;
-      padding: 32px;
-      margin: 20px 0;
-      background: white;
-      border-radius: 6px;
-      border: 1px solid #e5e7eb;
-      letter-spacing: -0.02em;
     }
 
-    .notes-box {
+    .checkbox-cell input[type="checkbox"] {
+      cursor: pointer;
+      width: 16px;
+      height: 16px;
+    }
+
+    /* Status Badges */
+    .status-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      border: 1px solid;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .status-sent {
+      background: #eff6ff;
+      border-color: #bfdbfe;
+      color: #1e40af;
+    }
+
+    .status-pending {
+      background: #fef3c7;
+      border-color: #fde68a;
+      color: #92400e;
+    }
+
+    .status-opened {
+      background: #d1fae5;
+      border-color: #a7f3d0;
+      color: #065f46;
+    }
+
+    .status-closed {
+      background: #f3f4f6;
+      border-color: #d1d5db;
+      color: #4b5563;
+    }
+
+    .status-failed {
+      background: #fee2e2;
+      border-color: #fecaca;
+      color: #991b1b;
+    }
+
+    .status-terminated {
+      background: #f9fafb;
+      border-color: #e5e7eb;
+      color: #6b7280;
+    }
+
+    /* Signal Direction */
+    .signal-long {
+      color: #059669;
+      font-weight: 600;
+    }
+
+    .signal-short {
+      color: #dc2626;
+      font-weight: 600;
+    }
+
+    /* PnL Colors */
+    .pnl-positive {
+      color: #059669;
+      font-weight: 600;
+    }
+
+    .pnl-negative {
+      color: #dc2626;
+      font-weight: 600;
+    }
+
+    /* Side Sheet */
+    .side-sheet {
+      position: fixed;
+      right: -500px;
+      top: 0;
+      width: 500px;
+      height: 100vh;
       background: white;
-      border: 1px solid #e5e7eb;
-      padding: 20px;
-      border-radius: 6px;
-      margin-top: 16px;
-      line-height: 1.7;
+      border-left: 1px solid #e5e7eb;
+      padding: 32px;
+      overflow-y: auto;
+      transition: right 0.3s ease;
+      z-index: 1000;
+      box-shadow: -4px 0 16px rgba(0, 0, 0, 0.1);
+    }
+
+    .side-sheet.active {
+      right: 0;
+    }
+
+    .side-sheet .btn-secondary {
+      margin-bottom: 24px;
+      width: 100%;
+    }
+
+    #sheet-content h3 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 24px;
+      color: #1a1a1a;
+      letter-spacing: -0.01em;
+    }
+
+    #sheet-content h4 {
+      font-size: 13px;
+      font-weight: 600;
+      margin-top: 24px;
+      margin-bottom: 16px;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    #sheet-content p {
       font-size: 14px;
+      margin-bottom: 12px;
+      line-height: 1.7;
       color: #374151;
     }
 
-    .timestamp {
-      font-size: 11px;
-      color: #9ca3af;
-      margin-top: 16px;
-      text-align: right;
-      font-variant-numeric: tabular-nums;
-    }
-
-    /* Trend Indicators - 3 columns */
-    .trend-card {
-      grid-column: span 3;
-    }
-
-    /* Volatility - 3 columns */
-    .volatility-card {
-      grid-column: span 3;
-    }
-
-    /* Market Status - 3 columns */
-    .market-card {
-      grid-column: span 3;
-    }
-
-    /* Recent Candles - 3 columns */
-    .candles-card {
-      grid-column: span 3;
-    }
-
-    /* Trade Levels - 12 columns */
-    .trade-levels {
-      grid-column: span 12;
-      background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
-      border: 1px solid #e5e7eb;
-    }
-
-    .trade-levels .metric {
-      padding: 16px 0;
-    }
-
-    .trade-levels .metric-value {
-      font-size: 18px;
-      font-weight: 700;
-    }
-
-    /* Trade Level Specific Styling */
-    .trade-levels .metric:nth-child(2) {
-      background: #eff6ff;
-      padding: 16px 20px;
-      margin: 0 -24px;
-      border-left: 3px solid #3b82f6;
-    }
-
-    .trade-levels .metric:nth-child(3),
-    .trade-levels .metric:nth-child(4) {
-      background: #f0fdf4;
-      padding: 16px 20px;
-      margin: 0 -24px;
-      border-left: 3px solid #22c55e;
-    }
-
-    .trade-levels .metric:nth-child(5) {
-      background: #fef2f2;
-      padding: 16px 20px;
-      margin: 0 -24px;
-      border-left: 3px solid #ef4444;
-    }
-
-    /* Candles List */
-    .candles-list {
-      list-style: none;
-      padding: 0;
-    }
-
-    .candles-list li {
-      padding: 12px 16px;
-      background: #f9fafb;
-      border-radius: 6px;
-      margin-bottom: 8px;
+    #sheet-content strong {
+      font-weight: 600;
+      color: #6b7280;
+      display: inline-block;
+      min-width: 140px;
       font-size: 13px;
-      line-height: 1.6;
-      border-left: 2px solid #e5e7eb;
-      font-variant-numeric: tabular-nums;
     }
 
-    .candles-list li:last-child {
-      margin-bottom: 0;
+    #sheet-content hr {
+      margin: 24px 0;
+      border: none;
+      border-top: 1px solid #f3f4f6;
     }
 
-    /* Status Colors */
-    .status-positive {
-      color: #059669 !important;
-      font-weight: 600;
-    }
-
-    .status-negative {
-      color: #dc2626 !important;
-      font-weight: 600;
-    }
-
-    .status-neutral {
-      color: #d97706 !important;
-      font-weight: 600;
-    }
-
-    /* Loading State */
-    .loading {
-      text-align: center;
-      padding: 32px;
-      color: #9ca3af;
-      font-style: italic;
-      font-size: 14px;
+    .hidden {
+      display: none;
     }
 
     /* Responsive */
     @media (max-width: 1200px) {
-      .trend-card,
-      .volatility-card,
-      .market-card,
-      .candles-card {
-        grid-column: span 6;
-      }
-
-      .trade-levels {
-        grid-column: span 12;
+      .summary-grid {
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
       }
     }
 
     @media (max-width: 768px) {
-      body {
+      .dashboard {
         padding: 16px;
       }
 
       .header {
         flex-direction: column;
-        gap: 20px;
-        padding: 20px;
+        gap: 16px;
         align-items: stretch;
+        padding: 20px;
       }
 
-      .header-brand,
-      .header-center {
-        align-items: center;
+      .header a {
         text-align: center;
       }
 
-      .header-actions {
+      .filter-controls {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      select, input[type="date"], input[type="number"] {
+        width: 100%;
+      }
+
+      .side-sheet {
+        width: 100%;
+        right: -100%;
+      }
+
+      .minimal-table {
+        font-size: 12px;
+      }
+
+      .minimal-table th,
+      .minimal-table td {
+        padding: 10px 8px;
+      }
+
+      .summary-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .custom-inputs {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .pagination-controls {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .left-controls,
+      .pagination-buttons {
         flex-direction: column;
         width: 100%;
       }
 
-      .header-actions .btn,
-      .status-indicator {
+      .pagination-buttons button {
         width: 100%;
-        justify-content: center;
-      }
-
-      .radio-group {
-        justify-content: stretch;
-      }
-
-      .radio-item {
-        flex: 1;
-      }
-
-      .radio-label {
-        width: 100%;
-        text-align: center;
-      }
-
-      .trend-card,
-      .volatility-card,
-      .market-card,
-      .candles-card,
-      .trade-levels {
-        grid-column: span 12;
-      }
-
-      .price-display {
-        font-size: 28px;
-      }
-
-      .signal-main {
-        font-size: 36px;
-        padding: 24px;
       }
     }
 
-    /* Link styling */
-    a {
-      color: #667eea;
-      text-decoration: none;
-      font-size: 13px;
-      font-weight: 500;
-      transition: color 0.2s ease;
+    /* Scrollbar Styling */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
     }
 
-    a:hover {
-      color: #5568d3;
-      text-decoration: underline;
+    ::-webkit-scrollbar-track {
+      background: #f9fafb;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #d1d5db;
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #9ca3af;
     }
   </style>
 </head>
@@ -506,174 +612,191 @@
   <div class="dashboard">
     <!-- Header -->
     <div class="header">
-      <div class="header-brand">
-        <h1>Dashboard</h1>
-        <div class="header-subtitle">Real-time market analysis • 30m timeframe</div>
-      </div>
-      
-      <div class="header-center">
-        <div id="current-price" class="price-display">Loading...</div>
-        <div id="current-time" class="time-display"></div>
-      </div>
-
-      <div class="header-actions">
-        <div class="status-indicator" id="pause-status">
-          <span class="status-dot"></span>
-          <span>Trading Active</span>
-        </div>
-        <button id="pause-btn" class="btn btn-secondary">Pause</button>
-        <button id="copy-btn" class="btn btn-primary">Copy Data</button>
-        <a href="/logs.html">View Logs</a>
-      </div>
+      <h1>Signal Logs & Analytics</h1>
+      <a href="/">← Back to Dashboard</a>
     </div>
 
-    <!-- Symbol Selector -->
+    <!-- Tabs -->
+    <div class="tabs">
+      <button id="logs-tab" class="active">All Logs</button>
+      <button id="results-tab">Trade Results</button>
+    </div>
+    
+    <!-- Filters -->
     <div class="symbol-selector">
-      <div class="symbol-selector-header">Trading Pair Selection</div>
-      <div class="radio-group">
-        <div class="radio-item">
-          <input type="radio" id="sol" name="symbol" value="SOLUSDT" checked>
-          <label for="sol" class="radio-label">SOL/USDT</label>
+      <div class="filter-header">Filters</div>
+      <div class="filter-controls">
+        <select id="symbol-filter">
+          <option value="">All Symbols</option>
+        </select>
+        <input type="date" id="from-date" placeholder="From Date">
+        <input type="date" id="to-date" placeholder="To Date">
+        <select id="status-filter">
+          <option value="">All Statuses</option>
+          <option value="sent">Sent</option>
+          <option value="pending">Pending</option>
+          <option value="opened">Opened</option>
+          <option value="closed">Closed</option>
+          <option value="terminated">Terminated</option>
+          <option value="failed">Failed</option>
+        </select>
+        <button id="refresh-btn" class="btn btn-primary">Refresh</button>
+        <button id="bulk-terminate-btn" class="btn btn-danger hidden">Terminate Selected</button>
+      </div>
+    </div>
+    
+    <!-- Trade Summary -->
+    <div id="summary" class="summary-panel">
+      <div class="panel-header">Trade Summary</div>
+      <div class="summary-grid">
+        <div class="summary-item">
+          <label>Total Trades <span class="info-icon" title="All trades including open and closed">ℹ️</span></label>
+          <span class="value" id="total-trades">0</span>
         </div>
-        <div class="radio-item">
-          <input type="radio" id="xrp" name="symbol" value="XRPUSDT">
-          <label for="xrp" class="radio-label">XRP/USDT</label>
+        <div class="summary-item">
+          <label>Closed Trades <span class="info-icon" title="Number of completed trades">ℹ️</span></label>
+          <span class="value" id="closed-trades">0</span>
         </div>
-        <div class="radio-item">
-          <input type="radio" id="ada" name="symbol" value="ADAUSDT">
-          <label for="ada" class="radio-label">ADA/USDT</label>
+        <div class="summary-item">
+          <label>Win Rate <span class="info-icon" title="Percentage of winning trades (TP or BE)">ℹ️</span></label>
+          <span class="value" id="win-rate">0.00%</span>
         </div>
-        <div class="radio-item">
-          <input type="radio" id="bnb" name="symbol" value="BNBUSDT">
-          <label for="bnb" class="radio-label">BNB/USDT</label>
+        <div class="summary-item">
+          <label>Total Raw PnL <span class="info-icon" title="Total profit/loss without fees">ℹ️</span></label>
+          <span class="value" id="total-raw-pnl">0.00%</span>
         </div>
-        <div class="radio-item">
-          <input type="radio" id="doge" name="symbol" value="DOGEUSDT">
-          <label for="doge" class="radio-label">DOGE/USDT</label>
+      </div>
+
+      <div id="outcomes-summary" class="summary-grid hidden" style="margin-top: 24px;">
+        <div class="summary-item">
+          <label>SL Trades <span class="info-icon" title="Trades stopped out">ℹ️</span></label>
+          <span class="value" id="sl-trades">0</span>
+        </div>
+        <div class="summary-item">
+          <label>BE Trades <span class="info-icon" title="Trades closed at breakeven">ℹ️</span></label>
+          <span class="value" id="be-trades">0</span>
+        </div>
+        <div class="summary-item">
+          <label>TP Trades <span class="info-icon" title="Trades that hit take profit">ℹ️</span></label>
+          <span class="value" id="tp-trades">0</span>
+        </div>
+        <div class="summary-item">
+          <label>Terminated <span class="info-icon" title="Trades manually terminated">ℹ️</span></label>
+          <span class="value" id="terminated-trades">0</span>
         </div>
       </div>
     </div>
 
-    <!-- Main Grid -->
-    <div class="grid">
-      <!-- Signal Card - Full Width -->
-      <div class="card signal-card">
-        <div class="card-header">Trading Signal</div>
-        <div class="signal-main" id="signal">⏳ Analyzing...</div>
-        <div class="notes-box" id="notes">Waiting for data...</div>
-        <div class="timestamp" id="timestamp">Last updated: -</div>
+    <!-- Direction Statistics -->
+    <div class="stats-section">
+      <div class="panel-header">Direction Statistics</div>
+      <div class="summary-grid">
+        <div class="summary-item">
+          <label>Long Trades <span class="info-icon" title="Number of long positions">ℹ️</span></label>
+          <span class="value" id="long-trades">0</span>
+        </div>
+        <div class="summary-item">
+          <label>Long Win Rate <span class="info-icon" title="Success rate for longs">ℹ️</span></label>
+          <span class="value" id="long-win-rate">0.00%</span>
+        </div>
+        <div class="summary-item">
+          <label>Short Trades <span class="info-icon" title="Number of short positions">ℹ️</span></label>
+          <span class="value" id="short-trades">0</span>
+        </div>
+        <div class="summary-item">
+          <label>Short Win Rate <span class="info-icon" title="Success rate for shorts">ℹ️</span></label>
+          <span class="value" id="short-win-rate">0.00%</span>
+        </div>
       </div>
+    </div>
 
-      <!-- Trend Indicators - 4 cols -->
-      <div class="card trend-card">
-        <div class="card-header">Trend Indicators</div>
-        <div class="metric">
-          <span class="metric-label">EMA 7</span>
-          <span class="metric-value" id="ema7">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">EMA 25</span>
-          <span class="metric-value" id="ema25">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">EMA 99</span>
-          <span class="metric-value" id="ema99">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">SMA 50</span>
-          <span class="metric-value" id="sma50">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">SMA 200</span>
-          <span class="metric-value" id="sma200">-</span>
-        </div>
-      </div>
-
-      <!-- Volatility - 4 cols -->
-      <div class="card volatility-card">
-        <div class="card-header">Volatility & Momentum</div>
-        <div class="metric">
-          <span class="metric-label">ATR (14)</span>
-          <span class="metric-value" id="atr">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">ADX (14)</span>
-          <span class="metric-value" id="adx">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">1H Trend</span>
-          <span class="metric-value" id="trend1h">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">4H Trend</span>
-          <span class="metric-value" id="trend4h">-</span>
-        </div>
-      </div>
-
-      <!-- Market Status - 4 cols -->
-      <div class="card market-card">
-        <div class="card-header">Market Status</div>
-        <div class="metric">
-          <span class="metric-label">BB Upper</span>
-          <span class="metric-value" id="bb-upper">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">BB Middle</span>
-          <span class="metric-value" id="bb-middle">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">BB Lower</span>
-          <span class="metric-value" id="bb-lower">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">PSAR</span>
-          <span class="metric-value">
-            <span id="psar">-</span>
-            <span id="psar-pos" style="font-size: 11px; opacity: 0.6;"></span>
-          </span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">Candle Pattern</span>
-          <span class="metric-value" id="candle-pattern">-</span>
-        </div>
-      </div>
-     <!-- Recent Candles - 4 cols -->
-      <div class="card candles-card">
-        <div class="card-header">Recent Candles</div>
-        <ul id="last5-candles" class="candles-list">
-          <li class="loading">Loading candle data...</li>
-        </ul>
-      </div>
-      </div>
-
-      <!-- Trade Levels - 8 cols -->
-      <div class="card trade-levels">
-        <div class="card-header">Trade Levels</div>
-        <div class="metric">
-          <span class="metric-label">Entry Price</span>
-          <span class="metric-value" id="entry">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">Take Profit 1 (50%)</span>
-          <span class="metric-value" id="tp1">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">Take Profit 2 (50%)</span>
-          <span class="metric-value" id="tp2">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">Stop Loss</span>
-          <span class="metric-value" id="sl">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">Position Size</span>
-          <span class="metric-value" id="positionSize">-</span>
-        </div>
-     
+    <!-- Custom Position Settings -->
+    <div class="stats-section">
+      <div class="panel-header">Custom Position Settings</div>
       
+      <div class="custom-inputs">
+        <label>Position Size ($):</label>
+        <input type="number" id="custom-position-size" value="100" min="1" step="10">
+        <label>Leverage:</label>
+        <input type="number" id="custom-leverage" value="20" min="1" max="125">
+      </div>
+      
+      <div class="summary-grid" style="margin-top: 24px;">
+        <div class="summary-item">
+          <label>Custom Total PnL (%) <span class="info-icon" title="Total PnL based on your settings">ℹ️</span></label>
+          <span class="value" id="custom-total-pnl">0.00%</span>
+        </div>
+        <div class="summary-item">
+          <label>Custom Total PnL ($) <span class="info-icon" title="Total dollar profit/loss">ℹ️</span></label>
+          <span class="value" id="custom-total-pnl-dollars">$0.00</span>
+        </div>
+        <div class="summary-item">
+          <label>Total Fees (%) <span class="info-icon" title="Total fees as percentage">ℹ️</span></label>
+          <span class="value" id="custom-total-fees-pct">0.00%</span>
+        </div>
+        <div class="summary-item">
+          <label>Total Fees ($) <span class="info-icon" title="Total dollar fees paid">ℹ️</span></label>
+          <span class="value" id="custom-total-fees-dollars">$0.00</span>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Table -->
+    <table id="signals-table" class="minimal-table">
+      <thead>
+        <tr>
+          <th class="checkbox-cell" id="checkbox-header" style="display: none;">
+            <input type="checkbox" id="select-all-checkbox">
+          </th>
+          <th>Time</th>
+          <th>Symbol</th>
+          <th>Signal</th>
+          <th>TP1</th>
+          <th>TP2</th>
+          <th>SL</th>
+          <th>Filled Qty</th>
+          <th id="outcome-header" style="display: none;">Outcome</th>
+          <th>Raw PnL (%)</th>
+          <th>Custom PnL (%)</th>
+          <th>Custom PnL ($)</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Rows will be populated by JS -->
+      </tbody>
+    </table>
+
+    <!-- Pagination -->
+    <div class="pagination-controls">
+      <div class="left-controls">
+        <label for="page-size">Rows per page:</label>
+        <select id="page-size">
+          <option value="10">10</option>
+          <option value="25" selected>25</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+          <option value="200">200</option>
+        </select>
+      </div>
+      <div class="page-info">
+        <span id="page-info-text">Page 1 of 1 (0 trades)</span>
+      </div>
+      <div class="pagination-buttons">
+        <button id="prev-page" class="btn btn-secondary">← Previous</button>
+        <button id="next-page" class="btn btn-secondary">Next →</button>
+      </div>
+    </div>
+    
+    <!-- Side Sheet -->
+    <div id="side-sheet" class="side-sheet">
+      <button id="close-sheet" class="btn btn-secondary">✕ Close</button>
+      <div id="sheet-content">
+        <h3>Trade Details</h3>
+        <p>Select a trade to view details</p>
+      </div>
     </div>
   </div>
-
-  <script src="script.js"></script>
+  <script src="logs_script.js"></script>
 </body>
 </html>
