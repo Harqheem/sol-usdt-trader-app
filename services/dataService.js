@@ -711,9 +711,8 @@ ${multiTFWarnings.length > 0 ? '• MTF Warnings:\n  ' + multiTFWarnings.join('\
         
 // Build trade setup details
 
-const tradeSetup = `
-
-Entry: ${entry}
+const tradeSetup = 
+` Entry: ${entry}
 
 TP1: ${tp1}
 
