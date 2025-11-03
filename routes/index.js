@@ -9,6 +9,10 @@ const { getSignals } = require('../services/logsService');
 
 const router = express.Router();
 
+// Rate limiting for price endpoint
+const priceRateLimiter = new Map();
+const PRICE_RATE_LIMIT_MS = 5000; // 5 seconds minimum between requests per IP
+
 router.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
@@ -60,18 +64,64 @@ router.get('/data', async (req, res) => {
   }
 });
 
+// DEPRECATED: This endpoint should not be used by frontend anymore (use WebSocket instead)
+// Kept only for backward compatibility with rate limiting
 router.get('/price', async (req, res) => {
   const symbol = req.query.symbol || 'SOLUSDT';
+  const clientIp = req.ip || req.connection.remoteAddress;
+  const rateLimitKey = `${clientIp}-${symbol}`;
+  
+  // Check rate limit
+  const lastRequest = priceRateLimiter.get(rateLimitKey);
+  const now = Date.now();
+  
+  if (lastRequest && now - lastRequest < PRICE_RATE_LIMIT_MS) {
+    const waitTime = Math.ceil((PRICE_RATE_LIMIT_MS - (now - lastRequest)) / 1000);
+    return res.status(429).json({ 
+      error: 'Rate limit exceeded. Please use WebSocket for real-time prices.',
+      retryAfter: waitTime,
+      websocketUrl: `wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@ticker`
+    });
+  }
+  
   if (!symbols.includes(symbol)) {
     return res.status(400).json({ error: 'Invalid symbol' });
   }
+  
   try {
+    // Update rate limiter
+    priceRateLimiter.set(rateLimitKey, now);
+    
+    // Clean up old entries (older than 1 minute)
+    for (const [key, timestamp] of priceRateLimiter.entries()) {
+      if (now - timestamp > 60000) {
+        priceRateLimiter.delete(key);
+      }
+    }
+    
     const ticker = await withTimeout(client.avgPrice({ symbol }), 5000);
     const decimals = getDecimalPlaces(symbol);
-    res.json({ currentPrice: parseFloat(ticker.price), decimals });
+    res.json({ 
+      currentPrice: parseFloat(ticker.price), 
+      decimals,
+      warning: 'This endpoint is rate-limited. Use WebSocket for real-time updates.',
+      websocketUrl: `wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@ticker`
+    });
   } catch (error) {
     console.error(`Price fetch error ${symbol}:`, error.message);
-    res.json({ error: 'Failed to fetch price' });
+    
+    // Check if it's a rate limit error from Binance
+    if (error.message && error.message.includes('429')) {
+      return res.status(429).json({ 
+        error: 'Binance API rate limit exceeded. Use WebSocket instead.',
+        websocketUrl: `wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@ticker`
+      });
+    }
+    
+    res.status(500).json({ 
+      error: 'Failed to fetch price',
+      details: error.message 
+    });
   }
 });
 
@@ -106,4 +156,5 @@ router.get('/signals', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 module.exports = router;

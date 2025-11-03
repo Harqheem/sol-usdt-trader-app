@@ -2,6 +2,7 @@ let currentData = {};
 let previousPrice = null;
 let selectedSymbol = 'SOLUSDT';
 let currentDecimals = 2;
+let priceWebSocket = null;
 
 function updateUI(data) {
   if (data.error) {
@@ -17,7 +18,7 @@ function updateUI(data) {
   
   // Helper to safely format values (handles both strings and numbers)
   const safeFormat = (val, decimals) => {
-    if (typeof val === 'string') return val; // Already formatted
+    if (typeof val === 'string') return val;
     if (typeof val === 'number') return val.toFixed(decimals);
     return 'N/A';
   };
@@ -91,9 +92,9 @@ function updateUI(data) {
       const volume = formatVolume(candle.volume);
       li.textContent = `O: ${open} H: ${high} L: ${low} C: ${close} V: ${volume}`;
       if (safeParse(close) > safeParse(open)) {
-        li.style.borderLeftColor = '#10b981'; // Green for bullish
+        li.style.borderLeftColor = '#10b981';
       } else {
-        li.style.borderLeftColor = '#ef4444'; // Red for bearish
+        li.style.borderLeftColor = '#ef4444';
       }
       candlesList.appendChild(li);
     });
@@ -112,38 +113,67 @@ function updateUI(data) {
   currentData = data;
 }
 
-// Fetch price and update trading status
-async function fetchPrice() {
-  try {
-    const res = await fetch(`/price?symbol=${selectedSymbol}`);
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
-
-    const decimals = data.decimals || currentDecimals;
-    const priceEl = document.getElementById('current-price');
-    const newPrice = data.currentPrice;
-    let arrow = '';
-    
-    if (previousPrice !== null) {
-      if (newPrice > previousPrice) {
-        arrow = ' ↑';
-        priceEl.style.color = 'green';
-      } else if (newPrice < previousPrice) {
-        arrow = ' ↓';
-        priceEl.style.color = 'red';
+// Initialize WebSocket for real-time price updates
+function initPriceWebSocket() {
+  // Close existing connection if any
+  if (priceWebSocket) {
+    priceWebSocket.close();
+  }
+  
+  const symbol = selectedSymbol.toLowerCase();
+  const wsUrl = `wss://stream.binance.com:9443/ws/${symbol}@ticker`;
+  
+  console.log(`Connecting to WebSocket for ${selectedSymbol}...`);
+  priceWebSocket = new WebSocket(wsUrl);
+  
+  priceWebSocket.onopen = () => {
+    console.log(`WebSocket connected for ${selectedSymbol}`);
+  };
+  
+  priceWebSocket.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      const newPrice = parseFloat(data.c); // Current price
+      
+      if (isNaN(newPrice)) return;
+      
+      const priceEl = document.getElementById('current-price');
+      let arrow = '';
+      
+      if (previousPrice !== null) {
+        if (newPrice > previousPrice) {
+          arrow = ' ↑';
+          priceEl.style.color = 'green';
+        } else if (newPrice < previousPrice) {
+          arrow = ' ↓';
+          priceEl.style.color = 'red';
+        } else {
+          priceEl.style.color = 'black';
+        }
       } else {
         priceEl.style.color = 'black';
       }
-    } else {
-      priceEl.style.color = 'black';
+      
+      priceEl.textContent = `Current Price: ${newPrice.toFixed(currentDecimals)}${arrow}`;
+      document.getElementById('current-time').textContent = `Current Time: ${new Date().toLocaleTimeString()}`;
+      previousPrice = newPrice;
+    } catch (err) {
+      console.error('WebSocket message error:', err);
     }
-    
-    priceEl.textContent = `Current Price: ${newPrice.toFixed(decimals)}${arrow}`;
-    document.getElementById('current-time').textContent = `Current Time: ${new Date().toLocaleTimeString()}`;
-    previousPrice = newPrice;
-  } catch (err) {
-    console.error('Price fetch error:', err);
-  }
+  };
+  
+  priceWebSocket.onerror = (error) => {
+    console.error('WebSocket error:', error);
+  };
+  
+  priceWebSocket.onclose = () => {
+    console.log('WebSocket closed. Reconnecting in 5 seconds...');
+    setTimeout(() => {
+      if (document.visibilityState === 'visible') {
+        initPriceWebSocket();
+      }
+    }, 5000);
+  };
 }
 
 // Update pause status display
@@ -154,7 +184,7 @@ async function updatePauseStatus() {
       throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     }
     const status = await res.json();
-    console.log('Trading status:', status); // Debug log
+    console.log('Trading status:', status);
     
     const pauseBtn = document.getElementById('pause-btn');
     const pauseStatusEl = document.getElementById('pause-status');
@@ -168,8 +198,8 @@ async function updatePauseStatus() {
       pauseBtn.textContent = '▶️ Resume Trading';
       pauseBtn.style.background = '#ef4444';
       
-      const elapsed = Math.floor(status.pauseDuration / 60000); // minutes
-      const remaining = Math.floor(status.timeUntilAutoResume / 60000); // minutes
+      const elapsed = Math.floor(status.pauseDuration / 60000);
+      const remaining = Math.floor(status.timeUntilAutoResume / 60000);
       pauseStatusEl.textContent = `⏸️ Paused for ${elapsed}m (auto-resume in ${remaining}m)`;
       pauseStatusEl.style.color = '#ef4444';
     } else {
@@ -180,7 +210,6 @@ async function updatePauseStatus() {
     }
   } catch (err) {
     console.error('Status fetch error:', err);
-    // Show error in UI
     const pauseStatusEl = document.getElementById('pause-status');
     if (pauseStatusEl) {
       pauseStatusEl.textContent = '⚠️ Status unavailable';
@@ -193,14 +222,13 @@ async function updatePauseStatus() {
 async function toggleTrading() {
   const pauseBtn = document.getElementById('pause-btn');
   
-  // Disable button during request
   if (pauseBtn) {
     pauseBtn.disabled = true;
     pauseBtn.style.opacity = '0.5';
   }
   
   try {
-    console.log('Toggling trading...'); // Debug log
+    console.log('Toggling trading...');
     const res = await fetch('/toggle-trading', { 
       method: 'POST',
       headers: {
@@ -213,18 +241,15 @@ async function toggleTrading() {
     }
     
     const result = await res.json();
-    console.log('Trading toggled:', result); // Debug log
+    console.log('Trading toggled:', result);
     
-    // Show success feedback
     alert(result.message || (result.isPaused ? 'Trading paused successfully' : 'Trading resumed successfully'));
     
-    // Update UI immediately
     await updatePauseStatus();
   } catch (err) {
     console.error('Toggle error:', err);
     alert('Failed to toggle trading: ' + err.message);
   } finally {
-    // Re-enable button
     if (pauseBtn) {
       pauseBtn.disabled = false;
       pauseBtn.style.opacity = '1';
@@ -238,8 +263,7 @@ async function fetchData() {
     const res = await fetch(`/data?symbol=${selectedSymbol}`);
     const data = await res.json();
     updateUI(data);
-    fetchPrice();
-    updatePauseStatus(); // Update status whenever we fetch data
+    updatePauseStatus();
   } catch (err) {
     console.error('Data fetch error:', err);
     document.getElementById('signal').textContent = '❌ Network Error';
@@ -247,16 +271,32 @@ async function fetchData() {
   }
 }
 
-// Symbol change listener - now uses radio buttons
+// Symbol change listener
 document.querySelectorAll('input[name="symbol"]').forEach(radio => {
   radio.addEventListener('change', (e) => {
     selectedSymbol = e.target.value;
     previousPrice = null;
     fetchData();
+    initPriceWebSocket(); // Reconnect WebSocket for new symbol
   });
 });
 
-// Add event listener for pause button
+// Handle page visibility changes
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    // Reconnect WebSocket when tab becomes visible
+    if (!priceWebSocket || priceWebSocket.readyState !== WebSocket.OPEN) {
+      initPriceWebSocket();
+    }
+  } else {
+    // Close WebSocket when tab is hidden to save resources
+    if (priceWebSocket) {
+      priceWebSocket.close();
+    }
+  }
+});
+
+// Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
   const pauseBtn = document.getElementById('pause-btn');
   if (pauseBtn) {
@@ -268,15 +308,15 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Initial load
   fetchData();
+  initPriceWebSocket();
   
-  // Update pause status more frequently (every 5 minutes)
-  setInterval(updatePauseStatus, 300000);
+  // Update pause status periodically
+  setInterval(updatePauseStatus, 300000); // 5 minutes
 });
 
-// Initial and intervals
+// Initial data fetch and periodic refresh
 fetchData();
 setInterval(fetchData, 300000); // 5 min full refresh
-setInterval(fetchPrice, 1000); // 1 sec price
 setInterval(updatePauseStatus, 300000); // 5 min pause status
 
 document.getElementById('copy-btn').addEventListener('click', () => {
