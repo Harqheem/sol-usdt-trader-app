@@ -15,8 +15,23 @@ let sendCounts = {};
 let pausedQueue = [];
 let lastSignalTime = {};
 let failureCount = {};
+let lastApiCallTime = {}; // Track last API call per symbol
+const MIN_API_CALL_INTERVAL = 10000; // Minimum 10 seconds between API calls per symbol
 
 async function getData(symbol) {
+  // Rate limiting check - prevent multiple simultaneous calls for same symbol
+  const now = Date.now();
+  if (lastApiCallTime[symbol] && now - lastApiCallTime[symbol] < MIN_API_CALL_INTERVAL) {
+    console.log(`${symbol}: Skipping getData (called ${((now - lastApiCallTime[symbol]) / 1000).toFixed(1)}s ago)`);
+    // Return cached data if available
+    if (cachedData[symbol] && !cachedData[symbol].error) {
+      return cachedData[symbol];
+    }
+    return { error: 'Rate limit - please wait', details: 'Too many requests' };
+  }
+  
+  lastApiCallTime[symbol] = now;
+  
   const maxRetries = 3;
   let attempt = 0;
   while (attempt < maxRetries) {
@@ -28,10 +43,17 @@ async function getData(symbol) {
         throw new Error('Invalid symbol parameter');
       }
       
+      // Add delay between retries to avoid rate limits
+      if (attempt > 0) {
+        const backoffDelay = Math.pow(2, attempt) * 2000; // 2s, 4s, 8s
+        console.log(`${symbol}: Waiting ${backoffDelay}ms before retry ${attempt}/${maxRetries}`);
+        await new Promise(resolve => setTimeout(resolve, backoffDelay));
+      }
+      
       // Fetch 30m candles with error handling
       let klines30m;
       try {
-        klines30m = await utils.withTimeout(client.candles({ symbol, interval: '30m', limit: 500 }), 10000);
+        klines30m = await utils.withTimeout(client.candles({ symbol, interval: '30m', limit: 500 }), 15000);
       } catch (err) {
         throw new Error(`Failed to fetch 30m candles: ${err.message}`);
       }
@@ -62,7 +84,7 @@ async function getData(symbol) {
       // Fetch current price with error handling
       let ticker;
       try {
-        ticker = await utils.withTimeout(client.avgPrice({ symbol }), 5000);
+        ticker = await utils.withTimeout(client.avgPrice({ symbol }), 10000);
       } catch (err) {
         throw new Error(`Failed to fetch ticker: ${err.message}`);
       }
@@ -170,7 +192,7 @@ async function getData(symbol) {
       // Higher timeframe data with comprehensive error handling
       let klines1h, closes1h, highs1h, lows1h, ema99_1h, adx1h, current1hClose, trend1h;
       try {
-        klines1h = await utils.withTimeout(client.candles({ symbol, interval: '1h', limit: 100 }), 10000);
+        klines1h = await utils.withTimeout(client.candles({ symbol, interval: '1h', limit: 100 }), 15000);
         if (!klines1h || klines1h.length < 100) {
           throw new Error(`Insufficient 1h data: ${klines1h ? klines1h.length : 0} candles`);
         }
@@ -201,7 +223,7 @@ async function getData(symbol) {
       
       let klines4h, closes4h, highs4h, lows4h, ema99_4h, adx4h, current4hClose, trend4h;
       try {
-        klines4h = await utils.withTimeout(client.candles({ symbol, interval: '4h', limit: 100 }), 10000);
+        klines4h = await utils.withTimeout(client.candles({ symbol, interval: '4h', limit: 100 }), 15000);
         if (!klines4h || klines4h.length < 100) {
           throw new Error(`Insufficient 4h data: ${klines4h ? klines4h.length : 0} candles`);
         }
@@ -863,7 +885,7 @@ ${htfAnalysis}
     } catch (error) {
       if (error.message === 'Request timeout' || error.code === 'ETIMEDOUT' || error.message.includes('429')) {
         attempt++;
-        const backoff = Math.pow(2, attempt) * 1000;
+        const backoff = Math.pow(2, attempt) * 2000; // Increased backoff
         console.warn(`${symbol}: ${error.message}, retry ${attempt}/${maxRetries} in ${backoff}ms`);
         if (attempt < maxRetries) {
           await new Promise(resolve => setTimeout(resolve, backoff));
@@ -880,11 +902,14 @@ ${htfAnalysis}
 
 async function updateCache() {
   console.log('🔄 Cache update cycle starting...');
-  const updatePromises = symbols.map(async (symbol) => {
+  
+  // Process symbols sequentially with delay to avoid rate limits
+  for (const symbol of symbols) {
     if (failureCount[symbol] >= 5) {
       console.warn(`⏭️ Skipping ${symbol} (5+ failures)`);
-      return;
+      continue;
     }
+    
     try {
       const data = await getData(symbol);
       if (!data.error) {
@@ -899,8 +924,13 @@ async function updateCache() {
       failureCount[symbol] = (failureCount[symbol] || 0) + 1;
       console.error(`❌ ${symbol} crashed (${failureCount[symbol]}/5):`, error.message);
     }
-  });
-  await Promise.allSettled(updatePromises);
+    
+    // Add 2-second delay between symbols to avoid rate limits
+    if (symbols.indexOf(symbol) < symbols.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  }
+  
   console.log('✅ Cache cycle complete');
 }
 
@@ -913,10 +943,13 @@ async function initDataService() {
     sendCounts[symbol] = 0;
     lastSignalTime[symbol] = 0;
     failureCount[symbol] = 0;
+    lastApiCallTime[symbol] = 0;
     cachedData[symbol] = { error: 'Loading...' };
   }
-  console.log('Loading initial cache (parallel)...');
-  const loadPromises = symbols.map(async (symbol) => {
+  console.log('Loading initial cache (sequential with delays)...');
+  
+  // Load symbols sequentially with delay
+  for (const symbol of symbols) {
     try {
       cachedData[symbol] = await getData(symbol);
       console.log(`✅ ${symbol} loaded`);
@@ -924,8 +957,13 @@ async function initDataService() {
       console.error(`❌ ${symbol} load failed:`, error.message);
       cachedData[symbol] = { error: 'Failed initial load' };
     }
-  });
-  await Promise.allSettled(loadPromises);
+    
+    // Add 2-second delay between loads
+    if (symbols.indexOf(symbol) < symbols.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  }
+  
   console.log('✅ Initial cache complete');
 }
 

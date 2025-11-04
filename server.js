@@ -9,16 +9,47 @@ require('./services/monitorService'); // Require to start internal monitoring
 const { symbols } = config;
 
 const app = express();
-app.use(express.json()); // ADD THIS LINE - parses JSON request bodies
-app.use(express.urlencoded({ extended: true })); // ADD THIS LINE - parses URL-encoded bodies
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 app.use(routes);
 
 let isShuttingDown = false;
-let server; // Declare here
+let server;
 let failureCount = {};
+let updateCacheInterval = null;
+let isUpdatingCache = false; // Prevent overlapping updates
 
-setInterval(updateCache, 300000);
+// Wrapped updateCache to prevent overlaps
+async function safeUpdateCache() {
+  if (isUpdatingCache) {
+    console.log('⏭️ Skipping cache update (previous update still running)');
+    return;
+  }
+  
+  isUpdatingCache = true;
+  try {
+    await updateCache();
+  } catch (err) {
+    console.error('❌ Cache update error:', err.message);
+  } finally {
+    isUpdatingCache = false;
+  }
+}
+
+// Start cache update interval (5 minutes)
+function startCacheUpdates() {
+  // Clear any existing interval
+  if (updateCacheInterval) {
+    clearInterval(updateCacheInterval);
+  }
+  
+  // Set new interval - 5 minutes
+  updateCacheInterval = setInterval(safeUpdateCache, 300000);
+  console.log('✅ Cache update interval started (5 minutes)');
+}
+
+// Reset failure counts every hour
 setInterval(() => {
   failureCount = {};
   console.log('🔄 Failure counts reset');
@@ -31,18 +62,27 @@ async function gracefulShutdown() {
   if (isShuttingDown) return;
   isShuttingDown = true;
   console.log('\n🛑 Shutting down gracefully...');
-  if (server) server.close(() => console.log('✅ HTTP server closed'));
+  
+  // Clear intervals
+  if (updateCacheInterval) {
+    clearInterval(updateCacheInterval);
+    console.log('✅ Cache update interval cleared');
+  }
+  
+  if (server) {
+    server.close(() => console.log('✅ HTTP server closed'));
+  }
+  
   await new Promise(resolve => setTimeout(resolve, 5000));
   console.log('✅ Shutdown complete');
   process.exit(0);
 }
 
-
 // Get trading status
 app.get('/trading-status', (req, res) => {
   try {
     const status = pauseService.getStatus();
-    console.log('📊 Status requested:', status); // Debug log
+    console.log('📊 Status requested:', status);
     res.json(status);
   } catch (err) {
     console.error('❌ Status error:', err);
@@ -61,7 +101,7 @@ app.post('/toggle-trading', (req, res) => {
   try {
     const newState = pauseService.toggleTrading();
     const message = newState ? 'Trading paused successfully' : 'Trading resumed successfully';
-    console.log('🔄', message, '- New state:', newState); // Debug log
+    console.log('🔄', message, '- New state:', newState);
     res.json({
       success: true,
       isPaused: newState,
@@ -206,15 +246,42 @@ app.post('/terminate-trades-bulk', async (req, res) => {
   }
 });
 
+// Manual cache update endpoint (for testing/debugging)
+app.post('/force-cache-update', async (req, res) => {
+  try {
+    if (isUpdatingCache) {
+      return res.status(429).json({ 
+        success: false, 
+        error: 'Cache update already in progress' 
+      });
+    }
+    
+    console.log('🔄 Manual cache update triggered');
+    await safeUpdateCache();
+    res.json({ success: true, message: 'Cache updated successfully' });
+  } catch (err) {
+    console.error('❌ Force cache update error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 (async () => {
   try {
+    console.log('🚀 Starting server initialization...');
+    
+    // Initialize data service (loads all symbols sequentially with delays)
     await initDataService();
+    
+    // Start the cache update interval AFTER initialization completes
+    startCacheUpdates();
+    
     const port = process.env.PORT || 3000;
     server = app.listen(port, () => {
       console.log(`✅ Server running on http://localhost:${port}`);
       console.log(`📊 Monitoring ${symbols.length} symbols: ${symbols.join(', ')}`);
       console.log(`🔄 Cache updates every 5 minutes`);
       console.log(`🏥 Health check: http://localhost:${port}/health`);
+      console.log(`⏸️ Pause trading: POST http://localhost:${port}/toggle-trading`);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);
