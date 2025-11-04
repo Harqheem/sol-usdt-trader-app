@@ -114,20 +114,74 @@ function updateUI(data) {
 }
 
 // Initialize WebSocket for real-time price updates
+let wsReconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 10;
+let wsReconnectTimeout = null;
+
 function initPriceWebSocket() {
+  // Clear any pending reconnect timeout
+  if (wsReconnectTimeout) {
+    clearTimeout(wsReconnectTimeout);
+    wsReconnectTimeout = null;
+  }
+  
   // Close existing connection if any
   if (priceWebSocket) {
-    priceWebSocket.close();
+    try {
+      priceWebSocket.onclose = null; // Remove handler to prevent reconnect loop
+      priceWebSocket.onerror = null;
+      priceWebSocket.onmessage = null;
+      priceWebSocket.onopen = null;
+      
+      if (priceWebSocket.readyState === WebSocket.OPEN || 
+          priceWebSocket.readyState === WebSocket.CONNECTING) {
+        priceWebSocket.close();
+      }
+    } catch (err) {
+      console.error('Error closing existing WebSocket:', err);
+    }
+    priceWebSocket = null;
+  }
+  
+  // Check if we've exceeded max reconnect attempts
+  if (wsReconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    console.error('Max WebSocket reconnect attempts reached. Falling back to polling.');
+    startPricePolling(); // Fallback to HTTP polling
+    return;
   }
   
   const symbol = selectedSymbol.toLowerCase();
   const wsUrl = `wss://stream.binance.com:9443/ws/${symbol}@ticker`;
   
-  console.log(`Connecting to WebSocket for ${selectedSymbol}...`);
-  priceWebSocket = new WebSocket(wsUrl);
+  console.log(`Connecting to WebSocket for ${selectedSymbol}... (Attempt ${wsReconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})`);
+  
+  try {
+    priceWebSocket = new WebSocket(wsUrl);
+  } catch (err) {
+    console.error('Failed to create WebSocket:', err);
+    scheduleReconnect();
+    return;
+  }
+  
+  // Set a connection timeout
+  const connectionTimeout = setTimeout(() => {
+    if (priceWebSocket && priceWebSocket.readyState !== WebSocket.OPEN) {
+      console.warn('WebSocket connection timeout');
+      priceWebSocket.close();
+      scheduleReconnect();
+    }
+  }, 10000); // 10 second timeout
   
   priceWebSocket.onopen = () => {
-    console.log(`WebSocket connected for ${selectedSymbol}`);
+    clearTimeout(connectionTimeout);
+    wsReconnectAttempts = 0; // Reset on successful connection
+    console.log(`✅ WebSocket connected for ${selectedSymbol}`);
+    
+    // Update UI to show connected status
+    const priceEl = document.getElementById('current-price');
+    if (priceEl) {
+      priceEl.style.borderLeft = '3px solid green';
+    }
   };
   
   priceWebSocket.onmessage = (event) => {
@@ -163,17 +217,110 @@ function initPriceWebSocket() {
   };
   
   priceWebSocket.onerror = (error) => {
+    clearTimeout(connectionTimeout);
     console.error('WebSocket error:', error);
+    
+    // Update UI to show error status
+    const priceEl = document.getElementById('current-price');
+    if (priceEl) {
+      priceEl.style.borderLeft = '3px solid orange';
+    }
   };
   
-  priceWebSocket.onclose = () => {
-    console.log('WebSocket closed. Reconnecting in 5 seconds...');
-    setTimeout(() => {
-      if (document.visibilityState === 'visible') {
-        initPriceWebSocket();
-      }
-    }, 5000);
+  priceWebSocket.onclose = (event) => {
+    clearTimeout(connectionTimeout);
+    console.log(`WebSocket closed (Code: ${event.code}, Reason: ${event.reason || 'Unknown'})`);
+    
+    // Update UI to show disconnected status
+    const priceEl = document.getElementById('current-price');
+    if (priceEl) {
+      priceEl.style.borderLeft = '3px solid red';
+    }
+    
+    // Only reconnect if not a clean close and page is visible
+    if (event.code !== 1000 && document.visibilityState === 'visible') {
+      scheduleReconnect();
+    }
   };
+}
+
+function scheduleReconnect() {
+  if (wsReconnectTimeout) return; // Already scheduled
+  
+  wsReconnectAttempts++;
+  const delay = Math.min(1000 * Math.pow(2, wsReconnectAttempts - 1), 30000); // Exponential backoff, max 30s
+  
+  console.log(`Scheduling WebSocket reconnect in ${delay}ms...`);
+  
+  wsReconnectTimeout = setTimeout(() => {
+    wsReconnectTimeout = null;
+    if (document.visibilityState === 'visible') {
+      initPriceWebSocket();
+    }
+  }, delay);
+}
+
+// Fallback: HTTP polling if WebSocket fails completely
+let pollingInterval = null;
+
+function startPricePolling() {
+  console.log('Starting fallback HTTP polling for prices (every 5 seconds)');
+  
+  if (pollingInterval) {
+    clearInterval(pollingInterval);
+  }
+  
+  // Fetch immediately
+  fetchPriceHTTP();
+  
+  // Then poll every 5 seconds
+  pollingInterval = setInterval(fetchPriceHTTP, 5000);
+}
+
+function stopPricePolling() {
+  if (pollingInterval) {
+    clearInterval(pollingInterval);
+    pollingInterval = null;
+    console.log('Stopped HTTP polling');
+  }
+}
+
+async function fetchPriceHTTP() {
+  try {
+    const res = await fetch(`/price?symbol=${selectedSymbol}`);
+    const data = await res.json();
+    
+    if (data.error) {
+      console.error('Price fetch error:', data.error);
+      return;
+    }
+
+    const decimals = data.decimals || currentDecimals;
+    const priceEl = document.getElementById('current-price');
+    const newPrice = data.currentPrice;
+    let arrow = '';
+    
+    if (previousPrice !== null) {
+      if (newPrice > previousPrice) {
+        arrow = ' ↑';
+        priceEl.style.color = 'green';
+      } else if (newPrice < previousPrice) {
+        arrow = ' ↓';
+        priceEl.style.color = 'red';
+      } else {
+        priceEl.style.color = 'black';
+      }
+    } else {
+      priceEl.style.color = 'black';
+    }
+    
+    priceEl.textContent = `Current Price: ${newPrice.toFixed(decimals)}${arrow} [HTTP]`;
+    priceEl.style.borderLeft = '3px solid orange'; // Indicate polling mode
+    document.getElementById('current-time').textContent = `Current Time: ${new Date().toLocaleTimeString()}`;
+    previousPrice = newPrice;
+  } catch (err) {
+    console.error('HTTP price fetch error:', err);
+  }
 }
 
 // Update pause status display
@@ -276,6 +423,8 @@ document.querySelectorAll('input[name="symbol"]').forEach(radio => {
   radio.addEventListener('change', (e) => {
     selectedSymbol = e.target.value;
     previousPrice = null;
+    wsReconnectAttempts = 0; // Reset reconnect attempts on symbol change
+    stopPricePolling(); // Stop polling if active
     fetchData();
     initPriceWebSocket(); // Reconnect WebSocket for new symbol
   });
@@ -284,16 +433,48 @@ document.querySelectorAll('input[name="symbol"]').forEach(radio => {
 // Handle page visibility changes
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
-    // Reconnect WebSocket when tab becomes visible
+    // Page became visible - try to reconnect WebSocket
+    console.log('Page visible - attempting WebSocket reconnection');
+    wsReconnectAttempts = 0; // Reset attempts
+    stopPricePolling(); // Stop polling if active
+    
     if (!priceWebSocket || priceWebSocket.readyState !== WebSocket.OPEN) {
       initPriceWebSocket();
     }
   } else {
-    // Close WebSocket when tab is hidden to save resources
+    // Page hidden - close WebSocket to save resources
+    console.log('Page hidden - closing WebSocket');
+    if (wsReconnectTimeout) {
+      clearTimeout(wsReconnectTimeout);
+      wsReconnectTimeout = null;
+    }
+    stopPricePolling();
+    
     if (priceWebSocket) {
-      priceWebSocket.close();
+      try {
+        priceWebSocket.onclose = null; // Prevent reconnect
+        priceWebSocket.close(1000, 'Page hidden');
+      } catch (err) {
+        console.error('Error closing WebSocket:', err);
+      }
     }
   }
+});
+
+// Handle network online/offline events
+window.addEventListener('online', () => {
+  console.log('Network online - reconnecting WebSocket');
+  wsReconnectAttempts = 0;
+  stopPricePolling();
+  initPriceWebSocket();
+});
+
+window.addEventListener('offline', () => {
+  console.log('Network offline - WebSocket disconnected');
+  if (priceWebSocket) {
+    priceWebSocket.close();
+  }
+  stopPricePolling();
 });
 
 // Initialize on page load
