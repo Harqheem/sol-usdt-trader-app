@@ -548,9 +548,9 @@ async function getData(symbol) {
 
               sl = stopLoss.toFixed(decimals);
 
-              // Validate risk is reasonable (max 3% of entry)
+              // Validate risk is reasonable (max 1.5% of entry)
               const riskPercentOfEntry = (parseFloat(entry) - parseFloat(sl)) / parseFloat(entry);
-              if (riskPercentOfEntry > 0.03) {
+              if (riskPercentOfEntry > 0.015) {
                 rejectionReason = `Stop loss too far (${(riskPercentOfEntry * 100).toFixed(1)}% of entry). Risk too high.`;
               } else {
                 // Calculate position size
@@ -638,9 +638,9 @@ async function getData(symbol) {
 
               sl = stopLoss.toFixed(decimals);
 
-              // Validate risk is reasonable (max 3% of entry)
+              // Validate risk is reasonable (max 1.5% of entry)
               const riskPercentOfEntry = (parseFloat(sl) - parseFloat(entry)) / parseFloat(entry);
-              if (riskPercentOfEntry > 0.03) {
+              if (riskPercentOfEntry > 0.015) {
                 rejectionReason = `Stop loss too far (${(riskPercentOfEntry * 100).toFixed(1)}% of entry). Risk too high.`;
               } else {
                 // Calculate position size
