@@ -346,6 +346,33 @@
       text-transform: uppercase;
       color: #6b7280;
       border-bottom: 1px solid #e5e7eb;
+      cursor: pointer;
+      user-select: none;
+      position: relative;
+      transition: background 0.2s ease;
+    }
+
+    .minimal-table th:hover {
+      background: #f3f4f6;
+    }
+
+    .minimal-table th.sortable::after {
+      content: '⇅';
+      margin-left: 6px;
+      opacity: 0.3;
+      font-size: 10px;
+    }
+
+    .minimal-table th.sorted-asc::after {
+      content: '↑';
+      opacity: 1;
+      color: #667eea;
+    }
+
+    .minimal-table th.sorted-desc::after {
+      content: '↓';
+      opacity: 1;
+      color: #667eea;
     }
 
     .minimal-table tbody tr {
@@ -748,18 +775,18 @@
           <th class="checkbox-cell" id="checkbox-header" style="display: none;">
             <input type="checkbox" id="select-all-checkbox">
           </th>
-          <th>Time</th>
-          <th>Symbol</th>
-          <th>Signal</th>
-          <th>TP1</th>
-          <th>TP2</th>
-          <th>SL</th>
-          <th>Filled Qty</th>
-          <th id="outcome-header" style="display: none;">Outcome</th>
-          <th>Raw PnL (%)</th>
-          <th>Custom PnL (%)</th>
-          <th>Custom PnL ($)</th>
-          <th>Status</th>
+          <th class="sortable" data-sort="time">Time</th>
+          <th class="sortable" data-sort="symbol">Symbol</th>
+          <th class="sortable" data-sort="signal">Signal</th>
+          <th class="sortable" data-sort="tp1">TP1</th>
+          <th class="sortable" data-sort="tp2">TP2</th>
+          <th class="sortable" data-sort="sl">SL</th>
+          <th class="sortable" data-sort="qty">Filled Qty</th>
+          <th class="sortable" id="outcome-header" style="display: none;" data-sort="outcome">Outcome</th>
+          <th class="sortable" data-sort="raw-pnl">Raw PnL (%)</th>
+          <th class="sortable" data-sort="custom-pnl-pct">Custom PnL (%)</th>
+          <th class="sortable" data-sort="custom-pnl-usd">Custom PnL ($)</th>
+          <th class="sortable" data-sort="status">Status</th>
         </tr>
       </thead>
       <tbody>

@@ -45,6 +45,8 @@ let selectedTradeIds = new Set();
 let currentPage = 1;
 let pageSize = 25;
 let totalPages = 1;
+let sortColumn = 'time';
+let sortDirection = 'desc';
 
 const symbols = ['SOLUSDT', 'XRPUSDT', 'ADAUSDT', 'BNBUSDT', 'DOGEUSDT'];
 symbols.forEach(sym => {
@@ -127,30 +129,12 @@ async function fetchSignals() {
     console.log(`Received ${data.length} trades`);
     allData = data;
     currentPage = 1;
-    paginateData();
+    sortAndPaginateData();
   } catch (err) {
     console.error('Fetch error:', err);
     tableBody.innerHTML = '<tr><td colspan="13">Error loading logs: ' + err.message + '</td></tr>';
     updateSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
   }
-}
-
-function paginateData() {
-  pageSize = parseInt(pageSizeSelect.value);
-  totalPages = Math.ceil(allData.length / pageSize);
-  
-  if (currentPage < 1) currentPage = 1;
-  if (currentPage > totalPages && totalPages > 0) currentPage = totalPages;
-  
-  const startIdx = (currentPage - 1) * pageSize;
-  const endIdx = startIdx + pageSize;
-  currentData = allData.slice(startIdx, endIdx);
-  
-  pageInfoText.textContent = `Page ${currentPage} of ${totalPages || 1} (${allData.length} trades)`;
-  prevPageBtn.disabled = currentPage <= 1;
-  nextPageBtn.disabled = currentPage >= totalPages;
-  
-  renderTableAndSummary();
 }
 
 function calculateCustomPnL(signal) {
@@ -230,11 +214,103 @@ function calculateFilledQty(signal) {
   return qty.toFixed(6) + ' ' + base;
 }
 
+function getSortValue(signal, column) {
+  const { customPnlDollars, customPnlPct } = calculateCustomPnL(signal);
+  
+  switch(column) {
+    case 'time':
+      // Use open_time for logs tab, close_time for results tab
+      const timeValue = currentTab === 'results' ? signal.close_time : signal.timestamp;
+      return timeValue ? new Date(timeValue).getTime() : 0;
+    case 'symbol':
+      return signal.symbol || '';
+    case 'signal':
+      return signal.signal_type || '';
+    case 'tp1':
+      return signal.tp1 || 0;
+    case 'tp2':
+      return signal.tp2 || 0;
+    case 'sl':
+      return signal.sl || 0;
+    case 'qty':
+      const customPosition = parseFloat(customPositionSizeInput.value) || 100;
+      const customLeverage = parseFloat(customLeverageInput.value) || 20;
+      const notional = customPosition * customLeverage;
+      return signal.entry ? (notional / signal.entry) : 0;
+    case 'outcome':
+      const outcomeOrder = { 'TP': 4, 'BE': 3, 'SL': 2, 'Terminated': 1, '-': 0 };
+      return outcomeOrder[getOutcome(signal)] || 0;
+    case 'raw-pnl':
+      return signal.raw_pnl_percentage || 0;
+    case 'custom-pnl-pct':
+      return customPnlPct;
+    case 'custom-pnl-usd':
+      return customPnlDollars;
+    case 'status':
+      const statusOrder = { 'opened': 6, 'pending': 5, 'sent': 4, 'closed': 3, 'terminated': 2, 'failed': 1 };
+      return statusOrder[signal.status] || 0;
+    default:
+      return '';
+  }
+}
+
+function sortData() {
+  const startTime = performance.now();
+  
+  allData.sort((a, b) => {
+    const aVal = getSortValue(a, sortColumn);
+    const bVal = getSortValue(b, sortColumn);
+    
+    let comparison = 0;
+    if (aVal < bVal) comparison = -1;
+    if (aVal > bVal) comparison = 1;
+    
+    return sortDirection === 'asc' ? comparison : -comparison;
+  });
+  
+  const endTime = performance.now();
+  console.log(`Sorted ${allData.length} rows in ${(endTime - startTime).toFixed(2)}ms`);
+}
+
+function sortAndPaginateData() {
+  sortData();
+  paginateData();
+}
+
+function paginateData() {
+  pageSize = parseInt(pageSizeSelect.value);
+  totalPages = Math.ceil(allData.length / pageSize);
+  
+  if (currentPage < 1) currentPage = 1;
+  if (currentPage > totalPages && totalPages > 0) currentPage = totalPages;
+  
+  const startIdx = (currentPage - 1) * pageSize;
+  const endIdx = startIdx + pageSize;
+  currentData = allData.slice(startIdx, endIdx);
+  
+  pageInfoText.textContent = `Page ${currentPage} of ${totalPages || 1} (${allData.length} trades)`;
+  prevPageBtn.disabled = currentPage <= 1;
+  nextPageBtn.disabled = currentPage >= totalPages;
+  
+  renderTableAndSummary();
+}
+
+function updateSortIndicators() {
+  document.querySelectorAll('.minimal-table th.sortable').forEach(th => {
+    th.classList.remove('sorted-asc', 'sorted-desc');
+    if (th.dataset.sort === sortColumn) {
+      th.classList.add(sortDirection === 'asc' ? 'sorted-asc' : 'sorted-desc');
+    }
+  });
+}
+
 function renderTableAndSummary() {
   const startTime = performance.now();
   
   tableBody.innerHTML = '';
   selectedTradeIds.clear();
+  
+  updateSortIndicators();
   
   const hasPendingTrades = currentData.some(s => s.status === 'pending');
   if (hasPendingTrades && currentTab === 'logs') {
@@ -259,6 +335,9 @@ function renderTableAndSummary() {
     const filledQty = calculateFilledQty(signal);
     const outcomeTd = currentTab === 'results' ? `<td>${getOutcome(signal)}</td>` : '';
     
+    // Use timestamp for logs tab (opened time), close_time for results tab
+    const displayTime = currentTab === 'results' ? signal.close_time : signal.timestamp;
+    
     const isPending = signal.status === 'pending';
     const checkboxTd = (hasPendingTrades && currentTab === 'logs') 
       ? `<td class="checkbox-cell" onclick="event.stopPropagation();">
@@ -269,7 +348,7 @@ function renderTableAndSummary() {
     const row = document.createElement('tr');
     row.innerHTML = `
       ${checkboxTd}
-      <td>${formatTime(signal.timestamp)}</td>
+      <td>${formatTime(displayTime)}</td>
       <td>${signal.symbol}</td>
       <td class="${signal.signal_type === 'Buy' ? 'signal-long' : 'signal-short'}">${signal.signal_type}</td>
       <td>${signal.tp1 ? signal.tp1.toFixed(4) : '-'}</td>
@@ -493,7 +572,7 @@ function showDetails(signal) {
   }
   
   const terminateButton = signal.status === 'pending' 
-    ? `<button id="terminate-trade-btn" style="background: #ef4444; margin-top: 20px;">🚫 Terminate This Trade</button>` 
+    ? `<button id="terminate-trade-btn" class="btn btn-danger" style="margin-top: 20px; width: 100%;">🚫 Terminate This Trade</button>` 
     : '';
   
   sheetContent.innerHTML = `
@@ -515,15 +594,15 @@ function showDetails(signal) {
     <p><strong>Open Time:</strong> ${formatTime(signal.open_time)}</p>
     <p><strong>Close Time:</strong> ${formatTime(signal.close_time)}</p>
     <p><strong>Exit Price:</strong> ${signal.exit_price ? signal.exit_price.toFixed(4) : '-'}</p>
-    <hr style="margin: 15px 0; border: none; border-top: 1px solid #e0e0e0;">
-    <h4 style="margin-bottom: 10px;">PnL Breakdown</h4>
+    <hr>
+    <h4>PnL Breakdown</h4>
     <p><strong>Raw PnL (%):</strong> ${rawPnlHTML}</p>
     <p style="font-size: 0.9em; color: #666; margin-left: 20px;">Price change only, no fees</p>
     <p><strong>Net PnL (%):</strong> ${netPnlHTML}</p>
     <p style="font-size: 0.9em; color: #666; margin-left: 20px;">With fees, based on signal position size</p>
     <p><strong>Custom PnL (%):</strong> ${customPnlHTMLPercent}</p>
     <p><strong>Custom PnL ($):</strong> ${customPnlHTMLDollars}</p>
-    <p style="font-size: 0.9em; color: #666; margin-left: 20px;">Based on your custom position size ($${customPositionSizeInput.value || 100}) and leverage (${customLeverageInput.value || 20}x)</p>
+    <p style="font-size: 0.9em; color: #666; margin-left: 20px;">Based on your custom position size (${customPositionSizeInput.value || 100}) and leverage (${customLeverageInput.value || 20}x)</p>
     ${terminateButton}
   `;
   
@@ -566,6 +645,25 @@ async function terminateTrade(tradeId) {
 
 closeSheetBtn.addEventListener('click', () => {
   sideSheet.classList.remove('active');
+});
+
+// Sorting functionality
+document.querySelectorAll('.minimal-table th.sortable').forEach(th => {
+  th.addEventListener('click', () => {
+    const newColumn = th.dataset.sort;
+    
+    if (sortColumn === newColumn) {
+      // Toggle direction
+      sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+      // New column, default to descending
+      sortColumn = newColumn;
+      sortDirection = 'desc';
+    }
+    
+    currentPage = 1;
+    sortAndPaginateData();
+  });
 });
 
 logsTab.addEventListener('click', () => {
@@ -611,8 +709,12 @@ refreshBtn.addEventListener('click', fetchSignals);
 symbolFilter.addEventListener('change', fetchSignals);
 fromDateInput.addEventListener('change', fetchSignals);
 if (statusFilter) statusFilter.addEventListener('change', fetchSignals);
-customPositionSizeInput.addEventListener('input', renderTableAndSummary);
-customLeverageInput.addEventListener('input', renderTableAndSummary);
+customPositionSizeInput.addEventListener('input', () => {
+  sortAndPaginateData();
+});
+customLeverageInput.addEventListener('input', () => {
+  sortAndPaginateData();
+});
 
 fetchSignals();
 
