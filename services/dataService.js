@@ -533,14 +533,14 @@ async function getData(symbol) {
               entry = optimalEntry.toFixed(decimals);
 
               // Calculate stop loss - below structure with buffer
-              let stopLoss = keySupport - atr * 0.3;
+              let stopLoss = keySupport - atr * 0.5;
               
               // Adjust SL based on ADX strength
               if (adx > 30) {
-                stopLoss = keySupport - atr * 0.2; // Tighter stop in strong trends
+                stopLoss = keySupport - atr * 0.4; // Tighter stop in strong trends
                 slNote = ' (tight, strong trend)';
               } else if (adx < 20) {
-                stopLoss = keySupport - atr * 0.5; // Wider stop in weak trends
+                stopLoss = keySupport - atr * 0.7; // Wider stop in weak trends
                 slNote = ' (wide, weak trend)';
               } else {
                 slNote = ' (below key support)';
@@ -623,14 +623,14 @@ async function getData(symbol) {
               entry = optimalEntry.toFixed(decimals);
 
               // Calculate stop loss - above structure with buffer
-              let stopLoss = keyResistance + atr * 0.3;
+              let stopLoss = keyResistance + atr * 0.5;
               
               // Adjust SL based on ADX strength
               if (adx > 30) {
-                stopLoss = keyResistance + atr * 0.2; // Tighter stop in strong trends
+                stopLoss = keyResistance + atr * 0.4; // Tighter stop in strong trends
                 slNote = ' (tight, strong trend)';
               } else if (adx < 20) {
-                stopLoss = keyResistance + atr * 0.5; // Wider stop in weak trends
+                stopLoss = keyResistance + atr * 0.7; // Wider stop in weak trends
                 slNote = ' (wide, weak trend)';
               } else {
                 slNote = ' (above key resistance)';
