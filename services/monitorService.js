@@ -5,7 +5,7 @@ const { supabase } = require('./logsService');
 const { symbols } = require('../config');
 const client = Binance();
 
-const TAKER_FEE = 0.0004; // 0.04%
+const TAKER_FEE = 0.00045; // 0.045%
 
 // Global handler for unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {

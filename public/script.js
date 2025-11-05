@@ -151,9 +151,9 @@ function initPriceWebSocket() {
   }
   
   const symbol = selectedSymbol.toLowerCase();
-  const wsUrl = `wss://stream.binance.com:9443/ws/${symbol}@ticker`;
+  const wsUrl = `wss://fstream.binance.com/ws/${symbol}@ticker`;
   
-  console.log(`Connecting to WebSocket for ${selectedSymbol}... (Attempt ${wsReconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})`);
+  console.log(`Connecting to Futures WebSocket for ${selectedSymbol}... (Attempt ${wsReconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})`);
   
   try {
     priceWebSocket = new WebSocket(wsUrl);

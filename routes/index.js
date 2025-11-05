@@ -99,13 +99,20 @@ router.get('/price', async (req, res) => {
       }
     }
     
-    const ticker = await withTimeout(client.avgPrice({ symbol }), 5000);
+    // Use Futures price instead of Spot
+    const prices = await withTimeout(client.futuresPrices({ symbol }), 5000);
     const decimals = getDecimalPlaces(symbol);
+    
+    if (!prices || !prices[symbol]) {
+      throw new Error('Invalid futures price response');
+    }
+    
     res.json({ 
-      currentPrice: parseFloat(ticker.price), 
+      currentPrice: parseFloat(prices[symbol]), 
       decimals,
+      market: 'futures',
       warning: 'This endpoint is rate-limited. Use WebSocket for real-time updates.',
-      websocketUrl: `wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@ticker`
+      websocketUrl: `wss://fstream.binance.com/ws/${symbol.toLowerCase()}@ticker`
     });
   } catch (error) {
     console.error(`Price fetch error ${symbol}:`, error.message);

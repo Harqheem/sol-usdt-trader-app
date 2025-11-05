@@ -53,7 +53,7 @@ async function getData(symbol) {
       // Fetch 30m candles with error handling
       let klines30m;
       try {
-        klines30m = await utils.withTimeout(client.candles({ symbol, interval: '30m', limit: 500 }), 15000);
+        klines30m = await utils.withTimeout(client.futuresCandles({ symbol, interval: '30m', limit: 500 }), 15000);
       } catch (err) {
         throw new Error(`Failed to fetch 30m candles: ${err.message}`);
       }
