@@ -533,14 +533,14 @@ async function getData(symbol) {
               entry = optimalEntry.toFixed(decimals);
 
               // Calculate stop loss - below structure with buffer
-              let stopLoss = keySupport - atr * 0.5;
+              let stopLoss = keySupport - atr * 0.55;
               
               // Adjust SL based on ADX strength
               if (adx > 30) {
-                stopLoss = keySupport - atr * 0.4; // Tighter stop in strong trends
+                stopLoss = keySupport - atr * 0.45; // Tighter stop in strong trends
                 slNote = ' (tight, strong trend)';
               } else if (adx < 20) {
-                stopLoss = keySupport - atr * 0.7; // Wider stop in weak trends
+                stopLoss = keySupport - atr * 0.75; // Wider stop in weak trends
                 slNote = ' (wide, weak trend)';
               } else {
                 slNote = ' (below key support)';
@@ -548,9 +548,9 @@ async function getData(symbol) {
 
               sl = stopLoss.toFixed(decimals);
 
-              // Validate risk is reasonable (max 1.5% of entry)
+              // Validate risk is reasonable (max 3% of entry)
               const riskPercentOfEntry = (parseFloat(entry) - parseFloat(sl)) / parseFloat(entry);
-              if (riskPercentOfEntry > 0.015) {
+              if (riskPercentOfEntry > 0.03) {
                 rejectionReason = `Stop loss too far (${(riskPercentOfEntry * 100).toFixed(1)}% of entry). Risk too high.`;
               } else {
                 // Calculate position size
@@ -623,14 +623,14 @@ async function getData(symbol) {
               entry = optimalEntry.toFixed(decimals);
 
               // Calculate stop loss - above structure with buffer
-              let stopLoss = keyResistance + atr * 0.5;
+              let stopLoss = keyResistance + atr * 0.55;
               
               // Adjust SL based on ADX strength
               if (adx > 30) {
-                stopLoss = keyResistance + atr * 0.4; // Tighter stop in strong trends
+                stopLoss = keyResistance + atr * 0.45; // Tighter stop in strong trends
                 slNote = ' (tight, strong trend)';
               } else if (adx < 20) {
-                stopLoss = keyResistance + atr * 0.7; // Wider stop in weak trends
+                stopLoss = keyResistance + atr * 0.75; // Wider stop in weak trends
                 slNote = ' (wide, weak trend)';
               } else {
                 slNote = ' (above key resistance)';
@@ -638,9 +638,9 @@ async function getData(symbol) {
 
               sl = stopLoss.toFixed(decimals);
 
-              // Validate risk is reasonable (max 1.5% of entry)
+              // Validate risk is reasonable (max 3% of entry)
               const riskPercentOfEntry = (parseFloat(sl) - parseFloat(entry)) / parseFloat(entry);
-              if (riskPercentOfEntry > 0.015) {
+              if (riskPercentOfEntry > 0.03) {
                 rejectionReason = `Stop loss too far (${(riskPercentOfEntry * 100).toFixed(1)}% of entry). Risk too high.`;
               } else {
                 // Calculate position size
