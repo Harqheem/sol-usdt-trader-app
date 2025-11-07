@@ -2,10 +2,12 @@
 
 const Binance = require('binance-api-node').default;
 const { supabase } = require('./logsService');
+const { sendTelegramNotification } = require('./notificationService');
 const { symbols } = require('../config');
 const client = Binance();
 
 const TAKER_FEE = 0.00045; // 0.045%
+const PENDING_EXPIRY = 4 * 60 * 60 * 1000; // 4 hours in milliseconds
 
 // Global handler for unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
@@ -97,8 +99,47 @@ async function processPriceUpdate(trade, currentPrice) {
     const remainingFraction = trade.remaining_position || 1.0;
     const currentSl = trade.updated_sl || trade.sl;
 
-    // ============ PENDING TRADES ============
+    // ============ CHECK FOR EXPIRY (PENDING TRADES) ============
     if (trade.status === 'pending') {
+      const timeSincePlaced = Date.now() - new Date(trade.timestamp).getTime();
+      
+      if (timeSincePlaced > PENDING_EXPIRY) {
+        const updates = { 
+          status: 'expired', 
+          close_time: new Date().toISOString()
+        };
+        await updateTrade(trade.id, updates);
+        Object.assign(trade, updates);
+        openTradesCache = openTradesCache.filter(t => t.id !== trade.id);
+        
+        console.log(`⏰ Trade expired: ${trade.symbol} (pending for ${(timeSincePlaced / 3600000).toFixed(1)} hours)`);
+        
+        // Send Telegram notification
+        const openTimeFormatted = new Date(trade.timestamp).toLocaleString();
+        const firstMessage = `⏰ **TRADE EXPIRED**
+
+${trade.symbol} ${trade.signal_type}
+Entry: ${trade.entry ? trade.entry.toFixed(4) : 'N/A'}
+
+**Action Required:** Entry not reached within 4 hours.`;
+        
+        const secondMessage = `⏰ ${trade.symbol} - EXPIRED DETAILS
+
+Opened at: ${openTimeFormatted}
+Time elapsed: ${(timeSincePlaced / 3600000).toFixed(1)} hours
+
+This pending trade has been automatically expired because the entry level was not reached within the 4-hour window. Please review and close manually if needed.`;
+        
+        try {
+          await sendTelegramNotification(firstMessage, secondMessage, trade.symbol);
+        } catch (err) {
+          console.error(`Failed to send expiry notification for ${trade.symbol}:`, err.message);
+        }
+        
+        return;
+      }
+      
+      // Check if entry hit
       const entryHit = isBuy ? currentPrice <= trade.entry : currentPrice >= trade.entry;
       
       if (entryHit) {
@@ -112,8 +153,6 @@ async function processPriceUpdate(trade, currentPrice) {
         console.log(`✅ Opened ${trade.symbol} at ${currentPrice}`);
       }
       
-      // ⚠️ KEY FIX: Do NOT process TP/SL for pending trades
-      // Exit early to prevent false triggers
       return;
     }
 

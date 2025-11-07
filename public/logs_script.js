@@ -63,7 +63,8 @@ function getStatusClass(status) {
     'opened': 'status-opened',
     'closed': 'status-closed',
     'failed': 'status-failed',
-    'terminated': 'status-terminated'
+    'terminated': 'status-terminated',
+    'expired': 'status-expired'
   };
   return statusMap[status] || 'status-closed';
 }
@@ -76,6 +77,7 @@ function formatTime(isoTime) {
 
 function getOutcome(signal) {
   if (signal.status === 'terminated') return 'Terminated';
+  if (signal.status === 'expired') return 'Expired';
   if (signal.status !== 'closed') return '-';
 
   const hadPartial = signal.partial_raw_pnl_pct !== null;
@@ -118,7 +120,7 @@ async function fetchSignals() {
     if (symbolFilter.value) url += `&symbol=${symbolFilter.value}`;
     if (fromDateInput.value) url += `&fromDate=${fromDateInput.value}T00:00:00Z`;
     if (currentTab === 'results') {
-      url += `&status=closed,terminated`;
+      url += `&status=closed,terminated,expired`;
     } else {
       if (statusFilter && statusFilter.value) url += `&status=${statusFilter.value}`;
     }
@@ -133,12 +135,12 @@ async function fetchSignals() {
   } catch (err) {
     console.error('Fetch error:', err);
     tableBody.innerHTML = '<tr><td colspan="13">Error loading logs: ' + err.message + '</td></tr>';
-    updateSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    updateSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
   }
 }
 
 function calculateCustomPnL(signal) {
-  if (signal.status === 'terminated') {
+  if (signal.status === 'terminated' || signal.status === 'expired') {
     return { customPnlDollars: 0, customPnlPct: 0, totalFees: 0 };
   }
   
@@ -219,7 +221,6 @@ function getSortValue(signal, column) {
   
   switch(column) {
     case 'time':
-      // Use open_time for logs tab, close_time for results tab
       const timeValue = currentTab === 'results' ? signal.close_time : signal.timestamp;
       return timeValue ? new Date(timeValue).getTime() : 0;
     case 'symbol':
@@ -238,7 +239,7 @@ function getSortValue(signal, column) {
       const notional = customPosition * customLeverage;
       return signal.entry ? (notional / signal.entry) : 0;
     case 'outcome':
-      const outcomeOrder = { 'TP': 4, 'BE': 3, 'SL': 2, 'Terminated': 1, '-': 0 };
+      const outcomeOrder = { 'TP': 5, 'BE': 4, 'SL': 3, 'Terminated': 2, 'Expired': 1, '-': 0 };
       return outcomeOrder[getOutcome(signal)] || 0;
     case 'raw-pnl':
       return signal.raw_pnl_percentage || 0;
@@ -247,7 +248,7 @@ function getSortValue(signal, column) {
     case 'custom-pnl-usd':
       return customPnlDollars;
     case 'status':
-      const statusOrder = { 'opened': 6, 'pending': 5, 'sent': 4, 'closed': 3, 'terminated': 2, 'failed': 1 };
+      const statusOrder = { 'opened': 7, 'pending': 6, 'sent': 5, 'closed': 4, 'terminated': 3, 'expired': 2, 'failed': 1 };
       return statusOrder[signal.status] || 0;
     default:
       return '';
@@ -324,7 +325,7 @@ function renderTableAndSummary() {
   if (currentData.length === 0) {
     const colspan = hasPendingTrades && currentTab === 'logs' ? 13 : 12;
     tableBody.innerHTML = `<tr><td colspan="${colspan}">No logs found</td></tr>`;
-    updateSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    updateSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     return;
   }
   
@@ -335,7 +336,6 @@ function renderTableAndSummary() {
     const filledQty = calculateFilledQty(signal);
     const outcomeTd = currentTab === 'results' ? `<td>${getOutcome(signal)}</td>` : '';
     
-    // Use timestamp for logs tab (opened time), close_time for results tab
     const displayTime = currentTab === 'results' ? signal.close_time : signal.timestamp;
     
     const isPending = signal.status === 'pending';
@@ -376,7 +376,7 @@ function renderTableAndSummary() {
   });
   
   const totalTrades = allData.length;
-  const closedTrades = allData.filter(s => s.status === 'closed' || s.status === 'terminated');
+  const closedTrades = allData.filter(s => s.status === 'closed' || s.status === 'terminated' || s.status === 'expired');
   const actualClosedTrades = allData.filter(s => s.status === 'closed');
   const totalRawPnl = actualClosedTrades.reduce((sum, s) => sum + (s.raw_pnl_percentage || 0), 0);
   
@@ -391,8 +391,9 @@ function renderTableAndSummary() {
   const beCount = outcomes['BE'] || 0;
   const tpCount = outcomes['TP'] || 0;
   const terminatedCount = outcomes['Terminated'] || 0;
+  const expiredCount = outcomes['Expired'] || 0;
   
-  const tradesToCount = closedTrades.filter(s => s.status !== 'terminated');
+  const tradesToCount = closedTrades.filter(s => s.status !== 'terminated' && s.status !== 'expired');
   const winningTrades = tpCount + beCount;
   const winRate = tradesToCount.length > 0 ? (winningTrades / tradesToCount.length) * 100 : 0;
   
@@ -435,7 +436,8 @@ function renderTableAndSummary() {
     longWinRate,
     shortTrades.length,
     shortWinRate,
-    terminatedCount
+    terminatedCount,
+    expiredCount
   );
   
   if (currentTab === 'results') {
@@ -448,7 +450,7 @@ function renderTableAndSummary() {
   console.log(`Rendered ${currentData.length} rows in ${(endTime - startTime).toFixed(2)}ms`);
 }
 
-function updateSummary(trades, closedTrades, rawPnl, customPnlPct, customPnlDollars, customFeesPct, customFeesDollars, slCount, beCount, tpCount, winRate, longCount, longWinRate, shortCount, shortWinRate, terminatedCount) {
+function updateSummary(trades, closedTrades, rawPnl, customPnlPct, customPnlDollars, customFeesPct, customFeesDollars, slCount, beCount, tpCount, winRate, longCount, longWinRate, shortCount, shortWinRate, terminatedCount, expiredCount) {
   totalTradesEl.textContent = trades;
   closedTradesEl.textContent = closedTrades;
   totalRawPnlEl.textContent = rawPnl.toFixed(2) + '%';
@@ -459,7 +461,10 @@ function updateSummary(trades, closedTrades, rawPnl, customPnlPct, customPnlDoll
   slTradesEl.textContent = slCount;
   beTradesEl.textContent = beCount;
   tpTradesEl.textContent = tpCount;
-  terminatedTradesEl.textContent = terminatedCount;
+  
+  // Show combined terminated + expired count
+  terminatedTradesEl.textContent = `${terminatedCount + expiredCount} (${terminatedCount}T/${expiredCount}E)`;
+  
   winRateEl.textContent = winRate.toFixed(2) + '%';
   longTradesEl.textContent = longCount;
   longWinRateEl.textContent = longWinRate.toFixed(2) + '%';
