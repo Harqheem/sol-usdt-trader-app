@@ -548,8 +548,8 @@
           <label for="bnb" class="radio-label">BNB/USDT</label>
         </div>
         <div class="radio-item">
-          <input type="radio" id="doge" name="symbol" value="DOGEUSDT">
-          <label for="doge" class="radio-label">DOGE/USDT</label>
+          <input type="radio" id="xrp" name="symbol" value="XRPUSDT">
+          <label for="xrp" class="radio-label">XRP/USDT</label>
         </div>
       </div>
     </div>
@@ -646,7 +646,28 @@
       </div>
       </div>
 
+    <div>  
+      <!-- Regime Card -->
+    </div>
+      <div class="card regime-card">
+        <div class="card-header">Market Regime</div>
+        <div class="metric">
+        <span class="metric-label">Regime Type</span>
+        <span class="metric-value" id="regime-type">-</span>
+        </div>
+        <div class="metric">
+        <span class="metric-label">Confidence</span>
+        <span class="metric-value" id="regime-confidence">-</span>
+        </div>
+        <div class="metric">
+        <span class="metric-label">Risk Level</span>
+        <span class="metric-value" id="regime-risk">-</span>
+        </div>
+        <div class="notes-box" id="regime-description">Analyzing...</div>
+        </div>
+
       <!-- Trade Levels - 8 cols -->
+      <div>  
       <div class="card trade-levels">
         <div class="card-header">Trade Levels</div>
         <div class="metric">
@@ -669,7 +690,8 @@
           <span class="metric-label">Position Size</span>
           <span class="metric-value" id="positionSize">-</span>
         </div>
-     
+        </div>
+    </div> 
       
     </div>
   </div>
