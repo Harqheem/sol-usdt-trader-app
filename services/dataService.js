@@ -339,8 +339,8 @@ async function getData(symbol) {
         }
       );
       const regimeAdjustments = getRegimeAdjustments(regimeData.regime);
-      console.log(`📊 ${symbol} Regime: ${regimeData.regime} (${regimeData.confidence}% confidence)`);
-      console.log(`💡 ${symbol} Risk Level: ${regimeData.riskLevel.level} (${regimeData.riskLevel.score}/100)`);
+      //console.log(`📊 ${symbol} Regime: ${regimeData.regime} (${regimeData.confidence}% confidence)`);
+      //console.log(`💡 ${symbol} Risk Level: ${regimeData.riskLevel.level} (${regimeData.riskLevel.score}/100)`);
 
       // Signal scoring
       let bullishScore = 0, bearishScore = 0;

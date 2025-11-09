@@ -146,12 +146,12 @@ This pending trade has been automatically expired because the entry level was no
         const updates = { 
           status: 'opened', 
           open_time: new Date().toISOString(), 
-          entry: currentPrice 
-        };
-        await updateTrade(trade.id, updates);
-        Object.assign(trade, updates);
-        console.log(`✅ Opened ${trade.symbol} at ${currentPrice}`);
-      }
+          actual_fill_price: currentPrice  // Track what price it actually filled at
+  };
+  await updateTrade(trade.id, updates);
+  Object.assign(trade, updates);
+  console.log(`✅ Opened ${trade.symbol} at ${currentPrice} (planned: ${trade.entry})`);
+}
       
       return;
     }
@@ -163,14 +163,16 @@ This pending trade has been automatically expired because the entry level was no
       // Check TP1 if full position remains
       const tp1Hit = isBuy ? currentPrice >= trade.tp1 : currentPrice <= trade.tp1;
       if (tp1Hit && remainingFraction === 1.0) {
-        const partialPnl = calculatePnL(
-          trade.entry, 
-          trade.tp1, 
-          isBuy, 
-          positionSize, 
-          leverage, 
-          0.5
-        );
+        const effectiveEntry = trade.actual_fill_price || trade.entry;
+
+const partialPnl = calculatePnL(
+  effectiveEntry,  // Use actual fill, not planned entry
+  trade.tp1, 
+  isBuy, 
+  positionSize, 
+  leverage, 
+  0.5
+);
         
         updates = { 
           partial_raw_pnl_pct: partialPnl.rawPnlPct,
