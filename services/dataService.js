@@ -170,10 +170,10 @@ async function getData(symbol) {
       const psarPosition = currentPrice > psar ? 'Below Price (Bullish)' : 'Above Price (Bearish)';
       const cmf = utils.calculateCMF(highs, lows, closes, volumes);
       
-      // RSI divergence with validation - UPDATED to use 5 candles
+      // RSI divergence with validation - UPDATED to use 20 candles
       const rsiCalcFull = TI.RSI.calculate({ period: momentum.rsiPeriod, values: closes });
-      const rsiDivergence = closes.length >= 5 && rsiCalcFull.length >= 5 ? 
-        utils.detectRSIDivergence(closes.slice(-5), rsiCalcFull.slice(-5)) : 'None';
+      const rsiDivergence = closes.length >= 20 && rsiCalcFull.length >= 20 ? 
+        utils.detectRSIDivergence(closes.slice(-20), rsiCalcFull.slice(-20)) : 'None';
       
       // 15-candle analysis with error handling
       let last15Candles;

@@ -140,8 +140,9 @@ This pending trade has been automatically expired because the entry level was no
       }
       
       // Check if entry hit
-      const entryHit = isBuy ? currentPrice <= trade.entry : currentPrice >= trade.entry;
-      
+      const entryHit = isBuy ? currentPrice >= trade.entry : currentPrice <= trade.entry;
+       
+
       if (entryHit) {
         const updates = { 
           status: 'opened', 

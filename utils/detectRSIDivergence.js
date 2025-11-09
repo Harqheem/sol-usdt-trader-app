@@ -1,10 +1,10 @@
 function detectRSIDivergence(closes, rsis) {
-  // Need at least 5 candles for meaningful divergence
-  if (closes.length < 5 || rsis.length < 5) return 'None';
+  // Need at least 20 candles for meaningful divergence
+  if (closes.length < 20 || rsis.length < 20) return 'None';
   
   // Get last 5 values
-  const recentCloses = closes.slice(-5);
-  const recentRSI = rsis.slice(-5);
+  const recentCloses = closes.slice(-20);
+  const recentRSI = rsis.slice(-20);
   
   // Find the lowest and highest price points in the last 5 candles
   const minPriceIdx = recentCloses.indexOf(Math.min(...recentCloses));
