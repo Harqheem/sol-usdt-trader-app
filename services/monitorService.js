@@ -157,6 +157,19 @@ This pending trade has been automatically expired because the entry level was no
       return;
     }
 
+    if (entryHit) {
+  const updates = { 
+    status: 'opened', 
+    open_time: new Date().toISOString(), 
+    actual_fill_price: currentPrice,
+    sl_armed_time: Date.now() + 5000 // 🆕 don't check SL for 5s
+  };
+  await updateTrade(trade.id, updates);
+  Object.assign(trade, updates);
+  console.log(`✅ Opened ${trade.symbol} at ${currentPrice} (planned: ${trade.entry})`);
+  return; // 🆕 important: skip further SL/TP logic this tick
+}
+
     // ============ OPENED TRADES ============
     if (trade.status === 'opened') {
       let updates = {};
@@ -214,6 +227,10 @@ const partialPnl = calculatePnL(
       }
 
       // Check SL (original or updated)
+      const slHit = isBuy ? currentPrice <= currentSl : currentPrice >= currentSl;
+const slArmed = !trade.sl_armed_time || Date.now() > trade.sl_armed_time;
+
+if (slArmed && slHit) {
       const slHit = isBuy ? currentPrice <= currentSl : currentPrice >= currentSl;
       if (slHit) {
         let exitPrice = currentSl;
@@ -275,6 +292,7 @@ const partialPnl = calculatePnL(
         }
       }
     }
+  }
   } catch (err) {
     console.error(`Processing error for ${trade.symbol}:`, err);
   }
