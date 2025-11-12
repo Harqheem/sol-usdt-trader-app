@@ -339,7 +339,7 @@ async function getData(symbol) {
 
       // Log early signals for debugging
       if (earlySignals.recommendation !== 'neutral') {
-        console.log(`ðŸŽ¯ ${symbol} EARLY SIGNAL: ${earlySignals.recommendation.toUpperCase()} (${earlySignals.highestConfidence} confidence)`);
+        console.log(`${symbol} EARLY SIGNAL: ${earlySignals.recommendation.toUpperCase()} (${earlySignals.highestConfidence} confidence)`);
         if (earlySignals.bullish.length > 0) {
           console.log(`   Bullish: ${earlySignals.bullish.slice(0, 2).map(s => s.reason).join(' | ')}`);
         }
@@ -375,19 +375,19 @@ async function getData(symbol) {
       // ðŸ†• ADD EARLY SIGNAL BONUS FIRST (HIGH IMPACT)
       if (earlySignals.recommendation === 'strong_bullish') {
         bullishScore += 5;
-        bullishReasons.push(`ðŸŽ¯ STRONG EARLY BULLISH SIGNAL (${earlySignals.overallBullishScore} confidence)`);
+        bullishReasons.push(`STRONG EARLY BULLISH SIGNAL (${earlySignals.overallBullishScore} confidence)`);
         earlySignals.bullish.slice(0, 2).forEach(s => bullishReasons.push(`  • ${s.reason}`));
       } else if (earlySignals.recommendation === 'bullish') {
         bullishScore += 3;
-        bullishReasons.push(`ðŸŽ¯ Early bullish signal (${earlySignals.overallBullishScore} confidence)`);
+        bullishReasons.push(`Early bullish signal (${earlySignals.overallBullishScore} confidence)`);
         earlySignals.bullish.slice(0, 2).forEach(s => bullishReasons.push(`  • ${s.reason}`));
       } else if (earlySignals.recommendation === 'strong_bearish') {
         bearishScore += 5;
-        bearishReasons.push(`ðŸŽ¯ STRONG EARLY BEARISH SIGNAL (${earlySignals.overallBearishScore} confidence)`);
+        bearishReasons.push(`STRONG EARLY BEARISH SIGNAL (${earlySignals.overallBearishScore} confidence)`);
         earlySignals.bearish.slice(0, 2).forEach(s => bearishReasons.push(`  • ${s.reason}`));
       } else if (earlySignals.recommendation === 'bearish') {
         bearishScore += 3;
-        bearishReasons.push(`ðŸŽ¯ Early bearish signal (${earlySignals.overallBearishScore} confidence)`);
+        bearishReasons.push(`Early bearish signal (${earlySignals.overallBearishScore} confidence)`);
         earlySignals.bearish.slice(0, 2).forEach(s => bearishReasons.push(`  • ${s.reason}`));
       }
 
@@ -579,8 +579,6 @@ if (earlySignals.recommendation === 'strong_bullish' || earlySignals.recommendat
 const score = isBullish ? bullishScore : isBearish ? bearishScore : 0;
 const reasons = isBullish ? bullishReasons : bearishReasons;
 
-console.log(`${symbol}: Bullish=${bullishScore} Bearish=${bearishScore} Threshold=${threshold} → ${isBullish ? 'LONG' : isBearish ? 'SHORT' : 'NONE'}`);
-
       // ========== OPTIMIZED ENTRY CALCULATION (1.5x/3x TP) ==========
       let entry = 'N/A', tp1 = 'N/A', tp2 = 'N/A', sl = 'N/A', positionSize = 'N/A';
       const accountBalance = 1000;
@@ -629,7 +627,7 @@ console.log(`${symbol}: Bullish=${bullishScore} Bearish=${bearishScore} Threshol
       let entryPullbackATR = tradeConfig.entryPullbackATR;
       if (hasHighUrgencySignal) {
         entryPullbackATR *= 0.5;  // Enter closer to current price for urgent signals
-        entryNote += ' âš¡ URGENT';
+        entryNote += ' URGENT';
       }
 
       if (!rejectionReason && (isBullish || isBearish)) {
@@ -670,7 +668,7 @@ console.log(`${symbol}: Bullish=${bullishScore} Bearish=${bearishScore} Threshol
               Math.abs(t.level - optimalEntry) < atr * 0.3
             ).length;
             if (confluenceCount > 1) {
-              entryNote += ' âœ¨ CONFLUENCE';
+              entryNote += 'CONFLUENCE';
             }
           }
 
@@ -745,7 +743,7 @@ console.log(`${symbol}: Bullish=${bullishScore} Bearish=${bearishScore} Threshol
               Math.abs(t.level - optimalEntry) < atr * 0.3
             ).length;
             if (confluenceCount > 1) {
-              entryNote += ' âœ¨ CONFLUENCE';
+              entryNote += 'CONFLUENCE';
             }
           }
 
@@ -818,12 +816,12 @@ console.log(`${symbol}: Bullish=${bullishScore} Bearish=${bearishScore} Threshol
 
         // ðŸ†• ENHANCED TELEGRAM MESSAGE WITH EARLY SIGNALS
         const earlySignalInfo = earlySignals.recommendation !== 'neutral' ? `
-ðŸŽ¯ EARLY SIGNAL: ${earlySignals.recommendation.toUpperCase().replace(/_/g, ' ')}
+EARLY SIGNAL: ${earlySignals.recommendation.toUpperCase().replace(/_/g, ' ')}
    Confidence: ${earlySignals.highestConfidence}/100
    Key Factors:
 ${earlySignals.recommendation.includes('bullish') 
-  ? earlySignals.bullish.slice(0, 3).map(s => `   • ${s.reason}${s.urgency === 'high' ? ' âš¡' : ''}`).join('\n')
-  : earlySignals.bearish.slice(0, 3).map(s => `   • ${s.reason}${s.urgency === 'high' ? ' âš¡' : ''}`).join('\n')
+  ? earlySignals.bullish.slice(0, 3).map(s => `   • ${s.reason}${s.urgency === 'high' ? '' : ''}`).join('\n')
+  : earlySignals.bearish.slice(0, 3).map(s => `   • ${s.reason}${s.urgency === 'high' ? '' : ''}`).join('\n')
 }
 ` : '';
 
@@ -942,7 +940,7 @@ async function updateCache() {
   
   for (const symbol of symbols) {
     if (failureCount[symbol] >= 5) {
-      console.warn(`â­ï¸ Skipping ${symbol} (5+ failures)`);
+      console.warn(`Skipping ${symbol} (5+ failures)`);
       continue;
     }
     
@@ -951,14 +949,14 @@ async function updateCache() {
       if (!data.error) {
         cachedData[symbol] = data;
         failureCount[symbol] = 0;
-        console.log(`âœ… ${symbol} updated`);
+        console.log(` ${symbol} updated`);
       } else {
         failureCount[symbol] = (failureCount[symbol] || 0) + 1;
-        console.error(`âŒ ${symbol} failed (${failureCount[symbol]}/5): ${data.error}`);
+        console.error(`${symbol} failed (${failureCount[symbol]}/5): ${data.error}`);
       }
     } catch (error) {
       failureCount[symbol] = (failureCount[symbol] || 0) + 1;
-      console.error(`âŒ ${symbol} crashed (${failureCount[symbol]}/5):`, error.message);
+      console.error(` ${symbol} crashed (${failureCount[symbol]}/5):`, error.message);
     }
     
     if (symbols.indexOf(symbol) < symbols.length - 1) {
@@ -966,7 +964,7 @@ async function updateCache() {
     }
   }
   
-  console.log('âœ… Cache cycle complete');
+  console.log('Cache cycle complete');
 }
 
 async function initDataService() {
@@ -986,9 +984,9 @@ async function initDataService() {
   for (const symbol of symbols) {
     try {
       cachedData[symbol] = await getData(symbol);
-      console.log(`âœ… ${symbol} loaded`);
+      console.log(`${symbol} loaded`);
     } catch (error) {
-      console.error(`âŒ ${symbol} load failed:`, error.message);
+      console.error(`${symbol} load failed:`, error.message);
       cachedData[symbol] = { error: 'Failed initial load' };
     }
     
@@ -997,7 +995,7 @@ async function initDataService() {
     }
   }
   
-  console.log('âœ… Initial cache complete');
+  console.log('Initial cache complete');
 }
 
 module.exports = { 
