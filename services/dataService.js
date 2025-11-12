@@ -6,7 +6,7 @@ const config = require('../config');
 const { logSignal } = require('./logsService');
 const { isPaused: getTradingPaused } = require('./pauseService');
 
-// NEW IMPORTS
+// ðŸ†• NEW IMPORTS
 const { getAssetConfig, getRegimeAdjustments } = require('../config/assetConfig');
 const { detectMarketRegime } = require('./regimeDetection');
 const { detectEarlySignals } = require('./earlySignalDetection');
@@ -112,7 +112,7 @@ async function getData(symbol) {
         close: parseFloat(lastCandle.close) 
       };
 
-      //  GET ASSET-SPECIFIC CONFIG
+      // ðŸ†• GET ASSET-SPECIFIC CONFIG
       const assetConfig = getAssetConfig(symbol);
       const { ema: emaConfig, sma: smaConfig, momentum, volatility: volConfig, trade: tradeConfig, scoring } = assetConfig;
 
@@ -321,7 +321,7 @@ async function getData(symbol) {
       const keyResistance = Math.max(...recentHighs);
       const candlePattern = last15Candles[last15Candles.length - 1].pattern;
 
-      // EARLY SIGNAL DETECTION (ANTICIPATORY - BEFORE REGIME)
+      // ðŸ†• EARLY SIGNAL DETECTION (ANTICIPATORY - BEFORE REGIME)
       const earlySignals = detectEarlySignals(
         closes,
         highs,
@@ -339,7 +339,7 @@ async function getData(symbol) {
 
       // Log early signals for debugging
       if (earlySignals.recommendation !== 'neutral') {
-        console.log(` ${symbol} EARLY SIGNAL: ${earlySignals.recommendation.toUpperCase()} (${earlySignals.highestConfidence} confidence)`);
+        console.log(`ðŸŽ¯ ${symbol} EARLY SIGNAL: ${earlySignals.recommendation.toUpperCase()} (${earlySignals.highestConfidence} confidence)`);
         if (earlySignals.bullish.length > 0) {
           console.log(`   Bullish: ${earlySignals.bullish.slice(0, 2).map(s => s.reason).join(' | ')}`);
         }
@@ -348,7 +348,7 @@ async function getData(symbol) {
         }
       }
 
-      //  DETECT MARKET REGIME
+      // ðŸ†• DETECT MARKET REGIME
       const regimeData = detectMarketRegime(
         closes,
         highs,
@@ -372,22 +372,22 @@ async function getData(symbol) {
       let bullishScore = 0, bearishScore = 0;
       const bullishReasons = [], bearishReasons = [], nonAligningIndicators = [];
 
-      // ADD EARLY SIGNAL BONUS FIRST (HIGH IMPACT)
+      // ðŸ†• ADD EARLY SIGNAL BONUS FIRST (HIGH IMPACT)
       if (earlySignals.recommendation === 'strong_bullish') {
         bullishScore += 5;
-        bullishReasons.push(` STRONG EARLY BULLISH SIGNAL (${earlySignals.overallBullishScore} confidence)`);
+        bullishReasons.push(`ðŸŽ¯ STRONG EARLY BULLISH SIGNAL (${earlySignals.overallBullishScore} confidence)`);
         earlySignals.bullish.slice(0, 2).forEach(s => bullishReasons.push(`  • ${s.reason}`));
       } else if (earlySignals.recommendation === 'bullish') {
         bullishScore += 3;
-        bullishReasons.push(` Early bullish signal (${earlySignals.overallBullishScore} confidence)`);
+        bullishReasons.push(`ðŸŽ¯ Early bullish signal (${earlySignals.overallBullishScore} confidence)`);
         earlySignals.bullish.slice(0, 2).forEach(s => bullishReasons.push(`  • ${s.reason}`));
       } else if (earlySignals.recommendation === 'strong_bearish') {
         bearishScore += 5;
-        bearishReasons.push(` STRONG EARLY BEARISH SIGNAL (${earlySignals.overallBearishScore} confidence)`);
+        bearishReasons.push(`ðŸŽ¯ STRONG EARLY BEARISH SIGNAL (${earlySignals.overallBearishScore} confidence)`);
         earlySignals.bearish.slice(0, 2).forEach(s => bearishReasons.push(`  • ${s.reason}`));
       } else if (earlySignals.recommendation === 'bearish') {
         bearishScore += 3;
-        bearishReasons.push(` Early bearish signal (${earlySignals.overallBearishScore} confidence)`);
+        bearishReasons.push(`ðŸŽ¯ Early bearish signal (${earlySignals.overallBearishScore} confidence)`);
         earlySignals.bearish.slice(0, 2).forEach(s => bearishReasons.push(`  • ${s.reason}`));
       }
 
@@ -424,7 +424,7 @@ async function getData(symbol) {
         nonAligningIndicators.push('EMAs mixed');
       }
 
-      // ASSET-SPECIFIC RSI LOGIC
+      // ðŸ†• ASSET-SPECIFIC RSI LOGIC
       if (rsi >= momentum.rsiBullish && rsi <= momentum.rsiBearish) { 
         bullishScore += 2; 
         bearishScore += 2; 
@@ -502,45 +502,84 @@ async function getData(symbol) {
         nonAligningIndicators.push('No RSI divergence');
       }
 
-      // Apply multi-timeframe penalties/bonuses
-      bullishScore += bullishPenalty;
-      bearishScore += bearishPenalty;
+// FIX: Signal Direction Logic - Replace around line 450 in dataService.js
 
-      if (multiTFWarnings.length > 0) nonAligningIndicators.push(...multiTFWarnings);
-      if (bullishPenalty !== 0) bullishReasons.push(`Multi-TF ${bullishPenalty > 0 ? 'bonus' : 'penalty'} (${bullishPenalty})`);
-      if (bearishPenalty !== 0) bearishReasons.push(`Multi-TF ${bearishPenalty > 0 ? 'bonus' : 'penalty'} (${bearishPenalty})`);
+// Apply multi-timeframe penalties/bonuses
+bullishScore += bullishPenalty;
+bearishScore += bearishPenalty;
 
-      // Apply regime score bonus
-      bullishScore += regimeAdjustments.scoreBonus;
-      bearishScore += regimeAdjustments.scoreBonus;
+if (multiTFWarnings.length > 0) nonAligningIndicators.push(...multiTFWarnings);
+if (bullishPenalty !== 0) bullishReasons.push(`Multi-TF ${bullishPenalty > 0 ? 'bonus' : 'penalty'} (${bullishPenalty})`);
+if (bearishPenalty !== 0) bearishReasons.push(`Multi-TF ${bearishPenalty > 0 ? 'bonus' : 'penalty'} (${bearishPenalty})`);
 
-      //  DYNAMIC THRESHOLD WITH EARLY SIGNAL ADJUSTMENT
-      let threshold = scoring.baseThreshold;
-      let thresholdNote = '';
+// Apply regime score bonus
+bullishScore += regimeAdjustments.scoreBonus;
+bearishScore += regimeAdjustments.scoreBonus;
 
-      // REDUCE threshold if we have strong early signals
-      if (earlySignals.recommendation === 'strong_bullish' || earlySignals.recommendation === 'strong_bearish') {
-        threshold -= 3;
-        thresholdNote = ' (-3 for STRONG early signal)';
-      } else if (earlySignals.recommendation === 'bullish' || earlySignals.recommendation === 'bearish') {
-        threshold -= 2;
-        thresholdNote = ' (-2 for early signal)';
-      }
+// 🎯 DYNAMIC THRESHOLD WITH EARLY SIGNAL ADJUSTMENT
+let threshold = scoring.baseThreshold;
+let thresholdNote = '';
 
-      // Apply ADX adjustments
-      if (adx > momentum.adxStrong) {
-        threshold += scoring.strongADXAdjust;
-        thresholdNote += ` (${scoring.strongADXAdjust}, strong ADX)`;
-      } else if (adx < momentum.adxWeak) {
-        threshold += scoring.weakADXAdjust;
-        thresholdNote += ` (${scoring.weakADXAdjust}, weak ADX)`;
-      }
+// REDUCE threshold if we have strong early signals
+if (earlySignals.recommendation === 'strong_bullish' || earlySignals.recommendation === 'strong_bearish') {
+  threshold -= 3;
+  thresholdNote = ' (-3 for STRONG early signal)';
+} else if (earlySignals.recommendation === 'bullish' || earlySignals.recommendation === 'bearish') {
+  threshold -= 2;
+  thresholdNote = ' (-2 for early signal)';
+}
 
-      // Determine signal direction
-      const isBullish = bullishScore >= threshold;
-      const isBearish = bearishScore >= threshold;
-      const score = isBullish ? bullishScore : isBearish ? bearishScore : 0;
-      const reasons = isBullish ? bullishReasons : bearishReasons;
+// Apply ADX adjustments
+if (adx > momentum.adxStrong) {
+  threshold += scoring.strongADXAdjust;
+  thresholdNote += ` (${scoring.strongADXAdjust}, strong ADX)`;
+} else if (adx < momentum.adxWeak) {
+  threshold += scoring.weakADXAdjust;
+  thresholdNote += ` (${scoring.weakADXAdjust}, weak ADX)`;
+}
+
+// 🔧 FIX: Determine signal direction - ONLY ONE CAN BE TRUE
+// Priority: Early signal recommendation → Score difference
+let isBullish = false;
+let isBearish = false;
+
+if (earlySignals.recommendation === 'strong_bullish' || earlySignals.recommendation === 'bullish') {
+  // Early signal is bullish - use bullish if it meets threshold
+  if (bullishScore >= threshold) {
+    isBullish = true;
+    isBearish = false; // Override any bearish
+  }
+} else if (earlySignals.recommendation === 'strong_bearish' || earlySignals.recommendation === 'bearish') {
+  // Early signal is bearish - use bearish if it meets threshold
+  if (bearishScore >= threshold) {
+    isBearish = true;
+    isBullish = false; // Override any bullish
+  }
+} else {
+  // No early signal - use highest score above threshold
+  if (bullishScore >= threshold && bearishScore >= threshold) {
+    // Both meet threshold - use the higher score
+    if (bullishScore > bearishScore) {
+      isBullish = true;
+      isBearish = false;
+    } else {
+      isBearish = true;
+      isBullish = false;
+    }
+  } else if (bullishScore >= threshold) {
+    isBullish = true;
+    isBearish = false;
+  } else if (bearishScore >= threshold) {
+    isBearish = true;
+    isBullish = false;
+  }
+}
+
+// Set score and reasons based on chosen direction
+const score = isBullish ? bullishScore : isBearish ? bearishScore : 0;
+const reasons = isBullish ? bullishReasons : bearishReasons;
+
+console.log(`${symbol}: Bullish=${bullishScore} Bearish=${bearishScore} Threshold=${threshold} → ${isBullish ? 'LONG' : isBearish ? 'SHORT' : 'NONE'}`);
 
       // ========== OPTIMIZED ENTRY CALCULATION (1.5x/3x TP) ==========
       let entry = 'N/A', tp1 = 'N/A', tp2 = 'N/A', sl = 'N/A', positionSize = 'N/A';
@@ -569,14 +608,28 @@ async function getData(symbol) {
         rejectionReason = `Market regime (${regimeData.regime}) not favorable for entries.`;
       }
 
-      // AGGRESSIVE ENTRY FOR HIGH-URGENCY EARLY SIGNALS
+      // ðŸ†• PREVENT COUNTER-TREND TRADES IN STRONG REGIMES
+      if (isBullish && (regimeData.regime === 'strong_downtrend' || regimeData.regime === 'weak_downtrend')) {
+        rejectionReason = `Cannot go LONG in ${regimeData.regime.replace(/_/g, ' ')}. Wait for trend reversal.`;
+      } else if (isBearish && (regimeData.regime === 'strong_uptrend' || regimeData.regime === 'weak_uptrend')) {
+        rejectionReason = `Cannot go SHORT in ${regimeData.regime.replace(/_/g, ' ')}. Wait for trend reversal.`;
+      }
+
+      // ðŸ†• PREVENT TRADING AGAINST STRONG 1H TREND
+      if (isBullish && trend1h === 'Below Strong') {
+        rejectionReason = `1h timeframe is strongly bearish (ADX ${adx1h.toFixed(1)}). Cannot go LONG.`;
+      } else if (isBearish && trend1h === 'Above Strong') {
+        rejectionReason = `1h timeframe is strongly bullish (ADX ${adx1h.toFixed(1)}). Cannot go SHORT.`;
+      }
+
+      // ðŸ†• AGGRESSIVE ENTRY FOR HIGH-URGENCY EARLY SIGNALS
       const hasHighUrgencySignal = earlySignals.bullish.some(s => s.urgency === 'high') || 
                                     earlySignals.bearish.some(s => s.urgency === 'high');
       
       let entryPullbackATR = tradeConfig.entryPullbackATR;
       if (hasHighUrgencySignal) {
         entryPullbackATR *= 0.5;  // Enter closer to current price for urgent signals
-        entryNote += 'URGENT';
+        entryNote += ' âš¡ URGENT';
       }
 
       if (!rejectionReason && (isBullish || isBearish)) {
@@ -617,7 +670,7 @@ async function getData(symbol) {
               Math.abs(t.level - optimalEntry) < atr * 0.3
             ).length;
             if (confluenceCount > 1) {
-              entryNote += ' CONFLUENCE';
+              entryNote += ' âœ¨ CONFLUENCE';
             }
           }
 
@@ -692,7 +745,7 @@ async function getData(symbol) {
               Math.abs(t.level - optimalEntry) < atr * 0.3
             ).length;
             if (confluenceCount > 1) {
-              entryNote += 'CONFLUENCE';
+              entryNote += ' âœ¨ CONFLUENCE';
             }
           }
 
@@ -763,14 +816,14 @@ async function getData(symbol) {
         const rrTP1 = (Math.abs(parseFloat(tp1) - parseFloat(entry)) / riskAmountVal).toFixed(2);
         const rrTP2 = (Math.abs(parseFloat(tp2) - parseFloat(entry)) / riskAmountVal).toFixed(2);
 
-        //  ENHANCED TELEGRAM MESSAGE WITH EARLY SIGNALS
+        // ðŸ†• ENHANCED TELEGRAM MESSAGE WITH EARLY SIGNALS
         const earlySignalInfo = earlySignals.recommendation !== 'neutral' ? `
- EARLY SIGNAL: ${earlySignals.recommendation.toUpperCase().replace(/_/g, ' ')}
+ðŸŽ¯ EARLY SIGNAL: ${earlySignals.recommendation.toUpperCase().replace(/_/g, ' ')}
    Confidence: ${earlySignals.highestConfidence}/100
    Key Factors:
 ${earlySignals.recommendation.includes('bullish') 
-  ? earlySignals.bullish.slice(0, 3).map(s => `   • ${s.reason}${s.urgency === 'high' ? '' : ''}`).join('\n')
-  : earlySignals.bearish.slice(0, 3).map(s => `   • ${s.reason}${s.urgency === 'high' ? '' : ''}`).join('\n')
+  ? earlySignals.bullish.slice(0, 3).map(s => `   • ${s.reason}${s.urgency === 'high' ? ' âš¡' : ''}`).join('\n')
+  : earlySignals.bearish.slice(0, 3).map(s => `   • ${s.reason}${s.urgency === 'high' ? ' âš¡' : ''}`).join('\n')
 }
 ` : '';
 
@@ -845,7 +898,7 @@ ${nonAligningIndicators.length > 0 ? '\nNON-ALIGNING:\n' + nonAligningIndicators
         higherTF: { trend1h, trend4h },
         signals: { signal, notes, entry, tp1, tp2, sl, positionSize },
         
-        // RETURN REGIME & EARLY SIGNAL INFO
+        // ðŸ†• RETURN REGIME & EARLY SIGNAL INFO
         regime: {
           regime: regimeData.regime,
           confidence: regimeData.confidence,
@@ -885,11 +938,11 @@ ${nonAligningIndicators.length > 0 ? '\nNON-ALIGNING:\n' + nonAligningIndicators
 }
 
 async function updateCache() {
-  console.log('Cache update cycle starting...');
+  console.log('ðŸ"„ Cache update cycle starting...');
   
   for (const symbol of symbols) {
     if (failureCount[symbol] >= 5) {
-      console.warn(`Skipping ${symbol} (5+ failures)`);
+      console.warn(`â­ï¸ Skipping ${symbol} (5+ failures)`);
       continue;
     }
     
@@ -898,14 +951,14 @@ async function updateCache() {
       if (!data.error) {
         cachedData[symbol] = data;
         failureCount[symbol] = 0;
-        console.log(`${symbol} updated`);
+        console.log(`âœ… ${symbol} updated`);
       } else {
         failureCount[symbol] = (failureCount[symbol] || 0) + 1;
-        console.error(`${symbol} failed (${failureCount[symbol]}/5): ${data.error}`);
+        console.error(`âŒ ${symbol} failed (${failureCount[symbol]}/5): ${data.error}`);
       }
     } catch (error) {
       failureCount[symbol] = (failureCount[symbol] || 0) + 1;
-      console.error(`${symbol} crashed (${failureCount[symbol]}/5):`, error.message);
+      console.error(`âŒ ${symbol} crashed (${failureCount[symbol]}/5):`, error.message);
     }
     
     if (symbols.indexOf(symbol) < symbols.length - 1) {
@@ -913,11 +966,11 @@ async function updateCache() {
     }
   }
   
-  console.log('Cache cycle complete');
+  console.log('âœ… Cache cycle complete');
 }
 
 async function initDataService() {
-  console.log('Initializing bot...');
+  console.log('ðŸš€ Initializing bot...');
   utils.validateEnv();
   for (const symbol of symbols) {
     previousSignal[symbol] = '';
@@ -933,9 +986,9 @@ async function initDataService() {
   for (const symbol of symbols) {
     try {
       cachedData[symbol] = await getData(symbol);
-      console.log(`${symbol} loaded`);
+      console.log(`âœ… ${symbol} loaded`);
     } catch (error) {
-      console.error(`${symbol} load failed:`, error.message);
+      console.error(`âŒ ${symbol} load failed:`, error.message);
       cachedData[symbol] = { error: 'Failed initial load' };
     }
     
@@ -944,7 +997,7 @@ async function initDataService() {
     }
   }
   
-  console.log('Initial cache complete');
+  console.log('âœ… Initial cache complete');
 }
 
 module.exports = { 
