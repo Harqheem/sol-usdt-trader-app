@@ -5,8 +5,6 @@ const utils = require('../utils');
 const config = require('../config');
 const { logSignal } = require('./logsService');
 const { isPaused: getTradingPaused } = require('./pauseService');
-
-// ðŸ†• NEW IMPORTS
 const { getAssetConfig, getRegimeAdjustments } = require('../config/assetConfig');
 const { detectMarketRegime } = require('./regimeDetection');
 const { detectEarlySignals } = require('./earlySignalDetection');
@@ -112,7 +110,7 @@ async function getData(symbol) {
         close: parseFloat(lastCandle.close) 
       };
 
-      // ðŸ†• GET ASSET-SPECIFIC CONFIG
+      // GET ASSET-SPECIFIC CONFIG
       const assetConfig = getAssetConfig(symbol);
       const { ema: emaConfig, sma: smaConfig, momentum, volatility: volConfig, trade: tradeConfig, scoring } = assetConfig;
 
@@ -321,7 +319,7 @@ async function getData(symbol) {
       const keyResistance = Math.max(...recentHighs);
       const candlePattern = last15Candles[last15Candles.length - 1].pattern;
 
-      // ðŸ†• EARLY SIGNAL DETECTION (ANTICIPATORY - BEFORE REGIME)
+      // EARLY SIGNAL DETECTION (ANTICIPATORY - BEFORE REGIME)
       const earlySignals = detectEarlySignals(
         closes,
         highs,
@@ -348,7 +346,7 @@ async function getData(symbol) {
         }
       }
 
-      // ðŸ†• DETECT MARKET REGIME
+      // DETECT MARKET REGIME
       const regimeData = detectMarketRegime(
         closes,
         highs,
@@ -372,7 +370,7 @@ async function getData(symbol) {
       let bullishScore = 0, bearishScore = 0;
       const bullishReasons = [], bearishReasons = [], nonAligningIndicators = [];
 
-      // ðŸ†• ADD EARLY SIGNAL BONUS FIRST (HIGH IMPACT)
+      //ADD EARLY SIGNAL BONUS FIRST (HIGH IMPACT)
       if (earlySignals.recommendation === 'strong_bullish') {
         bullishScore += 5;
         bullishReasons.push(`STRONG EARLY BULLISH SIGNAL (${earlySignals.overallBullishScore} confidence)`);
@@ -424,7 +422,7 @@ async function getData(symbol) {
         nonAligningIndicators.push('EMAs mixed');
       }
 
-      // ðŸ†• ASSET-SPECIFIC RSI LOGIC
+      //ASSET-SPECIFIC RSI LOGIC
       if (rsi >= momentum.rsiBullish && rsi <= momentum.rsiBearish) { 
         bullishScore += 2; 
         bearishScore += 2; 
@@ -606,21 +604,21 @@ const reasons = isBullish ? bullishReasons : bearishReasons;
         rejectionReason = `Market regime (${regimeData.regime}) not favorable for entries.`;
       }
 
-      // ðŸ†• PREVENT COUNTER-TREND TRADES IN STRONG REGIMES
+      // PREVENT COUNTER-TREND TRADES IN STRONG REGIMES
       if (isBullish && (regimeData.regime === 'strong_downtrend' || regimeData.regime === 'weak_downtrend')) {
         rejectionReason = `Cannot go LONG in ${regimeData.regime.replace(/_/g, ' ')}. Wait for trend reversal.`;
       } else if (isBearish && (regimeData.regime === 'strong_uptrend' || regimeData.regime === 'weak_uptrend')) {
         rejectionReason = `Cannot go SHORT in ${regimeData.regime.replace(/_/g, ' ')}. Wait for trend reversal.`;
       }
 
-      // ðŸ†• PREVENT TRADING AGAINST STRONG 1H TREND
+      //  PREVENT TRADING AGAINST STRONG 1H TREND
       if (isBullish && trend1h === 'Below Strong') {
         rejectionReason = `1h timeframe is strongly bearish (ADX ${adx1h.toFixed(1)}). Cannot go LONG.`;
       } else if (isBearish && trend1h === 'Above Strong') {
         rejectionReason = `1h timeframe is strongly bullish (ADX ${adx1h.toFixed(1)}). Cannot go SHORT.`;
       }
 
-      // ðŸ†• AGGRESSIVE ENTRY FOR HIGH-URGENCY EARLY SIGNALS
+      //  AGGRESSIVE ENTRY FOR HIGH-URGENCY EARLY SIGNALS
       const hasHighUrgencySignal = earlySignals.bullish.some(s => s.urgency === 'high') || 
                                     earlySignals.bearish.some(s => s.urgency === 'high');
       
@@ -814,7 +812,7 @@ const reasons = isBullish ? bullishReasons : bearishReasons;
         const rrTP1 = (Math.abs(parseFloat(tp1) - parseFloat(entry)) / riskAmountVal).toFixed(2);
         const rrTP2 = (Math.abs(parseFloat(tp2) - parseFloat(entry)) / riskAmountVal).toFixed(2);
 
-        // ðŸ†• ENHANCED TELEGRAM MESSAGE WITH EARLY SIGNALS
+        //ENHANCED TELEGRAM MESSAGE WITH EARLY SIGNALS
         const earlySignalInfo = earlySignals.recommendation !== 'neutral' ? `
 EARLY SIGNAL: ${earlySignals.recommendation.toUpperCase().replace(/_/g, ' ')}
    Confidence: ${earlySignals.highestConfidence}/100
@@ -837,7 +835,7 @@ ASSET TYPE: ${assetConfig.name} (${assetConfig.category})
    Risk: ${(riskPercent * 100).toFixed(2)}% (adjusted for regime)
 `;
 
-        const firstMessage = `${symbol}\n${signal}\nLEVERAGE: 20\nEntry: ${entry}\nTP1: ${tp1} (${rrTP1}R)\nTP2: ${tp2} (${rrTP2}R)\nSL: ${sl}`;
+        const firstMessage = `${symbol}\n${signal}\nLEVERAGE: 20\nEntry: ${entry}\nTP1: ${tp1}\nTP2: ${tp2}\nSL: ${sl}`;
         
         const secondMessage = `
 ${symbol} - DETAILED ANALYSIS
@@ -896,7 +894,7 @@ ${nonAligningIndicators.length > 0 ? '\nNON-ALIGNING:\n' + nonAligningIndicators
         higherTF: { trend1h, trend4h },
         signals: { signal, notes, entry, tp1, tp2, sl, positionSize },
         
-        // ðŸ†• RETURN REGIME & EARLY SIGNAL INFO
+        // RETURN REGIME & EARLY SIGNAL INFO
         regime: {
           regime: regimeData.regime,
           confidence: regimeData.confidence,
@@ -936,7 +934,7 @@ ${nonAligningIndicators.length > 0 ? '\nNON-ALIGNING:\n' + nonAligningIndicators
 }
 
 async function updateCache() {
-  console.log('ðŸ"„ Cache update cycle starting...');
+  console.log(' Cache update cycle starting...');
   
   for (const symbol of symbols) {
     if (failureCount[symbol] >= 5) {
@@ -968,7 +966,7 @@ async function updateCache() {
 }
 
 async function initDataService() {
-  console.log('ðŸš€ Initializing bot...');
+  console.log('Initializing bot...');
   utils.validateEnv();
   for (const symbol of symbols) {
     previousSignal[symbol] = '';
