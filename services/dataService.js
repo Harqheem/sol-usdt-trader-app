@@ -618,6 +618,15 @@ const reasons = isBullish ? bullishReasons : bearishReasons;
         rejectionReason = `1h timeframe is strongly bullish (ADX ${adx1h.toFixed(1)}). Cannot go SHORT.`;
       }
 
+      // Prevent entries too far from SMA200 (usually fails)
+const distanceFromSMA200 = Math.abs(currentPrice - sma200) / sma200;
+
+if (isBullish && currentPrice < sma200 && distanceFromSMA200 > 0.15) {
+  rejectionReason = `Price ${(distanceFromSMA200 * 100).toFixed(1)}% below SMA200. Too far for long entry.`;
+} else if (isBearish && currentPrice > sma200 && distanceFromSMA200 > 0.15) {
+  rejectionReason = `Price ${(distanceFromSMA200 * 100).toFixed(1)}% above SMA200. Too far for short entry.`;
+}
+
     // ENHANCED ENTRY LOGIC WITH EARLY SIGNALS
 // Replace the entry calculation section (around line 480-650) in dataService.js
 
