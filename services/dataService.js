@@ -6,9 +6,10 @@ const config = require('../config');
 const { logSignal } = require('./logsService');
 const { isPaused: getTradingPaused } = require('./pauseService');
 
-// 🆕 NEW IMPORTS
+// NEW IMPORTS
 const { getAssetConfig, getRegimeAdjustments } = require('../config/assetConfig');
 const { detectMarketRegime } = require('./regimeDetection');
+const { detectEarlySignals } = require('./earlySignalDetection');
 
 const client = Binance();
 const { symbols, bullishPatterns, bearishPatterns } = config;
@@ -111,7 +112,7 @@ async function getData(symbol) {
         close: parseFloat(lastCandle.close) 
       };
 
-      // 🆕 GET ASSET-SPECIFIC CONFIG
+      //  GET ASSET-SPECIFIC CONFIG
       const assetConfig = getAssetConfig(symbol);
       const { ema: emaConfig, sma: smaConfig, momentum, volatility: volConfig, trade: tradeConfig, scoring } = assetConfig;
 
@@ -320,7 +321,34 @@ async function getData(symbol) {
       const keyResistance = Math.max(...recentHighs);
       const candlePattern = last15Candles[last15Candles.length - 1].pattern;
 
-      // 🆕 DETECT MARKET REGIME
+      // EARLY SIGNAL DETECTION (ANTICIPATORY - BEFORE REGIME)
+      const earlySignals = detectEarlySignals(
+        closes,
+        highs,
+        lows,
+        volumes,
+        {
+          ema7: parseFloat(ema7),
+          ema25: parseFloat(ema25),
+          ema99: parseFloat(ema99),
+          currentPrice: parseFloat(currentPrice),
+          rsi: parseFloat(rsi),
+          atr: parseFloat(atr)
+        }
+      );
+
+      // Log early signals for debugging
+      if (earlySignals.recommendation !== 'neutral') {
+        console.log(` ${symbol} EARLY SIGNAL: ${earlySignals.recommendation.toUpperCase()} (${earlySignals.highestConfidence} confidence)`);
+        if (earlySignals.bullish.length > 0) {
+          console.log(`   Bullish: ${earlySignals.bullish.slice(0, 2).map(s => s.reason).join(' | ')}`);
+        }
+        if (earlySignals.bearish.length > 0) {
+          console.log(`   Bearish: ${earlySignals.bearish.slice(0, 2).map(s => s.reason).join(' | ')}`);
+        }
+      }
+
+      //  DETECT MARKET REGIME
       const regimeData = detectMarketRegime(
         closes,
         highs,
@@ -339,12 +367,29 @@ async function getData(symbol) {
         }
       );
       const regimeAdjustments = getRegimeAdjustments(regimeData.regime);
-      //console.log(`📊 ${symbol} Regime: ${regimeData.regime} (${regimeData.confidence}% confidence)`);
-      //console.log(`💡 ${symbol} Risk Level: ${regimeData.riskLevel.level} (${regimeData.riskLevel.score}/100)`);
 
-      // Signal scoring
+      // Signal scoring - ENHANCED WITH EARLY SIGNALS
       let bullishScore = 0, bearishScore = 0;
       const bullishReasons = [], bearishReasons = [], nonAligningIndicators = [];
+
+      // ADD EARLY SIGNAL BONUS FIRST (HIGH IMPACT)
+      if (earlySignals.recommendation === 'strong_bullish') {
+        bullishScore += 5;
+        bullishReasons.push(` STRONG EARLY BULLISH SIGNAL (${earlySignals.overallBullishScore} confidence)`);
+        earlySignals.bullish.slice(0, 2).forEach(s => bullishReasons.push(`  • ${s.reason}`));
+      } else if (earlySignals.recommendation === 'bullish') {
+        bullishScore += 3;
+        bullishReasons.push(` Early bullish signal (${earlySignals.overallBullishScore} confidence)`);
+        earlySignals.bullish.slice(0, 2).forEach(s => bullishReasons.push(`  • ${s.reason}`));
+      } else if (earlySignals.recommendation === 'strong_bearish') {
+        bearishScore += 5;
+        bearishReasons.push(` STRONG EARLY BEARISH SIGNAL (${earlySignals.overallBearishScore} confidence)`);
+        earlySignals.bearish.slice(0, 2).forEach(s => bearishReasons.push(`  • ${s.reason}`));
+      } else if (earlySignals.recommendation === 'bearish') {
+        bearishScore += 3;
+        bearishReasons.push(` Early bearish signal (${earlySignals.overallBearishScore} confidence)`);
+        earlySignals.bearish.slice(0, 2).forEach(s => bearishReasons.push(`  • ${s.reason}`));
+      }
 
       // Price vs SMA200 (weight: 3)
       if (currentPrice > sma200) { 
@@ -379,7 +424,7 @@ async function getData(symbol) {
         nonAligningIndicators.push('EMAs mixed');
       }
 
-      // 🆕 ASSET-SPECIFIC RSI LOGIC
+      // ASSET-SPECIFIC RSI LOGIC
       if (rsi >= momentum.rsiBullish && rsi <= momentum.rsiBearish) { 
         bullishScore += 2; 
         bearishScore += 2; 
@@ -465,20 +510,31 @@ async function getData(symbol) {
       if (bullishPenalty !== 0) bullishReasons.push(`Multi-TF ${bullishPenalty > 0 ? 'bonus' : 'penalty'} (${bullishPenalty})`);
       if (bearishPenalty !== 0) bearishReasons.push(`Multi-TF ${bearishPenalty > 0 ? 'bonus' : 'penalty'} (${bearishPenalty})`);
 
-      // 🆕 ASSET-SPECIFIC THRESHOLD + REGIME ADJUSTMENT
-      let threshold = scoring.baseThreshold;
-      let thresholdNote = '';
-      if (adx > momentum.adxStrong) {
-        threshold += scoring.strongADXAdjust;
-        thresholdNote = ` (${scoring.strongADXAdjust}, strong ADX)`;
-      } else if (adx < momentum.adxWeak) {
-        threshold += scoring.weakADXAdjust;
-        thresholdNote = ` (${scoring.weakADXAdjust}, weak ADX)`;
-      }
-
       // Apply regime score bonus
       bullishScore += regimeAdjustments.scoreBonus;
       bearishScore += regimeAdjustments.scoreBonus;
+
+      //  DYNAMIC THRESHOLD WITH EARLY SIGNAL ADJUSTMENT
+      let threshold = scoring.baseThreshold;
+      let thresholdNote = '';
+
+      // REDUCE threshold if we have strong early signals
+      if (earlySignals.recommendation === 'strong_bullish' || earlySignals.recommendation === 'strong_bearish') {
+        threshold -= 3;
+        thresholdNote = ' (-3 for STRONG early signal)';
+      } else if (earlySignals.recommendation === 'bullish' || earlySignals.recommendation === 'bearish') {
+        threshold -= 2;
+        thresholdNote = ' (-2 for early signal)';
+      }
+
+      // Apply ADX adjustments
+      if (adx > momentum.adxStrong) {
+        threshold += scoring.strongADXAdjust;
+        thresholdNote += ` (${scoring.strongADXAdjust}, strong ADX)`;
+      } else if (adx < momentum.adxWeak) {
+        threshold += scoring.weakADXAdjust;
+        thresholdNote += ` (${scoring.weakADXAdjust}, weak ADX)`;
+      }
 
       // Determine signal direction
       const isBullish = bullishScore >= threshold;
@@ -486,224 +542,208 @@ async function getData(symbol) {
       const score = isBullish ? bullishScore : isBearish ? bearishScore : 0;
       const reasons = isBullish ? bullishReasons : bearishReasons;
 
+      // ========== OPTIMIZED ENTRY CALCULATION (1.5x/3x TP) ==========
+      let entry = 'N/A', tp1 = 'N/A', tp2 = 'N/A', sl = 'N/A', positionSize = 'N/A';
+      const accountBalance = 1000;
+      let riskPercent = tradeConfig.minRiskPercent;
+      let entryNote = '', slNote = '', rejectionReason = '';
 
-// ========== OPTIMIZED ENTRY CALCULATION (1.5x/3x TP) ==========
-let entry = 'N/A', tp1 = 'N/A', tp2 = 'N/A', sl = 'N/A', positionSize = 'N/A';
-const accountBalance = 1000;
-let riskPercent = tradeConfig.minRiskPercent;
-let entryNote = '', slNote = '', rejectionReason = '';
-
-// Adjust risk based on score and regime
-if (score >= threshold + 2) {
-  riskPercent = tradeConfig.maxRiskPercent;
-} else if (score >= threshold) {
-  riskPercent = (tradeConfig.minRiskPercent + tradeConfig.maxRiskPercent) / 2;
-}
-riskPercent *= regimeAdjustments.riskMultiplier;
-const riskAmount = accountBalance * riskPercent;
-
-// Hard RSI filters
-if (isBullish && rsi > momentum.rsiOverbought) {
-  rejectionReason = `RSI too high (${rsi.toFixed(2)}) for long entry. Wait for cooldown.`;
-} else if (isBearish && rsi < momentum.rsiOversold) {
-  rejectionReason = `RSI too low (${rsi.toFixed(2)}) for short entry. Wait for bounce.`;
-}
-
-// Regime-based entry avoidance
-if (regimeAdjustments.avoidEntry) {
-  rejectionReason = `Market regime (${regimeData.regime}) not favorable for entries.`;
-}
-
-if (!rejectionReason && (isBullish || isBearish)) {
-  const bullishBias = currentPrice > sma200 && trend1h !== 'Below Strong';
-  const bearishBias = currentPrice < sma200 && trend1h !== 'Above Strong';
-
-  // ============ BULLISH ENTRY LOGIC (Bearish structure, Bullish calculations) ============
-  if (isBullish && bullishBias) {
-    // Find optimal entry based on structure and EMAs
-    const pullbackTargets = [];
-    
-    // Add EMA levels if they're below current price (potential support)
-    if (ema25 < currentPrice && ema25 > currentPrice - atr * 2.5) {
-      pullbackTargets.push({ level: ema25, label: 'EMA25' });
-    }
-    if (ema99 < currentPrice && ema99 > currentPrice - atr * 2.5) {
-      pullbackTargets.push({ level: ema99, label: 'EMA99' });
-    }
-    
-    // Add key support if within reasonable range
-    if (keySupport < currentPrice && keySupport > currentPrice - atr * 3) {
-      pullbackTargets.push({ level: keySupport, label: 'Key Support' });
-    }
-
-    // If no good pullback targets, use slight pullback from current
-    let optimalEntry, entryLabel;
-    if (pullbackTargets.length === 0) {
-      // No nearby structure - use slight pullback
-      optimalEntry = currentPrice - atr * tradeConfig.entryPullbackATR;
-      entryLabel = 'current price - ' + tradeConfig.entryPullbackATR + ' ATR';
-      entryNote = ' (no nearby structure, slight pullback)';
-    } else {
-      // Choose the highest support level (closest to current price)
-      const bestTarget = pullbackTargets.reduce((best, current) => 
-        current.level > best.level ? current : best
-      );
-      optimalEntry = bestTarget.level;
-      entryLabel = bestTarget.label;
-      entryNote = ` (at ${entryLabel})`;
-      
-      // Check confluence with other levels
-      const confluenceCount = pullbackTargets.filter(t => 
-        Math.abs(t.level - optimalEntry) < atr * 0.3
-      ).length;
-      if (confluenceCount > 1) {
-        entryNote += ' ✨ CONFLUENCE';
+      // Adjust risk based on score and regime
+      if (score >= threshold + 2) {
+        riskPercent = tradeConfig.maxRiskPercent;
+      } else if (score >= threshold) {
+        riskPercent = (tradeConfig.minRiskPercent + tradeConfig.maxRiskPercent) / 2;
       }
-    }
+      riskPercent *= regimeAdjustments.riskMultiplier;
+      const riskAmount = accountBalance * riskPercent;
 
-    // Validate entry isn't too aggressive
-    if (optimalEntry > currentPrice - atr * 0.1) {
-      rejectionReason = `Entry too close to current price (${((currentPrice - optimalEntry) / atr).toFixed(2)} ATR away). Wait for pullback.`;
-    } else {
-      entry = optimalEntry.toFixed(decimals);
-
-      // Calculate stop loss - below structure with buffer
-      let stopLoss = keySupport - atr * tradeConfig.slBufferATR;
-      
-      // Adjust SL based on ADX strength
-      if (adx > 30) {
-        stopLoss = keySupport - atr * (tradeConfig.slBufferATR - 0.1); // Tighter stop in strong trends
-        slNote = ' (tight, strong trend)';
-      } else if (adx < 20) {
-        stopLoss = keySupport - atr * (tradeConfig.slBufferATR + 0.2); // Wider stop in weak trends
-        slNote = ' (wide, weak trend)';
-      } else {
-        slNote = ' (below key support)';
+      // Hard RSI filters
+      if (isBullish && rsi > momentum.rsiOverbought) {
+        rejectionReason = `RSI too high (${rsi.toFixed(2)}) for long entry. Wait for cooldown.`;
+      } else if (isBearish && rsi < momentum.rsiOversold) {
+        rejectionReason = `RSI too low (${rsi.toFixed(2)}) for short entry. Wait for bounce.`;
       }
 
-      sl = stopLoss.toFixed(decimals);
+      // Regime-based entry avoidance
+      if (regimeAdjustments.avoidEntry) {
+        rejectionReason = `Market regime (${regimeData.regime}) not favorable for entries.`;
+      }
 
-      // Validate risk is reasonable (max 3% of entry)
-      const riskPercentOfEntry = (parseFloat(entry) - parseFloat(sl)) / parseFloat(entry);
-      if (riskPercentOfEntry > 0.03) {
-        rejectionReason = `Stop loss too far (${(riskPercentOfEntry * 100).toFixed(1)}% of entry). Risk too high.`;
-      } else {
-        // Calculate position size
-        const riskPerUnit = parseFloat(entry) - parseFloat(sl);
-        positionSize = riskPerUnit > 0 ? (riskAmount / riskPerUnit).toFixed(2) : 'Invalid';
+      // AGGRESSIVE ENTRY FOR HIGH-URGENCY EARLY SIGNALS
+      const hasHighUrgencySignal = earlySignals.bullish.some(s => s.urgency === 'high') || 
+                                    earlySignals.bearish.some(s => s.urgency === 'high');
+      
+      let entryPullbackATR = tradeConfig.entryPullbackATR;
+      if (hasHighUrgencySignal) {
+        entryPullbackATR *= 0.5;  // Enter closer to current price for urgent signals
+        entryNote += 'URGENT';
+      }
 
-        // Calculate TP levels - using config values with regime adjustments
-        const risk = parseFloat(entry) - parseFloat(sl);
-        tp1 = (parseFloat(entry) + risk * tradeConfig.tpMultiplier1 * regimeAdjustments.tpMultiplier).toFixed(decimals);
-        tp2 = (parseFloat(entry) + risk * tradeConfig.tpMultiplier2 * regimeAdjustments.tpMultiplier).toFixed(decimals);
+      if (!rejectionReason && (isBullish || isBearish)) {
+        const bullishBias = currentPrice > sma200 && trend1h !== 'Below Strong';
+        const bearishBias = currentPrice < sma200 && trend1h !== 'Above Strong';
 
-        // Check if TP1 is reasonable (not beyond major resistance)
-        if (parseFloat(tp1) > keyResistance && keyResistance > parseFloat(entry)) {
-          tp1 = (keyResistance - atr * 0.2).toFixed(decimals);
-          entryNote += ' (TP1 adjusted for resistance)';
+        // ============ BULLISH ENTRY LOGIC ============
+        if (isBullish && bullishBias) {
+          const pullbackTargets = [];
+          
+          // Add EMA levels if they're below current price (potential support)
+          if (ema25 < currentPrice && ema25 > currentPrice - atr * 2.5) {
+            pullbackTargets.push({ level: ema25, label: 'EMA25' });
+          }
+          if (ema99 < currentPrice && ema99 > currentPrice - atr * 2.5) {
+            pullbackTargets.push({ level: ema99, label: 'EMA99' });
+          }
+          
+          // Add key support if within reasonable range
+          if (keySupport < currentPrice && keySupport > currentPrice - atr * 3) {
+            pullbackTargets.push({ level: keySupport, label: 'Key Support' });
+          }
+
+          let optimalEntry, entryLabel;
+          if (pullbackTargets.length === 0) {
+            optimalEntry = currentPrice - atr * entryPullbackATR;
+            entryLabel = 'current price - ' + entryPullbackATR.toFixed(1) + ' ATR';
+            entryNote += ' (no nearby structure, slight pullback)';
+          } else {
+            const bestTarget = pullbackTargets.reduce((best, current) => 
+              current.level > best.level ? current : best
+            );
+            optimalEntry = bestTarget.level;
+            entryLabel = bestTarget.label;
+            entryNote += ` (at ${entryLabel})`;
+            
+            const confluenceCount = pullbackTargets.filter(t => 
+              Math.abs(t.level - optimalEntry) < atr * 0.3
+            ).length;
+            if (confluenceCount > 1) {
+              entryNote += ' CONFLUENCE';
+            }
+          }
+
+          // Validate entry isn't too aggressive
+          if (optimalEntry > currentPrice - atr * 0.1) {
+            rejectionReason = `Entry too close to current price (${((currentPrice - optimalEntry) / atr).toFixed(2)} ATR away). Wait for pullback.`;
+          } else {
+            entry = optimalEntry.toFixed(decimals);
+
+            let stopLoss = keySupport - atr * tradeConfig.slBufferATR;
+            
+            if (adx > 30) {
+              stopLoss = keySupport - atr * (tradeConfig.slBufferATR - 0.1);
+              slNote = ' (tight, strong trend)';
+            } else if (adx < 20) {
+              stopLoss = keySupport - atr * (tradeConfig.slBufferATR + 0.2);
+              slNote = ' (wide, weak trend)';
+            } else {
+              slNote = ' (below key support)';
+            }
+
+            sl = stopLoss.toFixed(decimals);
+
+            const riskPercentOfEntry = (parseFloat(entry) - parseFloat(sl)) / parseFloat(entry);
+            if (riskPercentOfEntry > 0.03) {
+              rejectionReason = `Stop loss too far (${(riskPercentOfEntry * 100).toFixed(1)}% of entry). Risk too high.`;
+            } else {
+              const riskPerUnit = parseFloat(entry) - parseFloat(sl);
+              positionSize = riskPerUnit > 0 ? (riskAmount / riskPerUnit).toFixed(2) : 'Invalid';
+
+              const risk = parseFloat(entry) - parseFloat(sl);
+              tp1 = (parseFloat(entry) + risk * tradeConfig.tpMultiplier1 * regimeAdjustments.tpMultiplier).toFixed(decimals);
+              tp2 = (parseFloat(entry) + risk * tradeConfig.tpMultiplier2 * regimeAdjustments.tpMultiplier).toFixed(decimals);
+
+              if (parseFloat(tp1) > keyResistance && keyResistance > parseFloat(entry)) {
+                tp1 = (keyResistance - atr * 0.2).toFixed(decimals);
+                entryNote += ' (TP1 adjusted for resistance)';
+              }
+            }
+          }
+        } 
+        
+        // ============ BEARISH ENTRY LOGIC ============
+        else if (isBearish && bearishBias) {
+          const pullbackTargets = [];
+          
+          if (ema25 > currentPrice && ema25 < currentPrice + atr * 2.5) {
+            pullbackTargets.push({ level: ema25, label: 'EMA25' });
+          }
+          if (ema99 > currentPrice && ema99 < currentPrice + atr * 2.5) {
+            pullbackTargets.push({ level: ema99, label: 'EMA99' });
+          }
+          
+          if (keyResistance > currentPrice && keyResistance < currentPrice + atr * 3) {
+            pullbackTargets.push({ level: keyResistance, label: 'Key Resistance' });
+          }
+
+          let optimalEntry, entryLabel;
+          if (pullbackTargets.length === 0) {
+            optimalEntry = currentPrice + atr * entryPullbackATR;
+            entryLabel = 'current price + ' + entryPullbackATR.toFixed(1) + ' ATR';
+            entryNote += ' (no nearby structure, slight pullback)';
+          } else {
+            const bestTarget = pullbackTargets.reduce((best, current) => 
+              current.level < best.level ? current : best
+            );
+            optimalEntry = bestTarget.level;
+            entryLabel = bestTarget.label;
+            entryNote += ` (at ${entryLabel})`;
+            
+            const confluenceCount = pullbackTargets.filter(t => 
+              Math.abs(t.level - optimalEntry) < atr * 0.3
+            ).length;
+            if (confluenceCount > 1) {
+              entryNote += 'CONFLUENCE';
+            }
+          }
+
+          if (optimalEntry < currentPrice + atr * 0.1) {
+            rejectionReason = `Entry too close to current price (${((optimalEntry - currentPrice) / atr).toFixed(2)} ATR away). Wait for pullback.`;
+          } else {
+            entry = optimalEntry.toFixed(decimals);
+
+            let stopLoss = keyResistance + atr * tradeConfig.slBufferATR;
+            
+            if (adx > 30) {
+              stopLoss = keyResistance + atr * (tradeConfig.slBufferATR - 0.1);
+              slNote = ' (tight, strong trend)';
+            } else if (adx < 20) {
+              stopLoss = keyResistance + atr * (tradeConfig.slBufferATR + 0.2);
+              slNote = ' (wide, weak trend)';
+            } else {
+              slNote = ' (above key resistance)';
+            }
+
+            sl = stopLoss.toFixed(decimals);
+
+            const riskPercentOfEntry = (parseFloat(sl) - parseFloat(entry)) / parseFloat(entry);
+            if (riskPercentOfEntry > 0.03) {
+              rejectionReason = `Stop loss too far (${(riskPercentOfEntry * 100).toFixed(1)}% of entry). Risk too high.`;
+            } else {
+              const riskPerUnit = parseFloat(sl) - parseFloat(entry);
+              positionSize = riskPerUnit > 0 ? (riskAmount / riskPerUnit).toFixed(2) : 'Invalid';
+
+              const risk = parseFloat(sl) - parseFloat(entry);
+              tp1 = (parseFloat(entry) - risk * tradeConfig.tpMultiplier1 * regimeAdjustments.tpMultiplier).toFixed(decimals);
+              tp2 = (parseFloat(entry) - risk * tradeConfig.tpMultiplier2 * regimeAdjustments.tpMultiplier).toFixed(decimals);
+
+              if (parseFloat(tp1) < keySupport && keySupport < parseFloat(entry)) {
+                tp1 = (keySupport + atr * 0.2).toFixed(decimals);
+                entryNote += ' (TP1 adjusted for support)';
+              }
+            }
+          }
         }
       }
-    }
-  } 
-  
-  // ============ BEARISH ENTRY LOGIC (Same structure, Bullish calculations) ============
-  else if (isBearish && bearishBias) {
-    // Find optimal entry based on structure and EMAs
-    const pullbackTargets = [];
-    
-    // Add EMA levels if they're above current price (potential resistance)
-    if (ema25 > currentPrice && ema25 < currentPrice + atr * 2.5) {
-      pullbackTargets.push({ level: ema25, label: 'EMA25' });
-    }
-    if (ema99 > currentPrice && ema99 < currentPrice + atr * 2.5) {
-      pullbackTargets.push({ level: ema99, label: 'EMA99' });
-    }
-    
-    // Add key resistance if within reasonable range
-    if (keyResistance > currentPrice && keyResistance < currentPrice + atr * 3) {
-      pullbackTargets.push({ level: keyResistance, label: 'Key Resistance' });
-    }
-
-    // If no good pullback targets, use slight pullback from current
-    let optimalEntry, entryLabel;
-    if (pullbackTargets.length === 0) {
-      // No nearby structure - use slight pullback
-      optimalEntry = currentPrice + atr * tradeConfig.entryPullbackATR;
-      entryLabel = 'current price + ' + tradeConfig.entryPullbackATR + ' ATR';
-      entryNote = ' (no nearby structure, slight pullback)';
-    } else {
-      // Choose the lowest resistance level (closest to current price)
-      const bestTarget = pullbackTargets.reduce((best, current) => 
-        current.level < best.level ? current : best
-      );
-      optimalEntry = bestTarget.level;
-      entryLabel = bestTarget.label;
-      entryNote = ` (at ${entryLabel})`;
-      
-      // Check confluence with other levels
-      const confluenceCount = pullbackTargets.filter(t => 
-        Math.abs(t.level - optimalEntry) < atr * 0.3
-      ).length;
-      if (confluenceCount > 1) {
-        entryNote += ' ✨ CONFLUENCE';
-      }
-    }
-
-    // Validate entry isn't too aggressive
-    if (optimalEntry < currentPrice + atr * 0.1) {
-      rejectionReason = `Entry too close to current price (${((optimalEntry - currentPrice) / atr).toFixed(2)} ATR away). Wait for pullback.`;
-    } else {
-      entry = optimalEntry.toFixed(decimals);
-
-      // Calculate stop loss - above structure with buffer
-      let stopLoss = keyResistance + atr * tradeConfig.slBufferATR;
-      
-      // Adjust SL based on ADX strength
-      if (adx > 30) {
-        stopLoss = keyResistance + atr * (tradeConfig.slBufferATR - 0.1); // Tighter stop in strong trends
-        slNote = ' (tight, strong trend)';
-      } else if (adx < 20) {
-        stopLoss = keyResistance + atr * (tradeConfig.slBufferATR + 0.2); // Wider stop in weak trends
-        slNote = ' (wide, weak trend)';
-      } else {
-        slNote = ' (above key resistance)';
-      }
-
-      sl = stopLoss.toFixed(decimals);
-
-      // Validate risk is reasonable (max 3% of entry)
-      const riskPercentOfEntry = (parseFloat(sl) - parseFloat(entry)) / parseFloat(entry);
-      if (riskPercentOfEntry > 0.03) {
-        rejectionReason = `Stop loss too far (${(riskPercentOfEntry * 100).toFixed(1)}% of entry). Risk too high.`;
-      } else {
-        // Calculate position size
-        const riskPerUnit = parseFloat(sl) - parseFloat(entry);
-        positionSize = riskPerUnit > 0 ? (riskAmount / riskPerUnit).toFixed(2) : 'Invalid';
-
-        // Calculate TP levels - using config values with regime adjustments
-        const risk = parseFloat(sl) - parseFloat(entry);
-        tp1 = (parseFloat(entry) - risk * tradeConfig.tpMultiplier1 * regimeAdjustments.tpMultiplier).toFixed(decimals);
-        tp2 = (parseFloat(entry) - risk * tradeConfig.tpMultiplier2 * regimeAdjustments.tpMultiplier).toFixed(decimals);
-
-        // Check if TP1 is reasonable (not beyond major support)
-        if (parseFloat(tp1) < keySupport && keySupport < parseFloat(entry)) {
-          tp1 = (keySupport + atr * 0.2).toFixed(decimals);
-          entryNote += ' (TP1 adjusted for support)';
-        }
-      }
-    }
-  }
-}
       // ========== END OPTIMIZED ENTRY CALCULATION ==========
 
-// Signal generation
+      // Signal generation
       let signal = 'No Trade', notes = 'Mixed signals. Wait for breakout.';
       if (rejectionReason) {
         signal = 'Wait';
         notes = `Score: ${score}/18${thresholdNote}\nREJECTED: ${rejectionReason}`;
       } else if (isBullish || isBearish) {
         signal = isBullish ? 'Enter Long' : 'Enter Short';
-        notes = `Score: ${score}/18${thresholdNote}\nTop Reasons:\n- ${reasons.slice(0, 3).join('\n- ')}`;
+        notes = `Score: ${score}/18${thresholdNote}\nTop Reasons:\n- ${reasons.slice(0, 5).join('\n- ')}`;
         if (entryNote) notes += `\nEntry:${entryNote}`;
       }
 
@@ -723,24 +763,39 @@ if (!rejectionReason && (isBullish || isBearish)) {
         const rrTP1 = (Math.abs(parseFloat(tp1) - parseFloat(entry)) / riskAmountVal).toFixed(2);
         const rrTP2 = (Math.abs(parseFloat(tp2) - parseFloat(entry)) / riskAmountVal).toFixed(2);
 
+        //  ENHANCED TELEGRAM MESSAGE WITH EARLY SIGNALS
+        const earlySignalInfo = earlySignals.recommendation !== 'neutral' ? `
+ EARLY SIGNAL: ${earlySignals.recommendation.toUpperCase().replace(/_/g, ' ')}
+   Confidence: ${earlySignals.highestConfidence}/100
+   Key Factors:
+${earlySignals.recommendation.includes('bullish') 
+  ? earlySignals.bullish.slice(0, 3).map(s => `   • ${s.reason}${s.urgency === 'high' ? '' : ''}`).join('\n')
+  : earlySignals.bearish.slice(0, 3).map(s => `   • ${s.reason}${s.urgency === 'high' ? '' : ''}`).join('\n')
+}
+` : '';
+
         const regimeInfo = `
 MARKET REGIME: ${regimeData.regime.toUpperCase().replace(/_/g, ' ')}
    Confidence: ${regimeData.confidence}%
    Risk Level: ${regimeData.riskLevel.level} (${regimeData.riskLevel.score}/100)
    ${regimeData.description}
 ${regimeData.recommendations.warnings.length > 0 ? 'WARNINGS:\n' + regimeData.recommendations.warnings.join('\n') : ''}
+
 ASSET TYPE: ${assetConfig.name} (${assetConfig.category})
    ATR Multiplier: ${volConfig.atrMultiplier}x
    Risk: ${(riskPercent * 100).toFixed(2)}% (adjusted for regime)
 `;
 
-        const firstMessage = `${symbol}\n${signal}\nLEVERAGE: 20\nEntry: ${entry}\nTP1: ${tp1}\nTP2: ${tp2}\nSL: ${sl}`;
+        const firstMessage = `${symbol}\n${signal}\nLEVERAGE: 20\nEntry: ${entry}\nTP1: ${tp1} (${rrTP1}R)\nTP2: ${tp2} (${rrTP2}R)\nSL: ${sl}`;
+        
         const secondMessage = `
 ${symbol} - DETAILED ANALYSIS
-${regimeInfo}
+${earlySignalInfo}${regimeInfo}
 SIGNAL STRENGTH: ${score}/18 (Threshold: ${threshold}${thresholdNote})
+
 ${isBullish ? 'Bullish' : 'Bearish'} Reasons (Top ${Math.min(5, reasons.length)}):
 ${reasons.slice(0, 5).map((r, i) => `${i + 1}. ${r}`).join('\n')}
+
 ${nonAligningIndicators.length > 0 ? '\nNON-ALIGNING:\n' + nonAligningIndicators.slice(0, 5).map((r, i) => `${i + 1}. ${r}`).join('\n') : ''}
 `;
 
@@ -789,13 +844,22 @@ ${nonAligningIndicators.length > 0 ? '\nNON-ALIGNING:\n' + nonAligningIndicators
         candlePattern,
         higherTF: { trend1h, trend4h },
         signals: { signal, notes, entry, tp1, tp2, sl, positionSize },
-        // 🆕 RETURN REGIME & ASSET INFO
+        
+        // RETURN REGIME & EARLY SIGNAL INFO
         regime: {
           regime: regimeData.regime,
           confidence: regimeData.confidence,
           description: regimeData.description,
           riskLevel: regimeData.riskLevel,
           recommendations: regimeData.recommendations
+        },
+        earlySignals: {
+          recommendation: earlySignals.recommendation,
+          bullishScore: earlySignals.overallBullishScore,
+          bearishScore: earlySignals.overallBearishScore,
+          confidence: earlySignals.highestConfidence,
+          bullishFactors: earlySignals.bullish.slice(0, 3),
+          bearishFactors: earlySignals.bearish.slice(0, 3)
         },
         assetInfo: {
           name: assetConfig.name,
@@ -805,7 +869,7 @@ ${nonAligningIndicators.length > 0 ? '\nNON-ALIGNING:\n' + nonAligningIndicators
     } catch (error) {
       if (error.message === 'Request timeout' || error.code === 'ETIMEDOUT' || error.message.includes('429')) {
         attempt++;
-        const backoff = Math.pow(2, attempt) * 2000; // Increased backoff
+        const backoff = Math.pow(2, attempt) * 2000;
         console.warn(`${symbol}: ${error.message}, retry ${attempt}/${maxRetries} in ${backoff}ms`);
         if (attempt < maxRetries) {
           await new Promise(resolve => setTimeout(resolve, backoff));
@@ -821,12 +885,11 @@ ${nonAligningIndicators.length > 0 ? '\nNON-ALIGNING:\n' + nonAligningIndicators
 }
 
 async function updateCache() {
-  console.log('🔄 Cache update cycle starting...');
+  console.log('Cache update cycle starting...');
   
-  // Process symbols sequentially with delay to avoid rate limits
   for (const symbol of symbols) {
     if (failureCount[symbol] >= 5) {
-      console.warn(`⏭️ Skipping ${symbol} (5+ failures)`);
+      console.warn(`Skipping ${symbol} (5+ failures)`);
       continue;
     }
     
@@ -835,27 +898,26 @@ async function updateCache() {
       if (!data.error) {
         cachedData[symbol] = data;
         failureCount[symbol] = 0;
-        console.log(`✅ ${symbol} updated`);
+        console.log(`${symbol} updated`);
       } else {
         failureCount[symbol] = (failureCount[symbol] || 0) + 1;
-        console.error(`❌ ${symbol} failed (${failureCount[symbol]}/5): ${data.error}`);
+        console.error(`${symbol} failed (${failureCount[symbol]}/5): ${data.error}`);
       }
     } catch (error) {
       failureCount[symbol] = (failureCount[symbol] || 0) + 1;
-      console.error(`❌ ${symbol} crashed (${failureCount[symbol]}/5):`, error.message);
+      console.error(`${symbol} crashed (${failureCount[symbol]}/5):`, error.message);
     }
     
-    // Add 2-second delay between symbols to avoid rate limits
     if (symbols.indexOf(symbol) < symbols.length - 1) {
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
   }
   
-  console.log('✅ Cache cycle complete');
+  console.log('Cache cycle complete');
 }
 
 async function initDataService() {
-  console.log('🚀 Initializing bot...');
+  console.log('Initializing bot...');
   utils.validateEnv();
   for (const symbol of symbols) {
     previousSignal[symbol] = '';
@@ -868,23 +930,21 @@ async function initDataService() {
   }
   console.log('Loading initial cache (sequential with delays)...');
   
-  // Load symbols sequentially with delay
   for (const symbol of symbols) {
     try {
       cachedData[symbol] = await getData(symbol);
-      console.log(`✅ ${symbol} loaded`);
+      console.log(`${symbol} loaded`);
     } catch (error) {
-      console.error(`❌ ${symbol} load failed:`, error.message);
+      console.error(`${symbol} load failed:`, error.message);
       cachedData[symbol] = { error: 'Failed initial load' };
     }
     
-    // Add 2-second delay between loads
     if (symbols.indexOf(symbol) < symbols.length - 1) {
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
   }
   
-  console.log('✅ Initial cache complete');
+  console.log('Initial cache complete');
 }
 
 module.exports = { 
