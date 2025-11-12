@@ -141,34 +141,22 @@ This pending trade has been automatically expired because the entry level was no
       
       // Check if entry hit
       const entryHit = isBuy ? currentPrice >= trade.entry : currentPrice <= trade.entry;
-       
 
       if (entryHit) {
         const updates = { 
           status: 'opened', 
           open_time: new Date().toISOString(), 
-          actual_fill_price: currentPrice  // Track what price it actually filled at
-  };
-  await updateTrade(trade.id, updates);
-  Object.assign(trade, updates);
-  console.log(`✅ Opened ${trade.symbol} at ${currentPrice} (planned: ${trade.entry})`);
-}
+          actual_fill_price: currentPrice,
+          sl_armed_time: Date.now() + 5000 // don't check SL for 5s
+        };
+        await updateTrade(trade.id, updates);
+        Object.assign(trade, updates);
+        console.log(`✅ Opened ${trade.symbol} at ${currentPrice} (planned: ${trade.entry})`);
+        return; // important: skip further SL/TP logic this tick
+      }
       
-      return;
+      return; // Still pending, no further action
     }
-
-    if (entryHit) {
-  const updates = { 
-    status: 'opened', 
-    open_time: new Date().toISOString(), 
-    actual_fill_price: currentPrice,
-    sl_armed_time: Date.now() + 5000 // 🆕 don't check SL for 5s
-  };
-  await updateTrade(trade.id, updates);
-  Object.assign(trade, updates);
-  console.log(`✅ Opened ${trade.symbol} at ${currentPrice} (planned: ${trade.entry})`);
-  return; // 🆕 important: skip further SL/TP logic this tick
-}
 
     // ============ OPENED TRADES ============
     if (trade.status === 'opened') {
@@ -179,14 +167,14 @@ This pending trade has been automatically expired because the entry level was no
       if (tp1Hit && remainingFraction === 1.0) {
         const effectiveEntry = trade.actual_fill_price || trade.entry;
 
-const partialPnl = calculatePnL(
-  effectiveEntry,  // Use actual fill, not planned entry
-  trade.tp1, 
-  isBuy, 
-  positionSize, 
-  leverage, 
-  0.5
-);
+        const partialPnl = calculatePnL(
+          effectiveEntry,
+          trade.tp1, 
+          isBuy, 
+          positionSize, 
+          leverage, 
+          0.5
+        );
         
         updates = { 
           partial_raw_pnl_pct: partialPnl.rawPnlPct,
@@ -226,13 +214,11 @@ const partialPnl = calculatePnL(
         console.log(`✅ Closed remaining at TP2 for ${trade.symbol}`);
       }
 
-      // Check SL (original or updated)
+      // Check SL (original or updated) - with armed time check
       const slHit = isBuy ? currentPrice <= currentSl : currentPrice >= currentSl;
-const slArmed = !trade.sl_armed_time || Date.now() > trade.sl_armed_time;
+      const slArmed = !trade.sl_armed_time || Date.now() > trade.sl_armed_time;
 
-if (slArmed && slHit) {
-      const slHit = isBuy ? currentPrice <= currentSl : currentPrice >= currentSl;
-      if (slHit) {
+      if (slArmed && slHit) {
         let exitPrice = currentSl;
         
         if (remainingFraction === 1.0) {
@@ -292,24 +278,7 @@ if (slArmed && slHit) {
         }
       }
     }
-  }
   } catch (err) {
     console.error(`Processing error for ${trade.symbol}:`, err);
   }
 }
-
-async function updateTrade(id, updates) {
-  const { error } = await supabase
-    .from('signals')
-    .update(updates)
-    .eq('id', id);
-  if (error) console.error('Update trade error:', error);
-}
-
-// Periodically refresh open trades and manage subscriptions (every 5 minutes)
-setInterval(refreshOpenTrades, 300000);
-
-// Initial refresh
-refreshOpenTrades().catch(err => console.error('Initial refresh failed:', err));
-
-module.exports = { };
