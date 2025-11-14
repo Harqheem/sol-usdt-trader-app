@@ -310,11 +310,11 @@ async function sendFastAlert(symbol, signal, currentPrice, assetConfig) {
   // Calculate R:R
   const risk = Math.abs(signal.entry - signal.sl);
   const tp1 = signal.direction === 'LONG' 
-    ? signal.entry + risk * 1.5 
-    : signal.entry - risk * 1.5;
+    ? signal.entry + risk * 0.5 
+    : signal.entry - risk * 0.5;
   const tp2 = signal.direction === 'LONG' 
-    ? signal.entry + risk * 3.0 
-    : signal.entry - risk * 3.0;
+    ? signal.entry + risk * 1.1 
+    : signal.entry - risk * 1.1;
 
   const decimals = getDecimalPlaces(currentPrice);
 
