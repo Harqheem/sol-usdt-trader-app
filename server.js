@@ -1,10 +1,12 @@
+// server.js - UPDATED FOR WEBSOCKET SERVICE
+
 require('dotenv').config();
 const express = require('express');
 const routes = require('./routes');
-const { initDataService, updateCache } = require('./services/dataService');
+const { initDataService, cleanup, getServiceStatus, forceRefresh } = require('./services/dataService');
 const config = require('./config');
 const pauseService = require('./services/pauseService');
-require('./services/monitorService'); // Require to start internal monitoring
+require('./services/monitorService'); // Start trade monitoring
 
 const { symbols } = config;
 
@@ -16,45 +18,8 @@ app.use(routes);
 
 let isShuttingDown = false;
 let server;
-let failureCount = {};
-let updateCacheInterval = null;
-let isUpdatingCache = false; // Prevent overlapping updates
 
-// Wrapped updateCache to prevent overlaps
-async function safeUpdateCache() {
-  if (isUpdatingCache) {
-    console.log('⏭️ Skipping cache update (previous update still running)');
-    return;
-  }
-  
-  isUpdatingCache = true;
-  try {
-    await updateCache();
-  } catch (err) {
-    console.error('❌ Cache update error:', err.message);
-  } finally {
-    isUpdatingCache = false;
-  }
-}
-
-// Start cache update interval (5 minutes)
-function startCacheUpdates() {
-  // Clear any existing interval
-  if (updateCacheInterval) {
-    clearInterval(updateCacheInterval);
-  }
-  
-  // Set new interval - 5 minutes
-  updateCacheInterval = setInterval(safeUpdateCache, 300000);
-  console.log('✅ Cache update interval started (5 minutes)');
-}
-
-// Reset failure counts every hour
-setInterval(() => {
-  failureCount = {};
-  console.log('🔄 Failure counts reset');
-}, 3600000);
-
+// Graceful shutdown handlers
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
 
@@ -63,29 +28,54 @@ async function gracefulShutdown() {
   isShuttingDown = true;
   console.log('\n🛑 Shutting down gracefully...');
   
-  // Clear intervals
-  if (updateCacheInterval) {
-    clearInterval(updateCacheInterval);
-    console.log('✅ Cache update interval cleared');
-  }
+  // Cleanup WebSocket connections
+  cleanup();
   
   if (server) {
     server.close(() => console.log('✅ HTTP server closed'));
   }
   
-  await new Promise(resolve => setTimeout(resolve, 5000));
+  await new Promise(resolve => setTimeout(resolve, 3000));
   console.log('✅ Shutdown complete');
   process.exit(0);
 }
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  try {
+    const status = getServiceStatus();
+    res.json({
+      status: 'ok',
+      service: status,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('❌ Health check error:', err);
+    res.status(500).json({ 
+      status: 'error',
+      error: err.message 
+    });
+  }
+});
+
+// Service status endpoint
+app.get('/service-status', (req, res) => {
+  try {
+    const status = getServiceStatus();
+    res.json(status);
+  } catch (err) {
+    console.error('❌ Service status error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Get trading status
 app.get('/trading-status', (req, res) => {
   try {
     const status = pauseService.getStatus();
-    console.log('📊 Status requested:', status);
     res.json(status);
   } catch (err) {
-    console.error('❌ Status error:', err);
+    console.error('❌ Trading status error:', err);
     res.status(500).json({ 
       error: err.message,
       isPaused: false,
@@ -101,14 +91,14 @@ app.post('/toggle-trading', (req, res) => {
   try {
     const newState = pauseService.toggleTrading();
     const message = newState ? 'Trading paused successfully' : 'Trading resumed successfully';
-    console.log('🔄', message, '- New state:', newState);
+    console.log('🔄', message);
     res.json({
       success: true,
       isPaused: newState,
       message: message
     });
   } catch (err) {
-    console.error('❌ Toggle error:', err);
+    console.error('❌ Toggle trading error:', err);
     res.status(500).json({ 
       success: false,
       error: err.message 
@@ -116,7 +106,7 @@ app.post('/toggle-trading', (req, res) => {
   }
 });
 
-// Optional: Manual pause/resume endpoints for testing
+// Manual pause endpoint
 app.post('/pause-trading', (req, res) => {
   try {
     pauseService.pauseTrading();
@@ -128,6 +118,7 @@ app.post('/pause-trading', (req, res) => {
   }
 });
 
+// Manual resume endpoint
 app.post('/resume-trading', (req, res) => {
   try {
     pauseService.resumeTrading();
@@ -163,7 +154,7 @@ app.post('/terminate-trade/:id', async (req, res) => {
       });
     }
     
-    // Update to terminated status with no PnL or fees
+    // Update to terminated status
     const { error: updateError } = await supabase
       .from('signals')
       .update({
@@ -186,7 +177,7 @@ app.post('/terminate-trade/:id', async (req, res) => {
   }
 });
 
-// Bulk terminate trades endpoint - ONLY PENDING TRADES
+// Bulk terminate trades endpoint
 app.post('/terminate-trades-bulk', async (req, res) => {
   try {
     const { tradeIds } = req.body;
@@ -246,45 +237,77 @@ app.post('/terminate-trades-bulk', async (req, res) => {
   }
 });
 
-// Manual cache update endpoint (for testing/debugging)
-app.post('/force-cache-update', async (req, res) => {
+// Force refresh endpoint (for debugging)
+app.post('/force-refresh/:symbol', async (req, res) => {
   try {
-    if (isUpdatingCache) {
-      return res.status(429).json({ 
+    const symbol = req.params.symbol;
+    
+    if (!symbols.includes(symbol)) {
+      return res.status(400).json({ 
         success: false, 
-        error: 'Cache update already in progress' 
+        error: `Symbol ${symbol} not monitored` 
       });
     }
     
-    console.log('🔄 Manual cache update triggered');
-    await safeUpdateCache();
-    res.json({ success: true, message: 'Cache updated successfully' });
+    console.log(`🔄 Manual refresh requested for ${symbol}`);
+    const result = await forceRefresh(symbol);
+    
+    if (result.error) {
+      return res.status(500).json({ 
+        success: false, 
+        error: result.error,
+        details: result.details 
+      });
+    }
+    
+    res.json({ 
+      success: true, 
+      message: `${symbol} refreshed successfully`,
+      data: result 
+    });
   } catch (err) {
-    console.error('❌ Force cache update error:', err);
+    console.error('❌ Force refresh error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
+// Start the server
 (async () => {
   try {
-    console.log('🚀 Starting server initialization...');
+    console.log('🚀 Starting Crypto Trading Bot...');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     
-    // Initialize data service (loads all symbols sequentially with delays)
+    // Initialize WebSocket data service
+    console.log('\n📡 Initializing WebSocket data service...');
     await initDataService();
     
-    // Start the cache update interval AFTER initialization completes
-    startCacheUpdates();
+    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     
     const port = process.env.PORT || 3000;
     server = app.listen(port, () => {
-      console.log(`✅ Server running on http://localhost:${port}`);
-      console.log(`📊 Monitoring ${symbols.length} symbols: ${symbols.join(', ')}`);
-      console.log(`🔄 Cache updates every 5 minutes`);
-      console.log(`🏥 Health check: http://localhost:${port}/health`);
-      console.log(`⏸️ Pause trading: POST http://localhost:${port}/toggle-trading`);
+      console.log('\n✅ SERVER RUNNING');
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      console.log(`🌐 Server URL: http://localhost:${port}`);
+      console.log(`📊 Monitoring: ${symbols.length} symbols`);
+      console.log(`🔌 Data Source: WebSocket (real-time)`);
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      console.log('\n📍 ENDPOINTS:');
+      console.log(`   Health: http://localhost:${port}/health`);
+      console.log(`   Status: http://localhost:${port}/service-status`);
+      console.log(`   Trading: http://localhost:${port}/trading-status`);
+      console.log(`   Toggle: POST http://localhost:${port}/toggle-trading`);
+      console.log(`   Refresh: POST http://localhost:${port}/force-refresh/:symbol`);
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+      
+      console.log('✨ Bot is now monitoring markets in real-time');
+      console.log('⏰ Signals will be analyzed when 30m candles close\n');
     });
   } catch (error) {
-    console.error('❌ Failed to start server:', error);
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('❌ FAILED TO START SERVER');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error(error);
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
     process.exit(1);
   }
 })();
