@@ -24,10 +24,24 @@ function updateUI(data) {
   
   // Check for required data structure
   if (!data.core || !data.movingAverages || !data.volatility || !data.signals) {
-    console.error('Invalid data structure:', data);
+    console.error('Invalid data structure. Received:', JSON.stringify(data, null, 2));
+    console.error('Missing fields:', {
+      hasCore: !!data.core,
+      hasMovingAverages: !!data.movingAverages,
+      hasVolatility: !!data.volatility,
+      hasSignals: !!data.signals,
+      hasError: !!data.error,
+      actualKeys: Object.keys(data)
+    });
     document.getElementById('signal').textContent = '❌ Invalid Data Structure';
     document.getElementById('signal').style.color = 'red';
-    document.getElementById('notes').textContent = 'Data is missing required fields. Check server logs.';
+    
+    // Show more helpful error message based on what's actually in the data
+    if (data.error) {
+      document.getElementById('notes').textContent = `Error: ${data.error}${data.details ? ' - ' + data.details : ''}`;
+    } else {
+      document.getElementById('notes').textContent = `Data is missing required fields. Available keys: ${Object.keys(data).join(', ')}`;
+    }
     return;
   }
   
