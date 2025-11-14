@@ -4,16 +4,100 @@ const TI = require('technicalindicators');
 const { wsCache } = require('./cacheManager');
 const { sendTelegramNotification } = require('../notificationService');
 const { getAssetConfig } = require('../../config/assetConfig');
+const config = require('./fastSignalConfig');
 
-// Track what we've already alerted on to avoid spam
+const dailySignalCounts = {
+  date: new Date().toDateString(),
+  total: 0,
+  bySymbol: new Map() // symbol -> count
+};
+
+// Reset daily counts at midnight
+function checkAndResetDailyCounts() {
+  const today = new Date().toDateString();
+  if (dailySignalCounts.date !== today) {
+    console.log(`📊 Fast signals sent yesterday: ${dailySignalCounts.total} total`);
+    dailySignalCounts.date = today;
+    dailySignalCounts.total = 0;
+    dailySignalCounts.bySymbol.clear();
+  }
+}
+
+// Check if we can send another fast signal
+function canSendFastSignal(symbol) {
+  checkAndResetDailyCounts();
+  
+  const { maxDailyFastSignals, maxPerSymbolPerDay } = config.riskManagement;
+  
+  // Check total daily limit
+  if (dailySignalCounts.total >= maxDailyFastSignals) {
+    console.log(`⛔ Fast signals: Daily limit reached (${maxDailyFastSignals})`);
+    return false;
+  }
+  
+  // Check per-symbol limit
+  const symbolCount = dailySignalCounts.bySymbol.get(symbol) || 0;
+  if (symbolCount >= maxPerSymbolPerDay) {
+    console.log(`⛔ ${symbol}: Per-symbol fast signal limit reached (${maxPerSymbolPerDay})`);
+    return false;
+  }
+  
+  return true;
+}
+
+// Increment fast signal count
+function incrementFastSignalCount(symbol) {
+  checkAndResetDailyCounts();
+  
+  dailySignalCounts.total++;
+  const symbolCount = dailySignalCounts.bySymbol.get(symbol) || 0;
+  dailySignalCounts.bySymbol.set(symbol, symbolCount + 1);
+  
+  console.log(`📊 Fast signals today: ${dailySignalCounts.total}/${config.riskManagement.maxDailyFastSignals} (${symbol}: ${symbolCount + 1}/${config.riskManagement.maxPerSymbolPerDay})`);
+}
+
+// MODIFY sendFastAlert to check limits:
+async function sendFastAlert(symbol, signal, currentPrice, assetConfig) {
+  // Check daily limits first
+  if (!canSendFastSignal(symbol)) {
+    return;
+  }
+  
+  const now = Date.now();
+  const key = `${symbol}_${signal.type}`;
+  
+  // Check cooldown
+  if (alertedSignals.has(key)) {
+    const lastAlert = alertedSignals.get(key);
+    if (now - lastAlert < config.alertCooldown) {
+      if (config.logging.logDetections) {
+        console.log(`⏭️ ${symbol}: ${signal.type} detected but on cooldown`);
+      }
+      return;
+    }
+  }
+}
+// Track what we've already alerted on
 const alertedSignals = new Map(); // symbol -> {type, timestamp}
-const ALERT_COOLDOWN = 3600000; // 1 hour between same-type alerts
+
+// NEW: Throttle checks to avoid running on every tick
+const lastCheckTime = new Map(); // symbol -> timestamp
+const CHECK_THROTTLE = config.checkInterval || 10000; // 10 seconds default
 
 /**
- * FAST SIGNAL DETECTION - Runs on every price update
- * Only sends alerts for HIGH URGENCY signals that need immediate action
+ * FAST SIGNAL DETECTION - Throttled to avoid performance issues
  */
 async function checkFastSignals(symbol, currentPrice) {
+  // Throttle: only check every X seconds
+  const now = Date.now();
+  const lastCheck = lastCheckTime.get(symbol) || 0;
+  
+  if (now - lastCheck < CHECK_THROTTLE) {
+    return; // Too soon, skip this check
+  }
+  
+  lastCheckTime.set(symbol, now);
+  
   try {
     const cache = wsCache[symbol];
     if (!cache || !cache.isReady) return;
@@ -37,7 +121,7 @@ async function checkFastSignals(symbol, currentPrice) {
     
     const volumes = candles30m.map(c => parseFloat(c.volume));
 
-    // Calculate minimal indicators needed for fast detection
+    // Calculate minimal indicators
     const ema7 = getLast(TI.EMA.calculate({ period: 7, values: closes }));
     const ema25 = getLast(TI.EMA.calculate({ period: 25, values: closes }));
     const atr = getLast(TI.ATR.calculate({ 
@@ -51,39 +135,42 @@ async function checkFastSignals(symbol, currentPrice) {
 
     const assetConfig = getAssetConfig(symbol);
 
-    // === FAST SIGNAL CHECKS (in order of urgency) ===
-    
-    // 1. BREAKOUT WITH VOLUME SURGE (Most urgent - needs immediate entry)
-    const breakoutSignal = detectBreakoutMomentum(symbol, currentPrice, closes, highs, lows, volumes, atr, ema7, ema25);
-    if (breakoutSignal) {
-      await sendFastAlert(symbol, breakoutSignal, currentPrice, assetConfig);
-      return;
+    // Check signals in order of priority
+    if (config.signals.breakout.enabled) {
+      const breakoutSignal = detectBreakoutMomentum(symbol, currentPrice, closes, highs, lows, volumes, atr, ema7, ema25);
+      if (breakoutSignal) {
+        await sendFastAlert(symbol, breakoutSignal, currentPrice, assetConfig);
+        return;
+      }
     }
 
-    // 2. SUPPORT/RESISTANCE BOUNCE (Time-sensitive - price at key level NOW)
-    const bounceSignal = detectSRBounce(symbol, currentPrice, highs, lows, closes, atr);
-    if (bounceSignal) {
-      await sendFastAlert(symbol, bounceSignal, currentPrice, assetConfig);
-      return;
+    if (config.signals.supportResistanceBounce.enabled) {
+      const bounceSignal = detectSRBounce(symbol, currentPrice, highs, lows, closes, atr);
+      if (bounceSignal) {
+        await sendFastAlert(symbol, bounceSignal, currentPrice, assetConfig);
+        return;
+      }
     }
 
-    // 3. EMA CROSSOVER (Early trend change - get in early)
-    const crossoverSignal = detectEMACrossover(symbol, ema7, ema25, closes, currentPrice);
-    if (crossoverSignal) {
-      await sendFastAlert(symbol, crossoverSignal, currentPrice, assetConfig);
-      return;
+    if (config.signals.emaCrossover.enabled) {
+      const crossoverSignal = detectEMACrossover(symbol, ema7, ema25, closes, currentPrice);
+      if (crossoverSignal) {
+        await sendFastAlert(symbol, crossoverSignal, currentPrice, assetConfig);
+        return;
+      }
     }
 
-    // 4. MOMENTUM ACCELERATION (Building move - catch it early)
-    const accelSignal = detectAcceleration(symbol, closes, currentPrice);
-    if (accelSignal) {
-      await sendFastAlert(symbol, accelSignal, currentPrice, assetConfig);
-      return;
+    if (config.signals.acceleration.enabled) {
+      const accelSignal = detectAcceleration(symbol, closes, currentPrice);
+      if (accelSignal) {
+        await sendFastAlert(symbol, accelSignal, currentPrice, assetConfig);
+        return;
+      }
     }
 
   } catch (error) {
-    // Silently fail - don't spam console for every price tick
-    if (error.message && !error.message.includes('Insufficient')) {
+    // Only log unexpected errors
+    if (config.logging.logAllChecks && error.message && !error.message.includes('Insufficient')) {
       console.error(`Fast signal error for ${symbol}:`, error.message);
     }
   }
@@ -195,52 +282,71 @@ function detectSRBounce(symbol, currentPrice, highs, lows, closes, atr) {
 }
 
 /**
- * 3. EMA CROSSOVER - Early trend change
+ * 3. EMA CROSSOVER - Early trend change (FIXED VERSION)
  */
 function detectEMACrossover(symbol, ema7, ema25, closes, currentPrice) {
   if (closes.length < 30) return null;
 
-  // Calculate previous EMA values
-  const prevCloses = closes.slice(0, -1);
-  const ema7Prev = getLast(TI.EMA.calculate({ period: 7, values: prevCloses }));
-  const ema25Prev = getLast(TI.EMA.calculate({ period: 25, values: prevCloses }));
-
-  if (!ema7Prev || !ema25Prev) return null;
+  // FIXED: Calculate EMA arrays to get previous values correctly
+  const ema7Array = TI.EMA.calculate({ period: 7, values: closes });
+  const ema25Array = TI.EMA.calculate({ period: 25, values: closes });
+  
+  if (ema7Array.length < 2 || ema25Array.length < 2) return null;
+  
+  const ema7Current = ema7Array[ema7Array.length - 1];
+  const ema25Current = ema25Array[ema25Array.length - 1];
+  const ema7Prev = ema7Array[ema7Array.length - 2];
+  const ema25Prev = ema25Array[ema25Array.length - 2];
 
   // BULLISH CROSSOVER - EMA7 just crossed above EMA25
-  if (ema7 > ema25 && ema7Prev <= ema25Prev) {
-    const recentMomentum = closes.slice(-3);
-    const isBullish = recentMomentum.every((c, i) => i === 0 || c >= recentMomentum[i - 1]);
+  if (ema7Current > ema25Current && ema7Prev <= ema25Prev) {
+    // Check recent momentum (last 3 candles trending up)
+    const recentCloses = closes.slice(-3);
+    const hasUpMomentum = recentCloses[2] > recentCloses[1] && recentCloses[1] > recentCloses[0];
     
-    if (isBullish && currentPrice > ema25) {
+    // Require price above EMA25 for confirmation
+    if (config.signals.emaCrossover.requirePriceAboveBelow && currentPrice <= ema25Current) {
+      return null;
+    }
+    
+    if (!config.signals.emaCrossover.requireMomentum || hasUpMomentum) {
+      // Calculate separation between EMAs (stronger signal if wider separation)
+      const separation = ((ema7Current - ema25Current) / ema25Current) * 100;
+      
       return {
         type: 'EMA_CROSS_BULLISH',
         direction: 'LONG',
         urgency: 'HIGH',
-        confidence: 80,
-        reason: `🔄 FRESH BULLISH EMA CROSSOVER (7>${ema7.toFixed(2)} crossed 25>${ema25.toFixed(2)})`,
+        confidence: 80 + Math.min(separation * 2, 10), // Bonus confidence for wider separation
+        reason: `🔄 FRESH BULLISH EMA CROSSOVER (7>${ema7Current.toFixed(2)} crossed 25>${ema25Current.toFixed(2)})`,
         entry: currentPrice,
-        sl: ema25 - (ema25 * 0.01),
-        details: `EMA7: ${ema7.toFixed(2)} | EMA25: ${ema25.toFixed(2)} | Price: ${currentPrice.toFixed(2)}`
+        sl: ema25Current - (ema25Current * 0.01), // 1% below EMA25
+        details: `EMA7: ${ema7Current.toFixed(2)} | EMA25: ${ema25Current.toFixed(2)} | Separation: ${separation.toFixed(2)}% | Price: ${currentPrice.toFixed(2)}`
       };
     }
   }
 
-  // BEARISH CROSSOVER
-  if (ema7 < ema25 && ema7Prev >= ema25Prev) {
-    const recentMomentum = closes.slice(-3);
-    const isBearish = recentMomentum.every((c, i) => i === 0 || c <= recentMomentum[i - 1]);
+  // BEARISH CROSSOVER - EMA7 just crossed below EMA25
+  if (ema7Current < ema25Current && ema7Prev >= ema25Prev) {
+    const recentCloses = closes.slice(-3);
+    const hasDownMomentum = recentCloses[2] < recentCloses[1] && recentCloses[1] < recentCloses[0];
     
-    if (isBearish && currentPrice < ema25) {
+    if (config.signals.emaCrossover.requirePriceAboveBelow && currentPrice >= ema25Current) {
+      return null;
+    }
+    
+    if (!config.signals.emaCrossover.requireMomentum || hasDownMomentum) {
+      const separation = ((ema25Current - ema7Current) / ema25Current) * 100;
+      
       return {
         type: 'EMA_CROSS_BEARISH',
         direction: 'SHORT',
         urgency: 'HIGH',
-        confidence: 80,
-        reason: `🔄 FRESH BEARISH EMA CROSSOVER (7<${ema7.toFixed(2)} crossed 25<${ema25.toFixed(2)})`,
+        confidence: 80 + Math.min(separation * 2, 10),
+        reason: `🔄 FRESH BEARISH EMA CROSSOVER (7<${ema7Current.toFixed(2)} crossed 25<${ema25Current.toFixed(2)})`,
         entry: currentPrice,
-        sl: ema25 + (ema25 * 0.01),
-        details: `EMA7: ${ema7.toFixed(2)} | EMA25: ${ema25.toFixed(2)} | Price: ${currentPrice.toFixed(2)}`
+        sl: ema25Current + (ema25Current * 0.01),
+        details: `EMA7: ${ema7Current.toFixed(2)} | EMA25: ${ema25Current.toFixed(2)} | Separation: ${separation.toFixed(2)}% | Price: ${currentPrice.toFixed(2)}`
       };
     }
   }
@@ -302,19 +408,22 @@ async function sendFastAlert(symbol, signal, currentPrice, assetConfig) {
   // Check cooldown
   if (alertedSignals.has(key)) {
     const lastAlert = alertedSignals.get(key);
-    if (now - lastAlert < ALERT_COOLDOWN) {
-      return; // Too soon, skip
+    if (now - lastAlert < config.alertCooldown) {
+      if (config.logging.logDetections) {
+        console.log(`⏭️ ${symbol}: ${signal.type} detected but on cooldown (${((now - lastAlert) / 60000).toFixed(1)}m ago)`);
+      }
+      return;
     }
   }
 
   // Calculate R:R
   const risk = Math.abs(signal.entry - signal.sl);
   const tp1 = signal.direction === 'LONG' 
-    ? signal.entry + risk * 0.3 
-    : signal.entry - risk * 0.3;
+    ? signal.entry + risk * config.takeProfit.tp1Multiplier
+    : signal.entry - risk * config.takeProfit.tp1Multiplier;
   const tp2 = signal.direction === 'LONG' 
-    ? signal.entry + risk * 0.8 
-    : signal.entry - risk * 0.8;
+    ? signal.entry + risk * config.takeProfit.tp2Multiplier
+    : signal.entry - risk * config.takeProfit.tp2Multiplier;
 
   const decimals = getDecimalPlaces(currentPrice);
 
@@ -338,13 +447,25 @@ ${signal.reason}`;
 ${signal.details}
 
 ⏰ TIME SENSITIVE - Price moving NOW
-📍 Entry at current market price
-⚠️ Full analysis will follow at candle close`;
+🔍 Entry at current market price
+⚠️ Full analysis will follow at candle close
+
+📌 Position Size: ${(config.positionSizeMultiplier * 100).toFixed(0)}% of normal (fast signal)`;
 
   try {
     await sendTelegramNotification(message1, message2, symbol);
     alertedSignals.set(key, now);
-    console.log(`⚡ FAST ALERT SENT: ${symbol} ${signal.type} at ${currentPrice.toFixed(decimals)}`);
+    
+    // Increment count after successful send
+    incrementFastSignalCount(symbol);
+    
+    // Register with signalNotifier
+    const { registerFastSignal } = require('./signalNotifier');
+    registerFastSignal(symbol, signal.type, signal.direction, signal.entry);
+    
+    if (config.logging.logAlerts) {
+      console.log(`⚡ FAST ALERT SENT: ${symbol} ${signal.type} at ${currentPrice.toFixed(decimals)}`);
+    }
   } catch (error) {
     console.error(`Failed to send fast alert for ${symbol}:`, error.message);
   }
