@@ -20,15 +20,16 @@ function initializeSymbolCache(symbol) {
 
 // Update candle cache from WebSocket data
 function updateCandleCache(symbol, kline, interval) {
+  // Handle both REST API format and WebSocket format
   const candle = {
-    openTime: kline.startTime,
+    openTime: kline.startTime || kline.openTime,
     open: kline.open,
     high: kline.high,
     low: kline.low,
     close: kline.close,
     volume: kline.volume,
     closeTime: kline.closeTime,
-    isFinal: kline.isFinal
+    isFinal: kline.isFinal !== undefined ? kline.isFinal : kline.final
   };
 
   const cacheKey = interval === '30m' ? 'candles30m' : 
@@ -40,7 +41,7 @@ function updateCandleCache(symbol, kline, interval) {
 
   const candles = wsCache[symbol][cacheKey];
 
-  if (kline.isFinal) {
+  if (candle.isFinal) {
     const existingIndex = candles.findIndex(c => c.openTime === candle.openTime);
     
     if (existingIndex !== -1) {

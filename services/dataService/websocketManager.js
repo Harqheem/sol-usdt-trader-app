@@ -115,10 +115,11 @@ async function startSymbolStream(symbol) {
 
     // Kline streams - candle updates (FIXED: using futuresCandles instead of futuresKline)
     const kline30mCleanup = client.ws.futuresCandles(symbol, '30m', async (candle) => {
-      const candleClosed = updateCandleCache(symbol, candle.kline, '30m');
+      // The candle object IS the kline data directly
+      const candleClosed = updateCandleCache(symbol, candle, '30m');
       
       if (candleClosed) {
-        const closeTime = new Date(candle.kline.closeTime).toLocaleTimeString();
+        const closeTime = new Date(candle.closeTime).toLocaleTimeString();
         console.log(`\n${'='.repeat(80)}`);
         console.log(`🕐 ${symbol}: 30m CANDLE CLOSED at ${closeTime}`);
         console.log(`${'='.repeat(80)}`);
@@ -143,12 +144,12 @@ async function startSymbolStream(symbol) {
     cleanupFunctions.push(kline30mCleanup);
 
     const kline1hCleanup = client.ws.futuresCandles(symbol, '1h', (candle) => {
-      updateCandleCache(symbol, candle.kline, '1h');
+      updateCandleCache(symbol, candle, '1h');
     });
     cleanupFunctions.push(kline1hCleanup);
 
     const kline4hCleanup = client.ws.futuresCandles(symbol, '4h', (candle) => {
-      updateCandleCache(symbol, candle.kline, '4h');
+      updateCandleCache(symbol, candle, '4h');
     });
     cleanupFunctions.push(kline4hCleanup);
 
