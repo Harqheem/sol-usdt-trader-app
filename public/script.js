@@ -14,11 +14,11 @@ function updateUI(data) {
   }
   
   if (data.regime) {
-  document.getElementById('regime-type').textContent = data.regime.regime.replace(/_/g, ' ').toUpperCase();
-  document.getElementById('regime-confidence').textContent = data.regime.confidence + '%';
-  document.getElementById('regime-risk').textContent = data.regime.riskLevel.level.toUpperCase();
-  document.getElementById('regime-description').textContent = data.regime.description;
-}
+    document.getElementById('regime-type').textContent = data.regime.regime.replace(/_/g, ' ').toUpperCase();
+    document.getElementById('regime-confidence').textContent = data.regime.confidence + '%';
+    document.getElementById('regime-risk').textContent = data.regime.riskLevel.level.toUpperCase();
+    document.getElementById('regime-description').textContent = data.regime.description;
+  }
   
   const dec = data.decimals || 2;
   currentDecimals = dec;
