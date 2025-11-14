@@ -3,7 +3,7 @@
 const TI = require('technicalindicators');
 const { wsCache } = require('./cacheManager');
 const { sendTelegramNotification } = require('../notificationService');
-const { getAssetConfig } = require('../config/assetConfig');
+const { getAssetConfig } = require('../../config/assetConfig');
 
 // Track what we've already alerted on to avoid spam
 const alertedSignals = new Map(); // symbol -> {type, timestamp}
