@@ -4,10 +4,15 @@ const Binance = require('binance-api-node').default;
 const { symbols } = require('../../config');
 const utils = require('../../utils');
 const { initializeSymbolCache, updateCandleCache, updateCurrentPrice, wsCache } = require('./cacheManager');
+const { checkFastSignals } = require('./fastSignalDetector');
 
 const client = Binance();
 const wsConnections = {};
 let failureCount = {};
+
+// Throttle fast signal checks to avoid overwhelming the system
+const fastCheckThrottle = {};
+const FAST_CHECK_INTERVAL = 10000; // Check every 10 seconds max
 
 // Load initial historical data (REST API - once on startup)
 async function loadInitialData(symbol) {
@@ -107,15 +112,34 @@ async function startSymbolStream(symbol) {
     
     const cleanupFunctions = [];
 
-    // Ticker stream - real-time price
-    const tickerCleanup = client.ws.futuresTicker(symbol, (ticker) => {
-      updateCurrentPrice(symbol, ticker.curDayClose);
+    // Ticker stream - real-time price with FAST SIGNAL CHECK
+    const tickerCleanup = client.ws.futuresTicker(symbol, async (ticker) => {
+      const currentPrice = parseFloat(ticker.curDayClose);
+      updateCurrentPrice(symbol, currentPrice);
+      
+      // === NEW: Fast signal detection on price updates ===
+      if (wsCache[symbol] && wsCache[symbol].isReady) {
+        const now = Date.now();
+        // Throttle to every 5 seconds to avoid overwhelming
+        if (!fastCheckThrottle[symbol] || now - fastCheckThrottle[symbol] > FAST_CHECK_INTERVAL) {
+          fastCheckThrottle[symbol] = now;
+          
+          // Run asynchronously to not block ticker updates
+          setImmediate(() => {
+            checkFastSignals(symbol, currentPrice).catch(err => {
+              // Only log actual errors, not data insufficiency
+              if (err.message && !err.message.includes('Insufficient')) {
+                console.error(`⚠️  Fast signal check error for ${symbol}:`, err.message);
+              }
+            });
+          });
+        }
+      }
     });
     cleanupFunctions.push(tickerCleanup);
 
-    // Kline streams - candle updates (FIXED: using futuresCandles instead of futuresKline)
+    // Kline streams - candle updates
     const kline30mCleanup = client.ws.futuresCandles(symbol, '30m', async (candle) => {
-      // The candle object IS the kline data directly
       const candleClosed = updateCandleCache(symbol, candle, '30m');
       
       if (candleClosed) {
@@ -124,7 +148,7 @@ async function startSymbolStream(symbol) {
         console.log(`🕐 ${symbol}: 30m CANDLE CLOSED at ${closeTime}`);
         console.log(`${'='.repeat(80)}`);
         
-        // Trigger analysis
+        // Trigger full analysis on candle close
         const { triggerAnalysis } = require('./analysisScheduler');
         await triggerAnalysis(symbol);
         
@@ -161,7 +185,7 @@ async function startSymbolStream(symbol) {
       startTime: Date.now()
     };
 
-    console.log(`✅ ${symbol}: WebSocket streams connected`);
+    console.log(`✅ ${symbol}: WebSocket streams connected (with fast signal detection)`);
     
   } catch (error) {
     console.error(`❌ ${symbol}: WebSocket error:`, error.message);
@@ -209,6 +233,7 @@ async function initWebSocketManager() {
   }
 
   console.log(`✅ WebSocket streams: ${Object.keys(wsConnections).length} active`);
+  console.log(`⚡ Fast signal detection: ENABLED (checks every ${FAST_CHECK_INTERVAL/1000}s)`);
 }
 
 // Cleanup WebSocket connections
