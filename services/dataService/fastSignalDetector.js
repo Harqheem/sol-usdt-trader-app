@@ -4,7 +4,7 @@ const TI = require('technicalindicators');
 const { wsCache } = require('./cacheManager');
 const { sendTelegramNotification } = require('../notificationService');
 const { getAssetConfig } = require('../../config/assetConfig');
-const config = require('./fastSignalConfig');
+const config = require('../../config/fastSignalConfig');
 
 const dailySignalCounts = {
   date: new Date().toDateString(),
