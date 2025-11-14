@@ -8,7 +8,7 @@ module.exports = {
   checkInterval: 10000, // 10 seconds
   
   // Cooldown between same-type alerts for same symbol 
-  alertCooldown: 900000, // 15 minutes
+  alertCooldown: 36000000, // 1 hour
   
   // Signal type priorities and settings
   signals: {
@@ -69,8 +69,8 @@ module.exports = {
   
   // Take profit targets for fast signals
   takeProfit: {
-    tp1Multiplier: 0.5,           // 0.5R for TP1
-    tp2Multiplier: 1.1            // 1.1R for TP2
+    tp1Multiplier: 0.3,           // 0.3R for TP1
+    tp2Multiplier: 0.8            // 0.8R for TP2
   },
   
   // Risk management

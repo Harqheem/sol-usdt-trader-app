@@ -7,7 +7,7 @@ const { getAssetConfig } = require('../../config/assetConfig');
 
 // Track what we've already alerted on to avoid spam
 const alertedSignals = new Map(); // symbol -> {type, timestamp}
-const ALERT_COOLDOWN = 900000; // 15 minutes between same-type alerts
+const ALERT_COOLDOWN = 3600000; // 1 hour between same-type alerts
 
 /**
  * FAST SIGNAL DETECTION - Runs on every price update
@@ -310,11 +310,11 @@ async function sendFastAlert(symbol, signal, currentPrice, assetConfig) {
   // Calculate R:R
   const risk = Math.abs(signal.entry - signal.sl);
   const tp1 = signal.direction === 'LONG' 
-    ? signal.entry + risk * 0.5 
-    : signal.entry - risk * 0.5;
+    ? signal.entry + risk * 0.3 
+    : signal.entry - risk * 0.3;
   const tp2 = signal.direction === 'LONG' 
-    ? signal.entry + risk * 1.1 
-    : signal.entry - risk * 1.1;
+    ? signal.entry + risk * 0.8 
+    : signal.entry - risk * 0.8;
 
   const decimals = getDecimalPlaces(currentPrice);
 
