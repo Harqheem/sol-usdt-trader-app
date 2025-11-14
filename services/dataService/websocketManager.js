@@ -63,6 +63,43 @@ async function loadInitialData(symbol) {
   return false;
 }
 
+// Generate candle summary
+function generateCandleSummary(symbol, analysis) {
+  const parts = [];
+  
+  // Price action
+  const { core, signals, earlySignals, regime } = analysis;
+  const priceChange = ((core.ohlc.close - core.ohlc.open) / core.ohlc.open * 100).toFixed(2);
+  const priceDirection = priceChange > 0 ? '📈' : priceChange < 0 ? '📉' : '➡️';
+  
+  parts.push(`${priceDirection} ${symbol} | $${core.currentPrice} (${priceChange > 0 ? '+' : ''}${priceChange}%)`);
+  
+  // Signal status
+  if (signals.signal.startsWith('Enter')) {
+    parts.push(`🎯 ${signals.signal.toUpperCase()}`);
+    if (signals.entry !== 'N/A') {
+      parts.push(`Entry: ${signals.entry} | SL: ${signals.sl}`);
+    }
+  } else if (signals.signal === 'Wait') {
+    parts.push(`⏸️  WAIT - ${signals.notes.split('\n').find(l => l.includes('REJECTED'))?.replace('REJECTED: ', '') || 'Conditions not met'}`);
+  } else {
+    parts.push(`⚪ No trade signal`);
+  }
+  
+  // Early signals
+  if (earlySignals.recommendation !== 'neutral') {
+    const emoji = earlySignals.recommendation.includes('bullish') ? '🟢' : '🔴';
+    parts.push(`${emoji} Early: ${earlySignals.recommendation.toUpperCase()} (${earlySignals.confidence})`);
+  }
+  
+  // Regime
+  const regimeEmoji = regime.regime.includes('uptrend') ? '📈' : 
+                     regime.regime.includes('downtrend') ? '📉' : '🔄';
+  parts.push(`${regimeEmoji} ${regime.regime.replace(/_/g, ' ').toUpperCase()}`);
+  
+  return parts.join(' | ');
+}
+
 // Start WebSocket stream for a symbol
 async function startSymbolStream(symbol) {
   try {
@@ -76,24 +113,42 @@ async function startSymbolStream(symbol) {
     });
     cleanupFunctions.push(tickerCleanup);
 
-    // Kline streams - candle updates
-    const kline30mCleanup = client.ws.futuresKline(symbol, '30m', (kline) => {
-      const candleClosed = updateCandleCache(symbol, kline, '30m');
+    // Kline streams - candle updates (FIXED: using futuresCandles instead of futuresKline)
+    const kline30mCleanup = client.ws.futuresCandles(symbol, '30m', async (candle) => {
+      const candleClosed = updateCandleCache(symbol, candle.kline, '30m');
+      
       if (candleClosed) {
-        console.log(`🕐 ${symbol}: 30m candle closed, triggering analysis...`);
+        const closeTime = new Date(candle.kline.closeTime).toLocaleTimeString();
+        console.log(`\n${'='.repeat(80)}`);
+        console.log(`🕐 ${symbol}: 30m CANDLE CLOSED at ${closeTime}`);
+        console.log(`${'='.repeat(80)}`);
+        
+        // Trigger analysis
         const { triggerAnalysis } = require('./analysisScheduler');
-        triggerAnalysis(symbol);
+        await triggerAnalysis(symbol);
+        
+        // Get fresh analysis for summary
+        const { analyzeSymbol } = require('./signalAnalyzer');
+        const analysis = await analyzeSymbol(symbol);
+        
+        if (!analysis.error) {
+          console.log(generateCandleSummary(symbol, analysis));
+        } else {
+          console.log(`⚠️  ${symbol}: Analysis unavailable - ${analysis.error}`);
+        }
+        
+        console.log(`${'='.repeat(80)}\n`);
       }
     });
     cleanupFunctions.push(kline30mCleanup);
 
-    const kline1hCleanup = client.ws.futuresKline(symbol, '1h', (kline) => {
-      updateCandleCache(symbol, kline, '1h');
+    const kline1hCleanup = client.ws.futuresCandles(symbol, '1h', (candle) => {
+      updateCandleCache(symbol, candle.kline, '1h');
     });
     cleanupFunctions.push(kline1hCleanup);
 
-    const kline4hCleanup = client.ws.futuresKline(symbol, '4h', (kline) => {
-      updateCandleCache(symbol, kline, '4h');
+    const kline4hCleanup = client.ws.futuresCandles(symbol, '4h', (candle) => {
+      updateCandleCache(symbol, candle.kline, '4h');
     });
     cleanupFunctions.push(kline4hCleanup);
 
