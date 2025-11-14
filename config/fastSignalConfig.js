@@ -69,8 +69,8 @@ module.exports = {
   
   // Take profit targets for fast signals
   takeProfit: {
-    tp1Multiplier: 1.5,           // 1.5R for TP1
-    tp2Multiplier: 3.0            // 3R for TP2
+    tp1Multiplier: 0.5,           // 0.5R for TP1
+    tp2Multiplier: 1.1            // 1.1R for TP2
   },
   
   // Risk management
