@@ -5,11 +5,29 @@ let currentDecimals = 2;
 let priceWebSocket = null;
 
 function updateUI(data) {
+  // Comprehensive error checking
+  if (!data) {
+    console.error('Data is null or undefined');
+    document.getElementById('signal').textContent = '❌ No Data Received';
+    document.getElementById('signal').style.color = 'red';
+    document.getElementById('notes').textContent = 'Server returned empty response';
+    return;
+  }
+  
   if (data.error) {
     console.error('Data error:', data.error);
     document.getElementById('signal').textContent = '❌ Error Loading Data';
     document.getElementById('signal').style.color = 'red';
-    document.getElementById('notes').textContent = data.error;
+    document.getElementById('notes').textContent = data.error + (data.details ? ': ' + data.details : '');
+    return;
+  }
+  
+  // Check for required data structure
+  if (!data.core || !data.movingAverages || !data.volatility || !data.signals) {
+    console.error('Invalid data structure:', data);
+    document.getElementById('signal').textContent = '❌ Invalid Data Structure';
+    document.getElementById('signal').style.color = 'red';
+    document.getElementById('notes').textContent = 'Data is missing required fields. Check server logs.';
     return;
   }
   
@@ -415,13 +433,21 @@ async function toggleTrading() {
 async function fetchData() {
   try {
     const res = await fetch(`/data?symbol=${selectedSymbol}`);
+    
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
+    
     const data = await res.json();
+    console.log('Received data for', selectedSymbol, ':', data);
+    
     updateUI(data);
     updatePauseStatus();
   } catch (err) {
     console.error('Data fetch error:', err);
     document.getElementById('signal').textContent = '❌ Network Error';
-    document.getElementById('notes').textContent = 'Failed to fetch data. Check console for details.';
+    document.getElementById('signal').style.color = 'red';
+    document.getElementById('notes').textContent = 'Failed to fetch data: ' + err.message;
   }
 }
 
