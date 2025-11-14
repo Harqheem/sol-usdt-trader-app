@@ -2,7 +2,7 @@
 
 const TI = require('technicalindicators');
 const { wsCache } = require('./cacheManager');
-const { sendTelegramNotification } = require('./notificationService');
+const { sendTelegramNotification } = require('../notificationService');
 const { getAssetConfig } = require('../config/assetConfig');
 
 // Track what we've already alerted on to avoid spam
