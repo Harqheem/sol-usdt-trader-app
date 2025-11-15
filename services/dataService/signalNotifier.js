@@ -2,6 +2,7 @@
 const { sendTelegramNotification } = require('../notificationService');
 const { logSignal } = require('../logsService');
 const { isPaused: getTradingPaused } = require('../pauseService');
+const { wsCache } = require('./cacheManager');
 
 // Tracking state
 const previousSignal = {};
@@ -10,11 +11,46 @@ const sendCounts = {};
 const lastSignalTime = {};
 const pausedQueue = [];
 
-// Check and send signal notification
+/**
+ * Check if this candle-close signal duplicates a recent fast signal
+ */
+function isDuplicateFastSignal(symbol, signals) {
+  const cache = wsCache[symbol];
+  if (!cache || !cache.fastSignals || cache.fastSignals.length === 0) {
+    return false;
+  }
+  
+  const direction = signals.signal.includes('Long') ? 'LONG' : 'SHORT';
+  
+  // Check if any recent fast signal matches this direction
+  for (const fastSignal of cache.fastSignals) {
+    const timeSinceFast = Date.now() - fastSignal.timestamp;
+    
+    // If fast signal was sent in last 30 minutes
+    if (timeSinceFast < 1800000 && fastSignal.direction === direction) {
+      // Check if entry prices are similar (within 1%)
+      const currentEntry = parseFloat(signals.entry);
+      if (!isNaN(currentEntry)) {
+        const entryDiff = Math.abs(currentEntry - fastSignal.entry) / fastSignal.entry;
+        
+        if (entryDiff < 0.01) {
+          console.log(`⏭️ ${symbol}: Skipping candle-close signal - fast signal already sent ${(timeSinceFast / 60000).toFixed(1)}m ago`);
+          return true;
+        }
+      }
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * Check and send signal notification
+ */
 async function checkAndSendSignal(symbol, analysis) {
   const { signals, regime, earlySignals, assetInfo } = analysis;
   
-  console.log(`\n🔔 ${symbol}: Checking notification conditions...`);
+  console.log(`\n📢 ${symbol}: Checking notification conditions...`);
   console.log(`   Signal: ${signals?.signal || 'N/A'}`);
   console.log(`   Entry: ${signals?.entry || 'N/A'}`);
   console.log(`   SL: ${signals?.sl || 'N/A'}`);
@@ -22,6 +58,11 @@ async function checkAndSendSignal(symbol, analysis) {
   if (!signals || !signals.signal) {
     console.log(`   ❌ No signals object found`);
     return;
+  }
+
+  // NEW: Check if this duplicates a recent fast signal
+  if (isDuplicateFastSignal(symbol, signals)) {
+    return; // Skip - fast signal already covered this
   }
 
   const now = Date.now();
@@ -62,8 +103,8 @@ async function checkAndSendSignal(symbol, analysis) {
       const rrTP1 = (Math.abs(parseFloat(signals.tp1) - parseFloat(signals.entry)) / riskAmountVal).toFixed(2);
       const rrTP2 = (Math.abs(parseFloat(signals.tp2) - parseFloat(signals.entry)) / riskAmountVal).toFixed(2);
 
-      console.log(`Entry: ${signals.entry}, SL: ${signals.sl}`);
-      console.log(`TP1: ${signals.tp1} (${rrTP1}R), TP2: ${signals.tp2} (${rrTP2}R)`);
+      console.log(`   Entry: ${signals.entry}, SL: ${signals.sl}`);
+      console.log(`   TP1: ${signals.tp1} (${rrTP1}R), TP2: ${signals.tp2} (${rrTP2}R)`);
 
       // Build notification messages
       const earlySignalInfo = earlySignals.recommendation !== 'neutral' ? `
@@ -86,7 +127,7 @@ ${regime.recommendations.warnings.length > 0 ? '\n⚠️ WARNINGS:\n' + regime.r
 📊 ASSET TYPE: ${assetInfo.name} (${assetInfo.category})
 `;
 
-      const firstMessage = `${symbol}\n ✅${signals.signal}\nLEVERAGE: 20x\nEntry: ${signals.entry}\nTP1: ${signals.tp1}\nTP2: ${signals.tp2}\nSL: ${signals.sl}`;
+      const firstMessage = `${symbol}\n${signals.signal}\nLEVERAGE: 20x\nEntry: ${signals.entry}\nTP1: ${signals.tp1} (${rrTP1}R)\nTP2: ${signals.tp2} (${rrTP2}R)\nSL: ${signals.sl}`;
       
       const secondMessage = `
 ${symbol} - DETAILED ANALYSIS
@@ -145,6 +186,8 @@ ${signals.notes}
 
 module.exports = {
   checkAndSendSignal,
+  registerFastSignal,
+  isDuplicateFastSignal,
   previousSignal,
   lastNotificationTime,
   sendCounts,

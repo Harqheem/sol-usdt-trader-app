@@ -156,15 +156,28 @@ async function startSymbolStream(symbol) {
     const tickerCleanup = client.ws.futuresTicker(symbol, async (ticker) => {
       updateCurrentPrice(symbol, ticker.curDayClose);
       
-      // NEW: Check fast signals on price updates (if enabled)
+      // Check fast signals on price updates (if enabled)
       if (fastSignalConfig.enabled) {
         const { checkFastSignals } = require('./fastSignalDetector');
         const fastSignalResult = await checkFastSignals(symbol, parseFloat(ticker.curDayClose));
         
         // Register fast signal to prevent duplicate candle-close signals
         if (fastSignalResult && fastSignalResult.sent) {
-          const { registerFastSignal } = require('./signalNotifier');
-          registerFastSignal(symbol, fastSignalResult.type, fastSignalResult.direction, fastSignalResult.entry);
+          // Store in wsCache to be checked by signalNotifier
+          if (!wsCache[symbol].fastSignals) {
+            wsCache[symbol].fastSignals = [];
+          }
+          wsCache[symbol].fastSignals.push({
+            type: fastSignalResult.type,
+            direction: fastSignalResult.direction,
+            entry: fastSignalResult.entry,
+            timestamp: Date.now()
+          });
+          
+          // Clean up old fast signals (older than 30 minutes)
+          wsCache[symbol].fastSignals = wsCache[symbol].fastSignals.filter(
+            fs => Date.now() - fs.timestamp < 1800000
+          );
         }
       }
     });

@@ -368,8 +368,7 @@ async function sendFastAlert(symbol, signal, currentPrice, assetConfig) {
     const lastAlert = lastSymbolAlert.get(symbol);
     const timeSinceAlert = now - lastAlert;
     if (timeSinceAlert < config.alertCooldown) {
-      console.log(`⏭️ ${symbol}: Fast signal detected (${signal.type}) but symbol on cooldown (${(timeSinceAlert / 60000).toFixed(1)}m/${(config.alertCooldown / 60000).toFixed(0)}m)`);
-      return;
+         return;
     }
   }
   

@@ -14,7 +14,8 @@ function initializeSymbolCache(symbol) {
     lastUpdate: null,
     isReady: false,
     error: null,
-    lastAnalysis: null
+    lastAnalysis: null,
+    lastAnalysisTime: null // NEW: Track when analysis was done
   };
 }
 
@@ -77,7 +78,7 @@ function updateCurrentPrice(symbol, price) {
   }
 }
 
-// Get cached data for API
+// Get cached data for API - FIXED: Always return cached analysis if recent
 function getCachedData(symbol) {
   const cache = wsCache[symbol];
   
@@ -93,12 +94,17 @@ function getCachedData(symbol) {
     return { error: 'No price data', details: 'Waiting for ticker update' };
   }
 
-  // Return cached analysis if recent (< 5 minutes)
-  if (cache.lastAnalysis && cache.lastUpdate && Date.now() - cache.lastUpdate < 300000) {
+  // FIXED: Return cached analysis if it exists and is recent (< 35 seconds)
+  // This ensures frontend gets the SAME analysis that was logged and sent to Telegram
+  if (cache.lastAnalysis && cache.lastAnalysisTime && 
+      Date.now() - cache.lastAnalysisTime < 35000) {
+    console.log(`✅ ${symbol}: Returning cached analysis (${((Date.now() - cache.lastAnalysisTime) / 1000).toFixed(1)}s old)`);
     return cache.lastAnalysis;
   }
 
-  // Trigger fresh analysis
+  console.log(`⚠️ ${symbol}: No recent cached analysis, triggering fresh analysis`);
+  
+  // Trigger fresh analysis only if no recent cache
   const { analyzeSymbol } = require('./signalAnalyzer');
   return analyzeSymbol(symbol);
 }
@@ -116,6 +122,7 @@ async function forceRefresh(symbol) {
     const result = await analyzeSymbol(symbol);
     if (!result.error) {
       wsCache[symbol].lastAnalysis = result;
+      wsCache[symbol].lastAnalysisTime = Date.now(); // NEW: Track timing
       console.log(`✅ ${symbol}: Forced refresh complete`);
     }
     return result;
