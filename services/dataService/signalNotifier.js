@@ -60,7 +60,7 @@ async function checkAndSendSignal(symbol, analysis) {
     return;
   }
 
-  // NEW: Check if this duplicates a recent fast signal
+  // Check if this duplicates a recent fast signal
   if (isDuplicateFastSignal(symbol, signals)) {
     return; // Skip - fast signal already covered this
   }
@@ -186,7 +186,6 @@ ${signals.notes}
 
 module.exports = {
   checkAndSendSignal,
-  registerFastSignal,
   isDuplicateFastSignal,
   previousSignal,
   lastNotificationTime,
