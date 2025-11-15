@@ -5,7 +5,7 @@ const { wsCache } = require('./cacheManager');
 const { sendTelegramNotification } = require('../notificationService');
 const { logSignal } = require('../logsService');
 const { getAssetConfig } = require('../../config/assetConfig');
-const config = require('./fastSignalConfig');
+const config = require('../../config/fastSignalConfig');
 
 // Track what we've already alerted on
 const alertedSignals = new Map(); // symbol_type -> timestamp (per-type cooldown)
