@@ -62,8 +62,8 @@ async function checkAndSendSignal(symbol, analysis) {
       const rrTP1 = (Math.abs(parseFloat(signals.tp1) - parseFloat(signals.entry)) / riskAmountVal).toFixed(2);
       const rrTP2 = (Math.abs(parseFloat(signals.tp2) - parseFloat(signals.entry)) / riskAmountVal).toFixed(2);
 
-      console.log(`   Entry: ${signals.entry}, SL: ${signals.sl}`);
-      console.log(`   TP1: ${signals.tp1} (${rrTP1}R), TP2: ${signals.tp2} (${rrTP2}R)`);
+      console.log(`Entry: ${signals.entry}, SL: ${signals.sl}`);
+      console.log(`TP1: ${signals.tp1} (${rrTP1}R), TP2: ${signals.tp2} (${rrTP2}R)`);
 
       // Build notification messages
       const earlySignalInfo = earlySignals.recommendation !== 'neutral' ? `
@@ -86,7 +86,7 @@ ${regime.recommendations.warnings.length > 0 ? '\n⚠️ WARNINGS:\n' + regime.r
 📊 ASSET TYPE: ${assetInfo.name} (${assetInfo.category})
 `;
 
-      const firstMessage = `${symbol}\n ✅${signals.signal}\nLEVERAGE: 20x\nEntry: ${signals.entry}\nTP1: ${signals.tp1})\nTP2: ${signals.tp2})\nSL: ${signals.sl}`;
+      const firstMessage = `${symbol}\n ✅${signals.signal}\nLEVERAGE: 20x\nEntry: ${signals.entry}\nTP1: ${signals.tp1}\nTP2: ${signals.tp2}\nSL: ${signals.sl}`;
       
       const secondMessage = `
 ${symbol} - DETAILED ANALYSIS

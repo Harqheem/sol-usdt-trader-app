@@ -8,7 +8,7 @@ module.exports = {
   checkInterval: 10000, // 10 seconds
   
   // Cooldown between same-type alerts for same symbol 
-  alertCooldown: 36000000, // 1 hour
+  alertCooldown: 72000000, // 2 hour
   
   // Signal type priorities and settings
   signals: {
@@ -50,7 +50,7 @@ module.exports = {
   // Stop loss settings for fast signals
   stopLoss: {
     breakout: {
-      atrMultiplier: 1.5,         // 1.5 ATR stop for breakouts
+      atrMultiplier: 1.0,         // 1.5 ATR stop for breakouts
       useStructure: true          // Use range high/low as SL reference
     },
     bounce: {
@@ -70,13 +70,13 @@ module.exports = {
   // Take profit targets for fast signals
   takeProfit: {
     tp1Multiplier: 0.3,           // 0.3R for TP1
-    tp2Multiplier: 0.8            // 0.8R for TP2
+    tp2Multiplier: 0.9            // 0.9R for TP2
   },
   
   // Risk management
   riskManagement: {
-    maxDailyFastSignals: 12,      // Max fast signals per day across all symbols
-    maxPerSymbolPerDay: 3,        // Max fast signals per symbol per day
+    maxDailyFastSignals: 20,      // Max fast signals per day across all symbols
+    maxPerSymbolPerDay: 5,        // Max fast signals per symbol per day
     pauseAfterLoss: false,        // Don't auto-pause after fast signal loss
     requireRegimeAlignment: false // Don't require regime alignment for fast signals
   },

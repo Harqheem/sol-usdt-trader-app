@@ -4,15 +4,55 @@ const Binance = require('binance-api-node').default;
 const { symbols } = require('../../config');
 const utils = require('../../utils');
 const { initializeSymbolCache, updateCandleCache, updateCurrentPrice, wsCache } = require('./cacheManager');
-const { checkFastSignals } = require('./fastSignalDetector');
+const fastSignalConfig = require('../../config/fastSignalConfig');
 
 const client = Binance();
 const wsConnections = {};
 let failureCount = {};
 
-// Throttle fast signal checks to avoid overwhelming the system
-const fastCheckThrottle = {};
-const FAST_CHECK_INTERVAL = 10000; // Check every 10 seconds max
+// SSE clients tracker for real-time updates
+const sseClients = new Map(); // symbol -> Set of response objects
+
+// Register SSE client
+function registerSSEClient(symbol, res) {
+  if (!sseClients.has(symbol)) {
+    sseClients.set(symbol, new Set());
+  }
+  sseClients.get(symbol).add(res);
+  console.log(`📡 ${symbol}: SSE client registered (${sseClients.get(symbol).size} total)`);
+}
+
+// Unregister SSE client
+function unregisterSSEClient(symbol, res) {
+  if (sseClients.has(symbol)) {
+    sseClients.get(symbol).delete(res);
+    console.log(`📡 ${symbol}: SSE client unregistered (${sseClients.get(symbol).size} remaining)`);
+  }
+}
+
+// Broadcast analysis to SSE clients
+function broadcastAnalysis(symbol, analysis) {
+  if (!sseClients.has(symbol)) return;
+  
+  const clients = sseClients.get(symbol);
+  const deadClients = [];
+  
+  clients.forEach(res => {
+    try {
+      res.write(`data: ${JSON.stringify(analysis)}\n\n`);
+    } catch (err) {
+      console.error(`📡 ${symbol}: Failed to send to SSE client:`, err.message);
+      deadClients.push(res);
+    }
+  });
+  
+  // Clean up dead clients
+  deadClients.forEach(res => unregisterSSEClient(symbol, res));
+  
+  if (clients.size > 0) {
+    console.log(`📡 ${symbol}: Broadcast analysis to ${clients.size} client(s)`);
+  }
+}
 
 // Load initial historical data (REST API - once on startup)
 async function loadInitialData(symbol) {
@@ -86,7 +126,7 @@ function generateCandleSummary(symbol, analysis) {
       parts.push(`Entry: ${signals.entry} | SL: ${signals.sl}`);
     }
   } else if (signals.signal === 'Wait') {
-    parts.push(`⏸️  WAIT - ${signals.notes.split('\n').find(l => l.includes('REJECTED'))?.replace('REJECTED: ', '') || 'Conditions not met'}`);
+    parts.push(`⏸️ WAIT - ${signals.notes.split('\n').find(l => l.includes('REJECTED'))?.replace('REJECTED: ', '') || 'Conditions not met'}`);
   } else {
     parts.push(`⚪ No trade signal`);
   }
@@ -112,27 +152,19 @@ async function startSymbolStream(symbol) {
     
     const cleanupFunctions = [];
 
-    // Ticker stream - real-time price with FAST SIGNAL CHECK
+    // Ticker stream - real-time price updates
     const tickerCleanup = client.ws.futuresTicker(symbol, async (ticker) => {
-      const currentPrice = parseFloat(ticker.curDayClose);
-      updateCurrentPrice(symbol, currentPrice);
+      updateCurrentPrice(symbol, ticker.curDayClose);
       
-      // === NEW: Fast signal detection on price updates ===
-      if (wsCache[symbol] && wsCache[symbol].isReady) {
-        const now = Date.now();
-        // Throttle to every 5 seconds to avoid overwhelming
-        if (!fastCheckThrottle[symbol] || now - fastCheckThrottle[symbol] > FAST_CHECK_INTERVAL) {
-          fastCheckThrottle[symbol] = now;
-          
-          // Run asynchronously to not block ticker updates
-          setImmediate(() => {
-            checkFastSignals(symbol, currentPrice).catch(err => {
-              // Only log actual errors, not data insufficiency
-              if (err.message && !err.message.includes('Insufficient')) {
-                console.error(`⚠️  Fast signal check error for ${symbol}:`, err.message);
-              }
-            });
-          });
+      // NEW: Check fast signals on price updates (if enabled)
+      if (fastSignalConfig.enabled) {
+        const { checkFastSignals } = require('./fastSignalDetector');
+        const fastSignalResult = await checkFastSignals(symbol, parseFloat(ticker.curDayClose));
+        
+        // Register fast signal to prevent duplicate candle-close signals
+        if (fastSignalResult && fastSignalResult.sent) {
+          const { registerFastSignal } = require('./signalNotifier');
+          registerFastSignal(symbol, fastSignalResult.type, fastSignalResult.direction, fastSignalResult.entry);
         }
       }
     });
@@ -148,18 +180,20 @@ async function startSymbolStream(symbol) {
         console.log(`🕐 ${symbol}: 30m CANDLE CLOSED at ${closeTime}`);
         console.log(`${'='.repeat(80)}`);
         
-        // Trigger full analysis on candle close
+        // Trigger analysis
         const { triggerAnalysis } = require('./analysisScheduler');
         await triggerAnalysis(symbol);
         
-        // Get fresh analysis for summary
-        const { analyzeSymbol } = require('./signalAnalyzer');
-        const analysis = await analyzeSymbol(symbol);
+        // Get the cached analysis (same one that was just computed)
+        const analysis = wsCache[symbol].lastAnalysis;
         
-        if (!analysis.error) {
+        if (analysis && !analysis.error) {
           console.log(generateCandleSummary(symbol, analysis));
+          
+          // Broadcast to SSE clients immediately
+          broadcastAnalysis(symbol, analysis);
         } else {
-          console.log(`⚠️  ${symbol}: Analysis unavailable - ${analysis.error}`);
+          console.log(`⚠️ ${symbol}: Analysis unavailable - ${analysis?.error || 'Unknown error'}`);
         }
         
         console.log(`${'='.repeat(80)}\n`);
@@ -185,7 +219,7 @@ async function startSymbolStream(symbol) {
       startTime: Date.now()
     };
 
-    console.log(`✅ ${symbol}: WebSocket streams connected (with fast signal detection)`);
+    console.log(`✅ ${symbol}: WebSocket streams connected`);
     
   } catch (error) {
     console.error(`❌ ${symbol}: WebSocket error:`, error.message);
@@ -233,7 +267,15 @@ async function initWebSocketManager() {
   }
 
   console.log(`✅ WebSocket streams: ${Object.keys(wsConnections).length} active`);
-  console.log(`⚡ Fast signal detection: ENABLED (checks every ${FAST_CHECK_INTERVAL/1000}s)`);
+  
+  // Log fast signal status
+  if (fastSignalConfig.enabled) {
+    console.log(`⚡ Fast signals: ENABLED (HIGH and CRITICAL urgency only)`);
+    console.log(`   Check interval: ${fastSignalConfig.checkInterval / 1000}s`);
+    console.log(`   Daily limit: ${fastSignalConfig.riskManagement.maxDailyFastSignals} signals`);
+  } else {
+    console.log(`⚡ Fast signals: DISABLED`);
+  }
 }
 
 // Cleanup WebSocket connections
@@ -251,6 +293,18 @@ function cleanup() {
       }
     }
   }
+  
+  // Clean up SSE clients
+  sseClients.forEach((clients, symbol) => {
+    clients.forEach(res => {
+      try {
+        res.end();
+      } catch (err) {
+        console.error(`Error closing SSE client for ${symbol}:`, err.message);
+      }
+    });
+  });
+  sseClients.clear();
 
   console.log(`✅ Cleaned up ${cleanedCount} connections`);
 }
@@ -259,5 +313,7 @@ module.exports = {
   initWebSocketManager,
   cleanup,
   wsConnections,
-  failureCount
+  failureCount,
+  registerSSEClient,
+  unregisterSSEClient
 };

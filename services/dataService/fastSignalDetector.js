@@ -404,13 +404,18 @@ ${signal.details}
     // Increment count after successful send
     incrementFastSignalCount(symbol);
     
-    // Register with signalNotifier to prevent duplicate candle-close signal
-    const { registerFastSignal } = require('./signalNotifier');
-    registerFastSignal(symbol, signal.type, signal.direction, signal.entry);
-    
     console.log(`⚡ FAST ALERT SENT: ${symbol} ${signal.type} at ${currentPrice.toFixed(decimals)}`);
+    
+    // Return signal info so it can be registered externally
+    return {
+      sent: true,
+      type: signal.type,
+      direction: signal.direction,
+      entry: signal.entry
+    };
   } catch (error) {
     console.error(`❌ Failed to send fast alert for ${symbol}:`, error.message);
+    return { sent: false };
   }
 }
 
