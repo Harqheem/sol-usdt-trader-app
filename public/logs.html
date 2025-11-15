@@ -62,16 +62,37 @@
       color: #5568d3;
     }
 
-    /* Tabs */
-    .tabs {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 24px;
+    /* Tabs - SIDE BY SIDE */
+    .tabs-container {
       background: white;
       padding: 16px;
       border-radius: 8px;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
       border: 1px solid #e5e7eb;
+      margin-bottom: 24px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    .tab-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .tab-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
     }
 
     .tabs button {
@@ -98,6 +119,18 @@
       color: white;
       border-color: #667eea;
       box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+    }
+
+    .tabs.system-tabs button.active {
+      background: #10b981;
+      border-color: #10b981;
+      box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+    }
+
+    .tabs.system-tabs button.active.fast-tab {
+      background: #f59e0b;
+      border-color: #f59e0b;
+      box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
     }
 
     /* Filters */
@@ -454,7 +487,7 @@
       color: #6b7280;
     }
 
-      .status-expired {
+    .status-expired {
       background: #fef3c7;
       border-color: #fde68a;
       color: #92400e;
@@ -573,6 +606,10 @@
         text-align: center;
       }
 
+      .tabs-container {
+        grid-template-columns: 1fr;
+      }
+
       .filter-controls {
         flex-direction: column;
         align-items: stretch;
@@ -649,10 +686,22 @@
       <a href="/">← Back to Dashboard</a>
     </div>
 
-    <!-- Tabs -->
-    <div class="tabs">
-      <button id="logs-tab" class="active">All Logs</button>
-      <button id="results-tab">Trade Results</button>
+    <!-- Combined Tabs (System & View Type) -->
+    <div class="tabs-container">
+      <div class="tab-section">
+        <div class="tab-label">Signal System</div>
+        <div class="tabs system-tabs">
+          <button id="default-system-tab" class="active">📊 Default System</button>
+          <button id="fast-system-tab" class="fast-tab">⚡ Fast Signals</button>
+        </div>
+      </div>
+      <div class="tab-section">
+        <div class="tab-label">View Type</div>
+        <div class="tabs view-tabs">
+          <button id="logs-tab" class="active">All Logs</button>
+          <button id="results-tab">Trade Results</button>
+        </div>
+      </div>
     </div>
     
     <!-- Filters -->
@@ -715,31 +764,8 @@
           <span class="value" id="tp-trades">0</span>
         </div>
         <div class="summary-item">
-          <label>Terminated <span class="info-icon" title="Trades manually terminated">ℹ️</span></label>
+          <label>Terminated <span class="info-icon" title="Trades manually terminated or expired">ℹ️</span></label>
           <span class="value" id="terminated-trades">0</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Direction Statistics -->
-    <div class="stats-section">
-      <div class="panel-header">Direction Statistics</div>
-      <div class="summary-grid">
-        <div class="summary-item">
-          <label>Long Trades <span class="info-icon" title="Number of long positions">ℹ️</span></label>
-          <span class="value" id="long-trades">0</span>
-        </div>
-        <div class="summary-item">
-          <label>Long Win Rate <span class="info-icon" title="Success rate for longs">ℹ️</span></label>
-          <span class="value" id="long-win-rate">0.00%</span>
-        </div>
-        <div class="summary-item">
-          <label>Short Trades <span class="info-icon" title="Number of short positions">ℹ️</span></label>
-          <span class="value" id="short-trades">0</span>
-        </div>
-        <div class="summary-item">
-          <label>Short Win Rate <span class="info-icon" title="Success rate for shorts">ℹ️</span></label>
-          <span class="value" id="short-win-rate">0.00%</span>
         </div>
       </div>
     </div>

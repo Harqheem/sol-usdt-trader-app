@@ -1,8 +1,10 @@
 // DETECTS URGENT SIGNALS WITHIN THE CANDLE - DOESN'T WAIT FOR CLOSE
+// NOW LOGS TO DATABASE FOR TRACKING
 
 const TI = require('technicalindicators');
 const { wsCache } = require('./cacheManager');
 const { sendTelegramNotification } = require('../notificationService');
+const { logSignal } = require('../logsService');
 const { getAssetConfig } = require('../../config/assetConfig');
 const config = require('../../config/fastSignalConfig');
 
@@ -100,8 +102,6 @@ async function checkFastSignals(symbol, currentPrice) {
         return;
       }
     }
-
-    // NOTE: Acceleration removed - MEDIUM urgency signals not sent
 
   } catch (error) {
     // Silently fail for routine errors
@@ -342,7 +342,7 @@ function incrementFastSignalCount(symbol) {
 }
 
 /**
- * Send fast alert to Telegram
+ * Send fast alert to Telegram AND LOG TO DATABASE
  */
 async function sendFastAlert(symbol, signal, currentPrice, assetConfig) {
   // Check daily limits first
@@ -371,6 +371,7 @@ async function sendFastAlert(symbol, signal, currentPrice, assetConfig) {
     : signal.entry - risk * config.takeProfit.tp2Multiplier;
 
   const decimals = getDecimalPlaces(currentPrice);
+  const positionSize = 100; // Default position size for fast signals
 
   const message1 = `⚡ URGENT ${symbol}
 ✅ ${signal.direction} - ${signal.urgency} URGENCY
@@ -398,15 +399,27 @@ ${signal.details}
 📌 Position Size: ${(config.positionSizeMultiplier * 100).toFixed(0)}% of normal (fast signal)`;
 
   try {
+    // Send Telegram notification
     await sendTelegramNotification(message1, message2, symbol);
     alertedSignals.set(key, now);
+    
+    // LOG TO DATABASE WITH signal_source = 'fast'
+    await logSignal(symbol, {
+      signal: signal.direction === 'LONG' ? 'Buy' : 'Sell',
+      notes: `⚡ FAST SIGNAL: ${signal.reason}\n\n${signal.details}\n\nUrgency: ${signal.urgency}\nConfidence: ${signal.confidence}%\nType: ${signal.type}`,
+      entry: signal.entry,
+      tp1: tp1,
+      tp2: tp2,
+      sl: signal.sl,
+      positionSize: positionSize,
+      leverage: 20
+    }, 'pending', null, 'fast'); // Pass 'fast' as signal_source
     
     // Increment count after successful send
     incrementFastSignalCount(symbol);
     
-    console.log(`⚡ FAST ALERT SENT: ${symbol} ${signal.type} at ${currentPrice.toFixed(decimals)}`);
+    console.log(`⚡ FAST ALERT SENT & LOGGED: ${symbol} ${signal.type} at ${currentPrice.toFixed(decimals)}`);
     
-    // Return signal info so it can be registered externally
     return {
       sent: true,
       type: signal.type,

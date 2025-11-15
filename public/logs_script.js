@@ -1,4 +1,4 @@
-// public/logs_script.js
+// public/logs_script.js - FIXED SYSTEM FILTER
 
 const tableBody = document.querySelector('#signals-table tbody');
 const symbolFilter = document.getElementById('symbol-filter');
@@ -18,6 +18,8 @@ const closeSheetBtn = document.getElementById('close-sheet');
 const sheetContent = document.getElementById('sheet-content');
 const logsTab = document.getElementById('logs-tab');
 const resultsTab = document.getElementById('results-tab');
+const defaultSystemTab = document.getElementById('default-system-tab');
+const fastSystemTab = document.getElementById('fast-system-tab');
 const outcomeHeader = document.getElementById('outcome-header');
 const outcomesSummary = document.getElementById('outcomes-summary');
 const slTradesEl = document.getElementById('sl-trades');
@@ -26,10 +28,6 @@ const tpTradesEl = document.getElementById('tp-trades');
 const terminatedTradesEl = document.getElementById('terminated-trades');
 const closedTradesEl = document.getElementById('closed-trades');
 const winRateEl = document.getElementById('win-rate');
-const longTradesEl = document.getElementById('long-trades');
-const longWinRateEl = document.getElementById('long-win-rate');
-const shortTradesEl = document.getElementById('short-trades');
-const shortWinRateEl = document.getElementById('short-win-rate');
 const bulkTerminateBtn = document.getElementById('bulk-terminate-btn');
 const checkboxHeader = document.getElementById('checkbox-header');
 const selectAllCheckbox = document.getElementById('select-all-checkbox');
@@ -41,6 +39,7 @@ const nextPageBtn = document.getElementById('next-page');
 let currentData = [];
 let allData = [];
 let currentTab = 'logs';
+let currentSystem = 'default'; // 'default' or 'fast'
 let selectedTradeIds = new Set();
 let currentPage = 1;
 let pageSize = 25;
@@ -88,7 +87,7 @@ function getOutcome(signal) {
 
   const entry = signal.entry;
   const exit = signal.exit_price;
-  const isBuy = signal.signal_type === 'Buy';
+  const isBuy = signal.signal_type === 'Enter Long' || signal.signal_type === 'Buy';
   const tp2 = signal.tp2;
 
   if (!exit || !entry || !tp2) return '-';
@@ -119,6 +118,10 @@ async function fetchSignals() {
     let url = `/signals?limit=${fetchLimit}`;
     if (symbolFilter.value) url += `&symbol=${symbolFilter.value}`;
     if (fromDateInput.value) url += `&fromDate=${fromDateInput.value}T00:00:00Z`;
+    
+    // Add signal_source filter - THIS WAS MISSING!
+    url += `&signalSource=${currentSystem}`;
+    
     if (currentTab === 'results') {
       url += `&status=closed,terminated,expired`;
     } else {
@@ -128,14 +131,14 @@ async function fetchSignals() {
     const res = await fetch(url);
     if (!res.ok) throw new Error('Fetch failed');
     const data = await res.json();
-    console.log(`Received ${data.length} trades`);
+    console.log(`Received ${data.length} ${currentSystem} trades`);
     allData = data;
     currentPage = 1;
     sortAndPaginateData();
   } catch (err) {
     console.error('Fetch error:', err);
     tableBody.innerHTML = '<tr><td colspan="13">Error loading logs: ' + err.message + '</td></tr>';
-    updateSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    updateSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
   }
 }
 
@@ -150,7 +153,7 @@ function calculateCustomPnL(signal) {
 
   const customPosition = parseFloat(customPositionSizeInput.value) || 100;
   const customLeverage = parseFloat(customLeverageInput.value) || 20;
-  const isBuy = signal.signal_type === 'Buy';
+  const isBuy = signal.signal_type === 'Enter Long' || signal.signal_type === 'Buy';
   const TAKER_FEE = 0.00045;
   
   const notional = customPosition * customLeverage;
@@ -324,8 +327,8 @@ function renderTableAndSummary() {
   
   if (currentData.length === 0) {
     const colspan = hasPendingTrades && currentTab === 'logs' ? 13 : 12;
-    tableBody.innerHTML = `<tr><td colspan="${colspan}">No logs found</td></tr>`;
-    updateSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    tableBody.innerHTML = `<tr><td colspan="${colspan}">No logs found for ${currentSystem} system</td></tr>`;
+    updateSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     return;
   }
   
@@ -345,12 +348,14 @@ function renderTableAndSummary() {
          </td>` 
       : '';
     
+    const isLong = signal.signal_type === 'Enter Long' || signal.signal_type === 'Buy';
+    
     const row = document.createElement('tr');
     row.innerHTML = `
       ${checkboxTd}
       <td>${formatTime(displayTime)}</td>
       <td>${signal.symbol}</td>
-      <td class="${signal.signal_type === 'Buy' ? 'signal-long' : 'signal-short'}">${signal.signal_type}</td>
+      <td class="${isLong ? 'signal-long' : 'signal-short'}">${signal.signal_type}</td>
       <td>${signal.tp1 ? signal.tp1.toFixed(4) : '-'}</td>
       <td>${signal.tp2 ? signal.tp2.toFixed(4) : '-'}</td>
       <td>${signal.sl ? signal.sl.toFixed(4) : '-'}</td>
@@ -397,22 +402,6 @@ function renderTableAndSummary() {
   const winningTrades = tpCount + beCount;
   const winRate = tradesToCount.length > 0 ? (winningTrades / tradesToCount.length) * 100 : 0;
   
-  const longTrades = actualClosedTrades.filter(s => s.signal_type === 'Buy');
-  const shortTrades = actualClosedTrades.filter(s => s.signal_type === 'Sell');
-  
-  const longWins = longTrades.filter(s => {
-    const out = getOutcome(s);
-    return out === 'TP' || out === 'BE';
-  }).length;
-  
-  const shortWins = shortTrades.filter(s => {
-    const out = getOutcome(s);
-    return out === 'TP' || out === 'BE';
-  }).length;
-  
-  const longWinRate = longTrades.length > 0 ? (longWins / longTrades.length) * 100 : 0;
-  const shortWinRate = shortTrades.length > 0 ? (shortWins / shortTrades.length) * 100 : 0;
-  
   const customResults = actualClosedTrades.map(s => calculateCustomPnL(s));
   const customTotalPnlPct = customResults.reduce((sum, r) => sum + r.customPnlPct, 0);
   const customTotalPnlDollars = customResults.reduce((sum, r) => sum + r.customPnlDollars, 0);
@@ -432,10 +421,6 @@ function renderTableAndSummary() {
     beCount, 
     tpCount,
     winRate,
-    longTrades.length,
-    longWinRate,
-    shortTrades.length,
-    shortWinRate,
     terminatedCount,
     expiredCount
   );
@@ -450,7 +435,7 @@ function renderTableAndSummary() {
   console.log(`Rendered ${currentData.length} rows in ${(endTime - startTime).toFixed(2)}ms`);
 }
 
-function updateSummary(trades, closedTrades, rawPnl, customPnlPct, customPnlDollars, customFeesPct, customFeesDollars, slCount, beCount, tpCount, winRate, longCount, longWinRate, shortCount, shortWinRate, terminatedCount, expiredCount) {
+function updateSummary(trades, closedTrades, rawPnl, customPnlPct, customPnlDollars, customFeesPct, customFeesDollars, slCount, beCount, tpCount, winRate, terminatedCount, expiredCount) {
   totalTradesEl.textContent = trades;
   closedTradesEl.textContent = closedTrades;
   totalRawPnlEl.textContent = rawPnl.toFixed(2) + '%';
@@ -461,15 +446,8 @@ function updateSummary(trades, closedTrades, rawPnl, customPnlPct, customPnlDoll
   slTradesEl.textContent = slCount;
   beTradesEl.textContent = beCount;
   tpTradesEl.textContent = tpCount;
-  
-  // Show combined terminated + expired count
   terminatedTradesEl.textContent = `${terminatedCount + expiredCount} (${terminatedCount}T/${expiredCount}E)`;
-  
   winRateEl.textContent = winRate.toFixed(2) + '%';
-  longTradesEl.textContent = longCount;
-  longWinRateEl.textContent = longWinRate.toFixed(2) + '%';
-  shortTradesEl.textContent = shortCount;
-  shortWinRateEl.textContent = shortWinRate.toFixed(2) + '%';
   
   totalRawPnlEl.className = 'value ' + (rawPnl > 0 ? 'pnl-positive' : rawPnl < 0 ? 'pnl-negative' : '');
   customTotalPnlEl.className = 'value ' + (customPnlPct > 0 ? 'pnl-positive' : customPnlPct < 0 ? 'pnl-negative' : '');
@@ -576,12 +554,16 @@ function showDetails(signal) {
     customPnlHTMLDollars = `<span class="${pnlClass}">${pnlSign}$${customPnlDollars.toFixed(2)}</span>`;
   }
   
+  const signalSourceBadge = signal.signal_source === 'fast' 
+    ? '<span style="background: #fef3c7; color: #92400e; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">⚡ FAST</span>'
+    : '<span style="background: #e0e7ff; color: #4338ca; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">📊 DEFAULT</span>';
+  
   const terminateButton = signal.status === 'pending' 
     ? `<button id="terminate-trade-btn" class="btn btn-danger" style="margin-top: 20px; width: 100%;">🚫 Terminate This Trade</button>` 
     : '';
   
   sheetContent.innerHTML = `
-    <h3>Trade Details</h3>
+    <h3>Trade Details ${signalSourceBadge}</h3>
     <p><strong>Timestamp:</strong> ${formatTime(signal.timestamp)}</p>
     <p><strong>Symbol:</strong> ${signal.symbol}</p>
     <p><strong>Signal:</strong> ${signal.signal_type}</p>
@@ -658,10 +640,8 @@ document.querySelectorAll('.minimal-table th.sortable').forEach(th => {
     const newColumn = th.dataset.sort;
     
     if (sortColumn === newColumn) {
-      // Toggle direction
       sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
     } else {
-      // New column, default to descending
       sortColumn = newColumn;
       sortDirection = 'desc';
     }
@@ -671,6 +651,24 @@ document.querySelectorAll('.minimal-table th.sortable').forEach(th => {
   });
 });
 
+// System tabs (Default vs Fast) - FIXED TO TRIGGER FETCH
+defaultSystemTab.addEventListener('click', () => {
+  if (currentSystem === 'default') return;
+  currentSystem = 'default';
+  defaultSystemTab.classList.add('active');
+  fastSystemTab.classList.remove('active');
+  fetchSignals(); // This now properly fetches with signal_source=default
+});
+
+fastSystemTab.addEventListener('click', () => {
+  if (currentSystem === 'fast') return;
+  currentSystem = 'fast';
+  fastSystemTab.classList.add('active');
+  defaultSystemTab.classList.remove('active');
+  fetchSignals(); // This now properly fetches with signal_source=fast
+});
+
+// View type tabs (Logs vs Results)
 logsTab.addEventListener('click', () => {
   if (currentTab === 'logs') return;
   currentTab = 'logs';
