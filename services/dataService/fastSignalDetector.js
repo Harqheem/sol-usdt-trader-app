@@ -1,15 +1,15 @@
 // DETECTS URGENT SIGNALS WITHIN THE CANDLE - DOESN'T WAIT FOR CLOSE
-// NOW LOGS TO DATABASE FOR TRACKING
 
 const TI = require('technicalindicators');
 const { wsCache } = require('./cacheManager');
 const { sendTelegramNotification } = require('../notificationService');
 const { logSignal } = require('../logsService');
 const { getAssetConfig } = require('../../config/assetConfig');
-const config = require('../../config/fastSignalConfig');
+const config = require('./fastSignalConfig');
 
 // Track what we've already alerted on
-const alertedSignals = new Map(); // symbol -> {type, timestamp}
+const alertedSignals = new Map(); // symbol_type -> timestamp (per-type cooldown)
+const lastSymbolAlert = new Map(); // symbol -> timestamp (per-symbol cooldown)
 
 // Throttle checks to avoid performance issues
 const lastCheckTime = new Map(); // symbol -> timestamp
@@ -80,7 +80,10 @@ async function checkFastSignals(symbol, currentPrice) {
     if (config.signals.breakout.enabled) {
       const breakoutSignal = detectBreakoutMomentum(symbol, currentPrice, closes, highs, lows, volumes, atr, ema7, ema25);
       if (breakoutSignal) {
-        await sendFastAlert(symbol, breakoutSignal, currentPrice, assetConfig);
+        const result = await sendFastAlert(symbol, breakoutSignal, currentPrice, assetConfig);
+        if (result && result.sent) {
+          return result; // Return so websocketManager can register it
+        }
         return;
       }
     }
@@ -89,7 +92,10 @@ async function checkFastSignals(symbol, currentPrice) {
     if (config.signals.supportResistanceBounce.enabled) {
       const bounceSignal = detectSRBounce(symbol, currentPrice, highs, lows, closes, atr);
       if (bounceSignal) {
-        await sendFastAlert(symbol, bounceSignal, currentPrice, assetConfig);
+        const result = await sendFastAlert(symbol, bounceSignal, currentPrice, assetConfig);
+        if (result && result.sent) {
+          return result;
+        }
         return;
       }
     }
@@ -98,10 +104,15 @@ async function checkFastSignals(symbol, currentPrice) {
     if (config.signals.emaCrossover.enabled) {
       const crossoverSignal = detectEMACrossover(symbol, closes, currentPrice);
       if (crossoverSignal) {
-        await sendFastAlert(symbol, crossoverSignal, currentPrice, assetConfig);
+        const result = await sendFastAlert(symbol, crossoverSignal, currentPrice, assetConfig);
+        if (result && result.sent) {
+          return result;
+        }
         return;
       }
     }
+
+    // NOTE: Acceleration removed - MEDIUM urgency signals not sent
 
   } catch (error) {
     // Silently fail for routine errors
@@ -342,7 +353,7 @@ function incrementFastSignalCount(symbol) {
 }
 
 /**
- * Send fast alert to Telegram AND LOG TO DATABASE
+ * Send fast alert to Telegram
  */
 async function sendFastAlert(symbol, signal, currentPrice, assetConfig) {
   // Check daily limits first
@@ -351,9 +362,20 @@ async function sendFastAlert(symbol, signal, currentPrice, assetConfig) {
   }
   
   const now = Date.now();
+  
+  // NEW: Check per-symbol cooldown (prevent multiple signals for same symbol within cooldown period)
+  if (lastSymbolAlert.has(symbol)) {
+    const lastAlert = lastSymbolAlert.get(symbol);
+    const timeSinceAlert = now - lastAlert;
+    if (timeSinceAlert < config.alertCooldown) {
+      console.log(`⏭️ ${symbol}: Fast signal detected (${signal.type}) but symbol on cooldown (${(timeSinceAlert / 60000).toFixed(1)}m/${(config.alertCooldown / 60000).toFixed(0)}m)`);
+      return;
+    }
+  }
+  
   const key = `${symbol}_${signal.type}`;
   
-  // Check cooldown (CLEANED - no console spam)
+  // Check per-type cooldown (backup - should not be needed with symbol cooldown)
   if (alertedSignals.has(key)) {
     const lastAlert = alertedSignals.get(key);
     if (now - lastAlert < config.alertCooldown) {
@@ -371,7 +393,6 @@ async function sendFastAlert(symbol, signal, currentPrice, assetConfig) {
     : signal.entry - risk * config.takeProfit.tp2Multiplier;
 
   const decimals = getDecimalPlaces(currentPrice);
-  const positionSize = 100; // Default position size for fast signals
 
   const message1 = `⚡ URGENT ${symbol}
 ✅ ${signal.direction} - ${signal.urgency} URGENCY
@@ -399,27 +420,18 @@ ${signal.details}
 📌 Position Size: ${(config.positionSizeMultiplier * 100).toFixed(0)}% of normal (fast signal)`;
 
   try {
-    // Send Telegram notification
     await sendTelegramNotification(message1, message2, symbol);
-    alertedSignals.set(key, now);
     
-    // LOG TO DATABASE WITH signal_source = 'fast'
-    await logSignal(symbol, {
-      signal: signal.direction === 'LONG' ? 'Buy' : 'Sell',
-      notes: `⚡ FAST SIGNAL: ${signal.reason}\n\n${signal.details}\n\nUrgency: ${signal.urgency}\nConfidence: ${signal.confidence}%\nType: ${signal.type}`,
-      entry: signal.entry,
-      tp1: tp1,
-      tp2: tp2,
-      sl: signal.sl,
-      positionSize: positionSize,
-      leverage: 20
-    }, 'pending', null, 'fast'); // Pass 'fast' as signal_source
+    // Update both cooldown trackers
+    alertedSignals.set(key, now);
+    lastSymbolAlert.set(symbol, now); // NEW: Track per-symbol cooldown
     
     // Increment count after successful send
     incrementFastSignalCount(symbol);
     
-    console.log(`⚡ FAST ALERT SENT & LOGGED: ${symbol} ${signal.type} at ${currentPrice.toFixed(decimals)}`);
+    console.log(`⚡ FAST ALERT SENT: ${symbol} ${signal.type} at ${currentPrice.toFixed(decimals)}`);
     
+    // Return signal info so it can be registered externally
     return {
       sent: true,
       type: signal.type,
