@@ -401,18 +401,7 @@ Position Size: ${(config.positionSizeMultiplier * 100).toFixed(0)}% of normal (f
     lastSymbolAlert.set(symbol, now);
     
     console.log(`💾 ${symbol}: Logging fast signal to database...`);
-    console.log(`   Signal data:`, {
-      symbol,
-      signal: signal.direction === 'LONG' ? 'Buy' : 'Sell',
-      entry: signal.entry,
-      tp1: tp1,
-      tp2: tp2,
-      sl: signal.sl,
-      positionSize: positionSize,
-      leverage: 20,
-      signalSource: 'fast'
-    });
-    
+      
     const logsService = require('../logsService');
     console.log(`   logsService loaded:`, typeof logsService);
     console.log(`   logSignal exists:`, typeof logsService.logSignal);
