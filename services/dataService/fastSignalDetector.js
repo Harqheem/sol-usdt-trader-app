@@ -407,38 +407,27 @@ ${signal.reason}`;
 
   const message2 = `${symbol} - FAST SIGNAL DETAILS
 
-⚡ Urgency: ${signal.urgency}
-🎯 Confidence: ${signal.confidence}%
-📊 Type: ${signal.type}
+Urgency: ${signal.urgency}
+Confidence: ${signal.confidence}%
+Type: ${signal.type}
 
 ${signal.details}
 
-⏰ TIME SENSITIVE - Price moving NOW
-🔍 Entry at current market price
-⚠️ Full analysis will follow at candle close
+TIME SENSITIVE - Price moving NOW
+Entry at current market price
+Full analysis will follow at candle close
 
-📌 Position Size: ${(config.positionSizeMultiplier * 100).toFixed(0)}% of normal (fast signal)`;
+Position Size: ${(config.positionSizeMultiplier * 100).toFixed(0)}% of normal (fast signal)`;
 
   try {
+    // Send Telegram notification first
     await sendTelegramNotification(message1, message2, symbol);
+    console.log(`✅ ${symbol}: Telegram notification sent`);
     
     // Update both cooldown trackers
     alertedSignals.set(key, now);
     lastSymbolAlert.set(symbol, now); // NEW: Track per-symbol cooldown
     
-        // LOG TO DATABASE WITH signal_source = 'fast'
-    await logSignal(symbol, {
-      signal: signal.direction === 'LONG' ? 'Buy' : 'Sell',
-      notes: `⚡ FAST SIGNAL: ${signal.reason}\n\n${signal.details}\n\nUrgency: ${signal.urgency}\nConfidence: ${signal.confidence}%\nType: ${signal.type}`,
-      entry: signal.entry,
-      tp1: tp1,
-      tp2: tp2,
-      sl: signal.sl,
-      positionSize: positionSize,
-      leverage: 20
-    }, 'pending', null, 'fast'); // Pass 'fast' as signal_source
-    
-
     // Increment count after successful send
     incrementFastSignalCount(symbol);
     
