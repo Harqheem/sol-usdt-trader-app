@@ -426,6 +426,19 @@ ${signal.details}
     alertedSignals.set(key, now);
     lastSymbolAlert.set(symbol, now); // NEW: Track per-symbol cooldown
     
+        // LOG TO DATABASE WITH signal_source = 'fast'
+    await logSignal(symbol, {
+      signal: signal.direction === 'LONG' ? 'Buy' : 'Sell',
+      notes: `⚡ FAST SIGNAL: ${signal.reason}\n\n${signal.details}\n\nUrgency: ${signal.urgency}\nConfidence: ${signal.confidence}%\nType: ${signal.type}`,
+      entry: signal.entry,
+      tp1: tp1,
+      tp2: tp2,
+      sl: signal.sl,
+      positionSize: positionSize,
+      leverage: 20
+    }, 'pending', null, 'fast'); // Pass 'fast' as signal_source
+    
+
     // Increment count after successful send
     incrementFastSignalCount(symbol);
     
