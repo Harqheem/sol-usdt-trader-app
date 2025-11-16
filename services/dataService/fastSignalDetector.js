@@ -3,7 +3,6 @@
 const TI = require('technicalindicators');
 const { wsCache } = require('./cacheManager');
 const { sendTelegramNotification } = require('../notificationService');
-const { logSignal } = require('../logsService');
 const { getAssetConfig } = require('../../config/assetConfig');
 const config = require('../../config/fastSignalConfig');
 
@@ -368,7 +367,8 @@ async function sendFastAlert(symbol, signal, currentPrice, assetConfig) {
     const lastAlert = lastSymbolAlert.get(symbol);
     const timeSinceAlert = now - lastAlert;
     if (timeSinceAlert < config.alertCooldown) {
-         return;
+      // REMOVED SPAM LOG - silently skip
+      return;
     }
   }
   
@@ -392,6 +392,7 @@ async function sendFastAlert(symbol, signal, currentPrice, assetConfig) {
     : signal.entry - risk * config.takeProfit.tp2Multiplier;
 
   const decimals = getDecimalPlaces(currentPrice);
+  const positionSize = 100; // Default position size for fast signals
 
   const message1 = `⚡ URGENT ${symbol}
 ✅ ${signal.direction} - ${signal.urgency} URGENCY
@@ -425,19 +426,6 @@ ${signal.details}
     alertedSignals.set(key, now);
     lastSymbolAlert.set(symbol, now); // NEW: Track per-symbol cooldown
     
-    // LOG TO DATABASE WITH signal_source = 'fast'
-    await logSignal(symbol, {
-      signal: signal.direction === 'LONG' ? 'Buy' : 'Sell',
-      notes: `⚡ FAST SIGNAL: ${signal.reason}\n\n${signal.details}\n\nUrgency: ${signal.urgency}\nConfidence: ${signal.confidence}%\nType: ${signal.type}`,
-      entry: signal.entry,
-      tp1: tp1,
-      tp2: tp2,
-      sl: signal.sl,
-      positionSize: positionSize,
-      leverage: 20
-    }, 'pending', null, 'fast'); // Pass 'fast' as signal_source
-    
-
     // Increment count after successful send
     incrementFastSignalCount(symbol);
     
