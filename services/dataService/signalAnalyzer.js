@@ -171,10 +171,10 @@ async function analyzeSymbol(symbol) {
       rejectionReason = `RSI too low (${indicators.rsi.toFixed(2)})`;
     } else if (regimeAdjustments.avoidEntry) {
       rejectionReason = `Regime (${regimeData.regime}) unfavorable`;
-    } else if (isBullish && (regimeData.regime === 'strong_downtrend' || regimeData.regime === 'weak_downtrend')) {
-      rejectionReason = `Cannot LONG in ${regimeData.regime}`;
-    } else if (isBearish && (regimeData.regime === 'strong_uptrend' || regimeData.regime === 'weak_uptrend')) {
-      rejectionReason = `Cannot SHORT in ${regimeData.regime}`;
+    } else if (isBullish && regimeData.regime === 'strong_downtrend' && htf.trend1h === 'Below Strong') {
+  rejectionReason = `Strong downtrend on multiple timeframes`;
+    } else if (isBearish && regimeData.regime === 'strong_uptrend' && htf.trend1h === 'Above Strong') {
+  rejectionReason = `Strong uptrend on multiple timeframes`;
     } else if (isBullish && htf.trend1h === 'Below Strong') {
       rejectionReason = `1h strongly bearish (ADX ${htf.adx1h.toFixed(1)})`;
     } else if (isBearish && htf.trend1h === 'Above Strong') {
@@ -184,9 +184,9 @@ async function analyzeSymbol(symbol) {
     // Distance from SMA200 check
     const distFromSMA200 = Math.abs(currentPrice - indicators.sma200) / indicators.sma200;
     if (!rejectionReason) {
-      if (isBullish && currentPrice < indicators.sma200 && distFromSMA200 > 0.15) {
+      if (isBullish && currentPrice < indicators.sma200 && distFromSMA200 > 0.20) {
         rejectionReason = `Price ${(distFromSMA200 * 100).toFixed(1)}% below SMA200`;
-      } else if (isBearish && currentPrice > indicators.sma200 && distFromSMA200 > 0.15) {
+      } else if (isBearish && currentPrice > indicators.sma200 && distFromSMA200 > 0.20) {
         rejectionReason = `Price ${(distFromSMA200 * 100).toFixed(1)}% above SMA200`;
       }
     }

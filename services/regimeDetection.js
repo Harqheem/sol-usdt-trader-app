@@ -268,7 +268,7 @@ function analyzeRangeVsTrend(closes, highs, lows, bb, adx) {
     }
   });
 
-  if (priceInMiddle > 14) {  // More than 70% of time in middle
+  if (priceInMiddle > 16) {  // More than 70% of time in middle
     analysis.type = 'ranging';
     analysis.confidence = Math.min(analysis.confidence + 20, 95);
   }

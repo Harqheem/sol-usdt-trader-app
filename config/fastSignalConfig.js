@@ -14,7 +14,7 @@ module.exports = {
   signals: {
     breakout: {
       enabled: true,
-      minVolumeRatio: 2.0,        // Need 2x average volume
+      minVolumeRatio: 1.5,        // Need 1.5x average volume
       minPriceChange: 0.005,      // Need 0.5% price move
       confidence: 90,
       urgency: 'CRITICAL'
@@ -30,8 +30,8 @@ module.exports = {
     
     emaCrossover: {
       enabled: true,
-      requireMomentum: true,      // Need confirming price action
-      requirePriceAboveBelow: true, // Price must be on right side of EMA25
+      requireMomentum: false,      // Need confirming price action
+      requirePriceAboveBelow: false, // Price must be on right side of EMA25
       confidence: 80,
       urgency: 'HIGH'
     },
