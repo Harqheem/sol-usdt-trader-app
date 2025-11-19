@@ -6,8 +6,7 @@ const { wsCache } = require('./cacheManager');
 const { sendTelegramNotification } = require('../notificationService');
 const { getAssetConfig } = require('../../config/assetConfig');
 const config = require('../../config/fastSignalConfig');
-const minutesIntoCandle = (Date.now() - cache.candles30m.at(-1).openTime) / 60000;
-if (minutesIntoCandle > 17) return null; // only trade first ~17 min of  // ← Kills 40% of losers instantly
+
 // Track what we've already alerted on
 const alertedSignals = new Map();
 const lastSymbolAlert = new Map();
