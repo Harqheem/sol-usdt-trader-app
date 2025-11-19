@@ -36,6 +36,16 @@ async function checkFastSignals(symbol, currentPrice) {
   
   lastCheckTime.set(symbol, now);
   
+  // EARLY CHECK: If symbol is on cooldown, skip ALL signal detection
+  if (lastSymbolAlert.has(symbol)) {
+    const lastAlert = lastSymbolAlert.get(symbol);
+    const timeSinceAlert = now - lastAlert;
+    if (timeSinceAlert < config.alertCooldown) {
+      // Symbol on cooldown - don't check any signals
+      return;
+    }
+  }
+  
   try {
     const cache = wsCache[symbol];
     if (!cache || !cache.isReady) return;
@@ -83,7 +93,7 @@ async function checkFastSignals(symbol, currentPrice) {
         if (result && result.sent) {
           return result; // Return so websocketManager can register it
         }
-        return;
+        // Don't return here - continue checking other signal types
       }
     }
 
@@ -95,7 +105,7 @@ async function checkFastSignals(symbol, currentPrice) {
         if (result && result.sent) {
           return result;
         }
-        return;
+        // Don't return here - continue checking other signal types
       }
     }
 
@@ -107,9 +117,11 @@ async function checkFastSignals(symbol, currentPrice) {
         if (result && result.sent) {
           return result;
         }
-        return;
+        // Don't return here - allows future checks
       }
     }
+
+    // NOTE: Acceleration removed - MEDIUM urgency signals not sent
 
   } catch (error) {
     // Silently fail for routine errors
@@ -125,12 +137,14 @@ async function checkFastSignals(symbol, currentPrice) {
 function detectBreakoutMomentum(symbol, currentPrice, closes, highs, lows, volumes, atr, ema7, ema25) {
   if (volumes.length < 50) return null;
 
+  // Check if volume is surging RIGHT NOW
   const currentVolume = volumes[volumes.length - 1];
   const avgVolume = volumes.slice(-50, -1).reduce((a, b) => a + b, 0) / 49;
   const volumeRatio = currentVolume / avgVolume;
 
   if (volumeRatio < config.signals.breakout.minVolumeRatio) return null;
 
+  // Check for breakout from recent range
   const recentHighs = highs.slice(-20, -1);
   const recentLows = lows.slice(-20, -1);
   const rangeHigh = Math.max(...recentHighs);
@@ -228,6 +242,7 @@ function detectSRBounce(symbol, currentPrice, highs, lows, closes, atr) {
 function detectEMACrossover(symbol, closes, currentPrice) {
   if (closes.length < 30) return null;
 
+  // Calculate EMA arrays to get previous values correctly
   const ema7Array = TI.EMA.calculate({ period: 7, values: closes });
   const ema25Array = TI.EMA.calculate({ period: 25, values: closes });
   
@@ -238,16 +253,19 @@ function detectEMACrossover(symbol, closes, currentPrice) {
   const ema7Prev = ema7Array[ema7Array.length - 2];
   const ema25Prev = ema25Array[ema25Array.length - 2];
 
-  // BULLISH CROSSOVER
+  // BULLISH CROSSOVER - EMA7 just crossed above EMA25
   if (ema7Current > ema25Current && ema7Prev <= ema25Prev) {
+    // Check recent momentum (last 3 candles)
     const recentCloses = closes.slice(-3);
     const hasUpMomentum = recentCloses[2] > recentCloses[1] && recentCloses[1] > recentCloses[0];
     
+    // Require price above EMA25 for confirmation
     if (config.signals.emaCrossover.requirePriceAboveBelow && currentPrice <= ema25Current) {
       return null;
     }
     
     if (!config.signals.emaCrossover.requireMomentum || hasUpMomentum) {
+      // Calculate separation between EMAs
       const separation = ((ema7Current - ema25Current) / ema25Current) * 100;
       
       return {
@@ -263,7 +281,7 @@ function detectEMACrossover(symbol, closes, currentPrice) {
     }
   }
 
-  // BEARISH CROSSOVER
+  // BEARISH CROSSOVER - EMA7 just crossed below EMA25
   if (ema7Current < ema25Current && ema7Prev >= ema25Prev) {
     const recentCloses = closes.slice(-3);
     const hasDownMomentum = recentCloses[2] < recentCloses[1] && recentCloses[1] < recentCloses[0];
@@ -291,6 +309,9 @@ function detectEMACrossover(symbol, closes, currentPrice) {
   return null;
 }
 
+/**
+ * Reset daily counts at midnight
+ */
 function checkAndResetDailyCounts() {
   const today = new Date().toDateString();
   if (dailySignalCounts.date !== today) {
@@ -303,16 +324,21 @@ function checkAndResetDailyCounts() {
   }
 }
 
+/**
+ * Check if we can send another fast signal
+ */
 function canSendFastSignal(symbol) {
   checkAndResetDailyCounts();
   
   const { maxDailyFastSignals, maxPerSymbolPerDay } = config.riskManagement;
   
+  // Check total daily limit
   if (dailySignalCounts.total >= maxDailyFastSignals) {
     console.log(`⛔ Fast signals: Daily limit reached (${maxDailyFastSignals})`);
     return false;
   }
   
+  // Check per-symbol limit
   const symbolCount = dailySignalCounts.bySymbol.get(symbol) || 0;
   if (symbolCount >= maxPerSymbolPerDay) {
     console.log(`⛔ ${symbol}: Per-symbol fast signal limit reached (${maxPerSymbolPerDay})`);
@@ -322,6 +348,9 @@ function canSendFastSignal(symbol) {
   return true;
 }
 
+/**
+ * Increment fast signal count
+ */
 function incrementFastSignalCount(symbol) {
   checkAndResetDailyCounts();
   
@@ -332,30 +361,38 @@ function incrementFastSignalCount(symbol) {
   console.log(`📊 Fast signals today: ${dailySignalCounts.total}/${config.riskManagement.maxDailyFastSignals} (${symbol}: ${symbolCount + 1}/${config.riskManagement.maxPerSymbolPerDay})`);
 }
 
+/**
+ * Send fast alert to Telegram
+ */
 async function sendFastAlert(symbol, signal, currentPrice, assetConfig) {
+  // Check daily limits first
   if (!canSendFastSignal(symbol)) {
     return;
   }
   
   const now = Date.now();
   
+  // NEW: Check per-symbol cooldown (prevent multiple signals for same symbol within cooldown period)
   if (lastSymbolAlert.has(symbol)) {
     const lastAlert = lastSymbolAlert.get(symbol);
     const timeSinceAlert = now - lastAlert;
     if (timeSinceAlert < config.alertCooldown) {
+      // REMOVED SPAM LOG - silently skip
       return;
     }
   }
   
   const key = `${symbol}_${signal.type}`;
   
+  // Check per-type cooldown (backup - should not be needed with symbol cooldown)
   if (alertedSignals.has(key)) {
     const lastAlert = alertedSignals.get(key);
     if (now - lastAlert < config.alertCooldown) {
-      return;
+      return; // Silently skip if on cooldown
     }
   }
 
+  // Calculate R:R
   const risk = Math.abs(signal.entry - signal.sl);
   const tp1 = signal.direction === 'LONG' 
     ? signal.entry + risk * config.takeProfit.tp1Multiplier
@@ -365,7 +402,7 @@ async function sendFastAlert(symbol, signal, currentPrice, assetConfig) {
     : signal.entry - risk * config.takeProfit.tp2Multiplier;
 
   const decimals = getDecimalPlaces(currentPrice);
-  const positionSize = 100;
+  const positionSize = 100; // Default position size for fast signals
 
   const message1 = `⚡ URGENT ${symbol}
 ✅ ${signal.direction} - ${signal.urgency} URGENCY
@@ -393,40 +430,20 @@ Full analysis will follow at candle close
 Position Size: ${(config.positionSizeMultiplier * 100).toFixed(0)}% of normal (fast signal)`;
 
   try {
-    console.log(`📤 ${symbol}: Attempting to send Telegram notification...`);
+    // Send Telegram notification first
     await sendTelegramNotification(message1, message2, symbol);
     console.log(`✅ ${symbol}: Telegram notification sent`);
     
+    // Update both cooldown trackers
     alertedSignals.set(key, now);
-    lastSymbolAlert.set(symbol, now);
+    lastSymbolAlert.set(symbol, now); // NEW: Track per-symbol cooldown
     
-    console.log(`💾 ${symbol}: Logging fast signal to database...`);
-      
-    const logsService = require('../logsService');
-    console.log(`   logsService loaded:`, typeof logsService);
-    console.log(`   logSignal exists:`, typeof logsService.logSignal);
-    
-    if (!logsService.logSignal) {
-      throw new Error('logSignal function not found in logsService');
-    }
-    
-    const logResult = await logsService.logSignal(symbol, {
-      signal: signal.direction === 'LONG' ? 'Buy' : 'Sell',
-      notes: `⚡ FAST SIGNAL: ${signal.reason}\n\n${signal.details}\n\nUrgency: ${signal.urgency}\nConfidence: ${signal.confidence}%\nType: ${signal.type}`,
-      entry: signal.entry,
-      tp1: tp1,
-      tp2: tp2,
-      sl: signal.sl,
-      positionSize: positionSize,
-      leverage: 20
-    }, 'pending', null, 'fast');
-    
-    console.log(`✅ ${symbol}: Fast signal logged with ID: ${logResult}`);
-    
+    // Increment count after successful send
     incrementFastSignalCount(symbol);
     
-    console.log(`⚡ FAST ALERT SENT & LOGGED: ${symbol} ${signal.type} at ${currentPrice.toFixed(decimals)}`);
+    console.log(`⚡ FAST ALERT SENT: ${symbol} ${signal.type} at ${currentPrice.toFixed(decimals)}`);
     
+    // Return signal info so it can be registered externally
     return {
       sent: true,
       type: signal.type,
@@ -434,12 +451,8 @@ Position Size: ${(config.positionSizeMultiplier * 100).toFixed(0)}% of normal (f
       entry: signal.entry
     };
   } catch (error) {
-    console.error(`❌ Failed to send/log fast alert for ${symbol}:`);
-    console.error(`   Error message: ${error.message}`);
-    console.error(`   Error type: ${error.constructor.name}`);
-    console.error(`   Stack trace:`, error.stack);
-    
-    return { sent: false, error: error.message };
+    console.error(`❌ Failed to send fast alert for ${symbol}:`, error.message);
+    return { sent: false };
   }
 }
 
@@ -456,6 +469,7 @@ function getDecimalPlaces(price) {
 
 module.exports = {
   checkFastSignals,
+  // Export for testing/monitoring
   getDailyStats: () => ({ 
     ...dailySignalCounts, 
     bySymbol: Object.fromEntries(dailySignalCounts.bySymbol) 
