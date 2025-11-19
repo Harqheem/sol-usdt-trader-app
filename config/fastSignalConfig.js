@@ -1,4 +1,5 @@
 // CONFIGURATION FOR FAST SIGNAL DETECTION
+// OPTIMIZED FOR 1-MINUTE CANDLE VOLUME DETECTION
 
 module.exports = {
   // Enable/disable fast signals globally
@@ -14,9 +15,20 @@ module.exports = {
   signals: {
     breakout: {
       enabled: true,
-      minVolumeRatio: 1.5,        // Need 1.5x average volume
-      minPriceChange: 0.005,      // Need 0.5% price move
-      confidence: 90,
+      
+      // 1-MINUTE VOLUME THRESHOLDS (more sensitive)
+      minVolumeRatio_1m: 1.5,     // Current 1m candle 1.5x avg (down from 2.0 for more signals)
+      minVolumeSpikeRatio: 2.0,   // 2x = immediate spike (highest priority)
+      
+      // 30-MINUTE VOLUME THRESHOLDS (fallback)
+      minVolumeRatio: 1.2,        // Recent 30m average 1.2x baseline
+      
+      // BREAKOUT FRESHNESS (tighter with 1m detection)
+      maxBreakoutDistance: 0.003, // Max 0.3% past level (was 0.5%)
+      maxClosesInDirection: 1,    // Max 1 30m close past level (was 2)
+      minPriceChange: 0.002,      // Min 0.2% move (was 0.5%)
+      
+      confidence: 85,             // Base confidence (boosted on 1m spike)
       urgency: 'CRITICAL'
     },
     
@@ -30,15 +42,15 @@ module.exports = {
     
     emaCrossover: {
       enabled: true,
-      requireMomentum: false,      // Need confirming price action
-      requirePriceAboveBelow: false, // Price must be on right side of EMA25
+      requireMomentum: false,      // Don't need confirming price action
+      requirePriceAboveBelow: false, // Don't need price on right side
       confidence: 80,
       urgency: 'HIGH'
     },
     
     acceleration: {
-      enabled: true,
-      minAccelerationMultiplier: 2.0, // Recent move must be 2x previous
+      enabled: false,              // Disabled (MEDIUM urgency not sent)
+      minAccelerationMultiplier: 2.0,
       confidence: 75,
       urgency: 'MEDIUM'
     }
@@ -50,7 +62,7 @@ module.exports = {
   // Stop loss settings for fast signals
   stopLoss: {
     breakout: {
-      atrMultiplier: 1.0,         // 1.5 ATR stop for breakouts
+      atrMultiplier: 0.5,         // Tighter SL at breakout level (was 1.0)
       useStructure: true          // Use range high/low as SL reference
     },
     bounce: {
@@ -58,19 +70,19 @@ module.exports = {
       useStructure: true
     },
     crossover: {
-      atrMultiplier: 0.8,         // 1 ATR or EMA25 (whichever closer)
+      atrMultiplier: 0.8,         // 0.8 ATR or EMA25
       useEMA: true
     },
     acceleration: {
       atrMultiplier: 1.0,
-      useRecentLow: true          // Use recent swing low/high
+      useRecentLow: true
     }
   },
   
-  // Take profit targets for fast signals
+  // Take profit targets for fast signals (conservative)
   takeProfit: {
-    tp1Multiplier: 0.3,           // 0.3R for TP1
-    tp2Multiplier: 0.9            // 0.9R for TP2
+    tp1Multiplier: 0.3,           // 0.3R for TP1 (quick profit)
+    tp2Multiplier: 0.9            // 0.9R for TP2 (extended target)
   },
   
   // Risk management
@@ -85,6 +97,7 @@ module.exports = {
   logging: {
     logAllChecks: false,          // Don't log every check (too noisy)
     logDetections: true,          // Log when signals are detected
-    logAlerts: true               // Log when alerts are sent
+    logAlerts: true,              // Log when alerts are sent
+    log1mVolumeSpikes: true       // NEW: Log 1m volume spikes for monitoring
   }
 };

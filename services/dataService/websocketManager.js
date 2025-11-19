@@ -11,9 +11,8 @@ const wsConnections = {};
 let failureCount = {};
 
 // SSE clients tracker for real-time updates
-const sseClients = new Map(); // symbol -> Set of response objects
+const sseClients = new Map();
 
-// Register SSE client
 function registerSSEClient(symbol, res) {
   if (!sseClients.has(symbol)) {
     sseClients.set(symbol, new Set());
@@ -22,7 +21,6 @@ function registerSSEClient(symbol, res) {
   console.log(`📡 ${symbol}: SSE client registered (${sseClients.get(symbol).size} total)`);
 }
 
-// Unregister SSE client
 function unregisterSSEClient(symbol, res) {
   if (sseClients.has(symbol)) {
     sseClients.get(symbol).delete(res);
@@ -30,7 +28,6 @@ function unregisterSSEClient(symbol, res) {
   }
 }
 
-// Broadcast analysis to SSE clients
 function broadcastAnalysis(symbol, analysis) {
   if (!sseClients.has(symbol)) return;
   
@@ -46,7 +43,6 @@ function broadcastAnalysis(symbol, analysis) {
     }
   });
   
-  // Clean up dead clients
   deadClients.forEach(res => unregisterSSEClient(symbol, res));
   
   if (clients.size > 0) {
@@ -69,10 +65,11 @@ async function loadInitialData(symbol) {
         await new Promise(resolve => setTimeout(resolve, backoffDelay));
       }
       
-      const [candles30m, candles1h, candles4h, ticker] = await Promise.all([
+      const [candles30m, candles1h, candles4h, candles1m, ticker] = await Promise.all([
         utils.withTimeout(client.futuresCandles({ symbol, interval: '30m', limit: 500 }), 15000),
         utils.withTimeout(client.candles({ symbol, interval: '1h', limit: 100 }), 15000),
         utils.withTimeout(client.candles({ symbol, interval: '4h', limit: 100 }), 15000),
+        utils.withTimeout(client.futuresCandles({ symbol, interval: '1m', limit: 100 }), 15000), // NEW: Load 1m candles
         utils.withTimeout(client.avgPrice({ symbol }), 10000)
       ]);
 
@@ -83,13 +80,14 @@ async function loadInitialData(symbol) {
       wsCache[symbol].candles30m = candles30m;
       wsCache[symbol].candles1h = candles1h;
       wsCache[symbol].candles4h = candles4h;
+      wsCache[symbol].candles1m = candles1m; // NEW: Store 1m candles
       wsCache[symbol].currentPrice = parseFloat(ticker.price);
       wsCache[symbol].isReady = true;
       wsCache[symbol].lastUpdate = Date.now();
       wsCache[symbol].error = null;
       failureCount[symbol] = 0;
 
-      console.log(`✅ ${symbol}: Loaded (${candles30m.length} candles, $${ticker.price})`);
+      console.log(`✅ ${symbol}: Loaded (${candles30m.length} x 30m, ${candles1m.length} x 1m, $${ticker.price})`);
       return true;
       
     } catch (error) {
@@ -108,18 +106,15 @@ async function loadInitialData(symbol) {
   return false;
 }
 
-// Generate candle summary
 function generateCandleSummary(symbol, analysis) {
   const parts = [];
   
-  // Price action
   const { core, signals, earlySignals, regime } = analysis;
   const priceChange = ((core.ohlc.close - core.ohlc.open) / core.ohlc.open * 100).toFixed(2);
   const priceDirection = priceChange > 0 ? '📈' : priceChange < 0 ? '📉' : '➡️';
   
   parts.push(`${priceDirection} ${symbol} | $${core.currentPrice} (${priceChange > 0 ? '+' : ''}${priceChange}%)`);
   
-  // Signal status
   if (signals.signal.startsWith('Enter')) {
     parts.push(`🎯 ${signals.signal.toUpperCase()}`);
     if (signals.entry !== 'N/A') {
@@ -131,13 +126,11 @@ function generateCandleSummary(symbol, analysis) {
     parts.push(`⚪ No trade signal`);
   }
   
-  // Early signals
   if (earlySignals.recommendation !== 'neutral') {
     const emoji = earlySignals.recommendation.includes('bullish') ? '🟢' : '🔴';
     parts.push(`${emoji} Early: ${earlySignals.recommendation.toUpperCase()} (${earlySignals.confidence})`);
   }
   
-  // Regime
   const regimeEmoji = regime.regime.includes('uptrend') ? '📈' : 
                      regime.regime.includes('downtrend') ? '📉' : '🔄';
   parts.push(`${regimeEmoji} ${regime.regime.replace(/_/g, ' ').toUpperCase()}`);
@@ -163,7 +156,6 @@ async function startSymbolStream(symbol) {
         
         // Register fast signal to prevent duplicate candle-close signals
         if (fastSignalResult && fastSignalResult.sent) {
-          // Store in wsCache to be checked by signalNotifier
           if (!wsCache[symbol].fastSignals) {
             wsCache[symbol].fastSignals = [];
           }
@@ -183,7 +175,13 @@ async function startSymbolStream(symbol) {
     });
     cleanupFunctions.push(tickerCleanup);
 
-    // Kline streams - candle updates
+    // NEW: 1-minute kline stream for volume detection
+    const kline1mCleanup = client.ws.futuresCandles(symbol, '1m', (candle) => {
+      updateCandleCache(symbol, candle, '1m');
+    });
+    cleanupFunctions.push(kline1mCleanup);
+
+    // 30m kline stream - candle updates
     const kline30mCleanup = client.ws.futuresCandles(symbol, '30m', async (candle) => {
       const candleClosed = updateCandleCache(symbol, candle, '30m');
       
@@ -197,7 +195,7 @@ async function startSymbolStream(symbol) {
         const { triggerAnalysis } = require('./analysisScheduler');
         await triggerAnalysis(symbol);
         
-        // Get the cached analysis (same one that was just computed)
+        // Get the cached analysis
         const analysis = wsCache[symbol].lastAnalysis;
         
         if (analysis && !analysis.error) {
@@ -232,7 +230,7 @@ async function startSymbolStream(symbol) {
       startTime: Date.now()
     };
 
-    console.log(`✅ ${symbol}: WebSocket streams connected`);
+    console.log(`✅ ${symbol}: WebSocket streams connected (including 1m)`);
     
   } catch (error) {
     console.error(`❌ ${symbol}: WebSocket error:`, error.message);
@@ -283,7 +281,7 @@ async function initWebSocketManager() {
   
   // Log fast signal status
   if (fastSignalConfig.enabled) {
-    console.log(`⚡ Fast signals: ENABLED (HIGH and CRITICAL urgency only)`);
+    console.log(`⚡ Fast signals: ENABLED with 1-MINUTE VOLUME DETECTION`);
     console.log(`   Check interval: ${fastSignalConfig.checkInterval / 1000}s`);
     console.log(`   Daily limit: ${fastSignalConfig.riskManagement.maxDailyFastSignals} signals`);
   } else {

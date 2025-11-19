@@ -11,11 +11,12 @@ function initializeSymbolCache(symbol) {
     candles30m: [],
     candles1h: [],
     candles4h: [],
+    candles1m: [], // NEW: 1-minute candles for fast volume detection
     lastUpdate: null,
     isReady: false,
     error: null,
     lastAnalysis: null,
-    lastAnalysisTime: null // NEW: Track when analysis was done
+    lastAnalysisTime: null
   };
 }
 
@@ -34,7 +35,14 @@ function updateCandleCache(symbol, kline, interval) {
   };
 
   const cacheKey = interval === '30m' ? 'candles30m' : 
-                   interval === '1h' ? 'candles1h' : 'candles4h';
+                   interval === '1h' ? 'candles1h' : 
+                   interval === '4h' ? 'candles4h' :
+                   interval === '1m' ? 'candles1m' : null;
+
+  if (!cacheKey) {
+    console.warn(`Unknown interval: ${interval}`);
+    return false;
+  }
 
   if (!wsCache[symbol][cacheKey]) {
     wsCache[symbol][cacheKey] = [];
@@ -49,7 +57,10 @@ function updateCandleCache(symbol, kline, interval) {
       candles[existingIndex] = candle;
     } else {
       candles.push(candle);
-      const maxCandles = interval === '30m' ? 500 : 100;
+      // Keep different amounts for different timeframes
+      const maxCandles = interval === '30m' ? 500 : 
+                        interval === '1m' ? 100 :  // Only keep last 100 minutes
+                        100;
       if (candles.length > maxCandles) {
         candles.shift();
       }
@@ -122,7 +133,7 @@ async function forceRefresh(symbol) {
     const result = await analyzeSymbol(symbol);
     if (!result.error) {
       wsCache[symbol].lastAnalysis = result;
-      wsCache[symbol].lastAnalysisTime = Date.now(); // NEW: Track timing
+      wsCache[symbol].lastAnalysisTime = Date.now();
       console.log(`✅ ${symbol}: Forced refresh complete`);
     }
     return result;
