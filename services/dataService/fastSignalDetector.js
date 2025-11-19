@@ -438,10 +438,34 @@ Position Size: ${(config.positionSizeMultiplier * 100).toFixed(0)}% of normal (f
     alertedSignals.set(key, now);
     lastSymbolAlert.set(symbol, now); // NEW: Track per-symbol cooldown
     
+console.log(`💾 ${symbol}: Logging fast signal to database...`);
+      
+    const logsService = require('../logsService');
+    console.log(`   logsService loaded:`, typeof logsService);
+    console.log(`   logSignal exists:`, typeof logsService.logSignal);
+    
+    if (!logsService.logSignal) {
+      throw new Error('logSignal function not found in logsService');
+    }
+    
+    const logResult = await logsService.logSignal(symbol, {
+      signal: signal.direction === 'LONG' ? 'Buy' : 'Sell',
+      notes: `⚡ FAST SIGNAL: ${signal.reason}\n\n${signal.details}\n\nUrgency: ${signal.urgency}\nConfidence: ${signal.confidence}%\nType: ${signal.type}`,
+      entry: signal.entry,
+      tp1: tp1,
+      tp2: tp2,
+      sl: signal.sl,
+      positionSize: positionSize,
+      leverage: 20
+    }, 'pending', null, 'fast');
+    
+    console.log(`✅ ${symbol}: Fast signal logged with ID: ${logResult}`);
+    
+
     // Increment count after successful send
     incrementFastSignalCount(symbol);
     
-    console.log(`⚡ FAST ALERT SENT: ${symbol} ${signal.type} at ${currentPrice.toFixed(decimals)}`);
+    console.log(`⚡ FAST ALERT SENT & LOGGED: ${symbol} ${signal.type} at ${currentPrice.toFixed(decimals)}`);
     
     // Return signal info so it can be registered externally
     return {
@@ -451,8 +475,12 @@ Position Size: ${(config.positionSizeMultiplier * 100).toFixed(0)}% of normal (f
       entry: signal.entry
     };
   } catch (error) {
-    console.error(`❌ Failed to send fast alert for ${symbol}:`, error.message);
-    return { sent: false };
+    console.error(`❌ Failed to send/log fast alert for ${symbol}:`);
+    console.error(`   Error message: ${error.message}`);
+    console.error(`   Error type: ${error.constructor.name}`);
+    console.error(`   Stack trace:`, error.stack);
+    
+    return { sent: false, error: error.message };
   }
 }
 
