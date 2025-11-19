@@ -87,18 +87,19 @@ async function checkFastSignals(symbol, currentPrice) {
     
     // 1. BREAKOUT WITH VOLUME SURGE (CRITICAL urgency) - NOW USES 1M CANDLES
     if (config.signals.breakout.enabled) {
-      const breakoutSignal = detectBreakoutMomentum(
-        symbol, 
-        currentPrice, 
-        closes, 
-        highs, 
-        lows, 
-        volumes30m, 
-        atr, 
-        ema7, 
-        ema25,
-        candles1m // NEW: Pass 1m candles for volume detection
-      );
+  const breakoutSignal = detectBreakoutMomentum(
+    symbol, 
+    currentPrice, 
+    closes, 
+    highs, 
+    lows, 
+    volumes30m, 
+    atr, 
+    ema7, 
+    ema25,
+    cache.candles1m,        // ← pass 1m candles
+    cache.candles30m.at(-1) // ← pass current 30m candle for freshness
+  );
       if (breakoutSignal) {
         const result = await sendFastAlert(symbol, breakoutSignal, currentPrice, assetConfig);
         if (result && result.sent) {
@@ -109,7 +110,16 @@ async function checkFastSignals(symbol, currentPrice) {
 
     // 2. SUPPORT/RESISTANCE BOUNCE (HIGH urgency)
     if (config.signals.supportResistanceBounce.enabled) {
-      const bounceSignal = detectSRBounce(symbol, currentPrice, highs, lows, closes, atr);
+  const bounceSignal = detectSRBounce(
+    symbol,
+    currentPrice,
+    highs,
+    lows,
+    closes,
+    atr,
+    cache.candles1m,        // ← pass 1m candles
+    cache.candles30m.at(-1) // ← for freshness check
+  );
       if (bounceSignal) {
         const result = await sendFastAlert(symbol, bounceSignal, currentPrice, assetConfig);
         if (result && result.sent) {
@@ -137,47 +147,41 @@ async function checkFastSignals(symbol, currentPrice) {
   }
 }
 
-function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows30m, volumes30m, atr, ema7, ema25, candles1m = null) {
+function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows30m, volumes30m, atr, ema7, ema25, candles1m = null, current30mCandle = null) {
   if (!candles1m || candles1m.length < 80 || volumes30m.length < 50) return null;
 
-  const current30mCandle = wsCache[symbol].candles30m.at(-1);
-  const minutesInto30m = (Date.now() - current30mCandle.openTime) / 60000;
+  // Freshness check
+  if (current30mCandle) {
+    const minutesInto30m = (Date.now() - current30mCandle.openTime) / 60000;
+    if (minutesInto30m > 17) return null;
+  }
 
-  // KILL LATE-CANDLE FAKEOUTS
-  if (minutesInto30m > 17) return null;
-
-  // === ELITE 1-MINUTE VOLUME SURGE DETECTION ===
+  // === ELITE 1M VOLUME SURGE ===
   const vol1m = candles1m.slice(-60).map(c => parseFloat(c.volume));
-
-  const volLast10min = vol1m.slice(-10).reduce((a, b) => a + b, 0);
-  const volPrev20min = vol1m.slice(-30, -10).reduce((a, b) => a + b, 0) || 1;
-  const volumeRatio10vs20 = volLast10min / volPrev20min;
+  const volLast10 = vol1m.slice(-10).reduce((a,b) => a+b, 0);
+  const volPrev20 = vol1m.slice(-30, -10).reduce((a,b) => a+b, 0) || 1;
+  const volumeRatio10vs20 = volLast10 / volPrev20;
 
   const last3vol = vol1m.slice(-3);
   const accelerating = last3vol[2] > last3vol[1] * 1.20 && last3vol[1] > last3vol[0] * 1.20;
-
   const recentHighVol = Math.max(...vol1m.slice(-30, -8));
   const hasClimaxBar = vol1m.slice(-8).some(v => v > recentHighVol * 2.8);
 
   if (volumeRatio10vs20 < 3.4 || !accelerating || !hasClimaxBar) return null;
 
-  // === STRUCTURE FROM 30M ===
   const recentHighs = highs30m.slice(-20, -1);
   const recentLows  = lows30m.slice(-20, -1);
   const rangeHigh = Math.max(...recentHighs);
   const rangeLow  = Math.min(...recentLows);
 
-  // ——————————————————— BULLISH BREAKOUT + RETEST ———————————————————
+  // BULLISH RETEST
   if (currentPrice > rangeHigh && currentPrice > ema25) {
-    // Was price actually below the level recently?
     if (highs30m.slice(-4).every(h => h <= rangeHigh * 1.002) === false) return null;
 
-    // MANDATORY PULLBACK AFTER INITIAL BREAK
     const highestSinceBreak = Math.max(...highs30m.slice(-7));
     const pullbackATR = (highestSinceBreak - currentPrice) / atr;
-
-    if (pullbackATR < 0.35 || pullbackATR > 2.1) return null;           // must pull back decently
-    if (currentPrice < rangeHigh * 0.999) return null;                 // must hold the level
+    if (pullbackATR < 0.35 || pullbackATR > 2.1) return null;
+    if (currentPrice < rangeHigh * 0.999) return null;
 
     const confidence = Math.min(95, 82 + Math.floor(volumeRatio10vs20 * 1.8));
 
@@ -186,21 +190,19 @@ function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows3
       direction: 'LONG',
       urgency: 'CRITICAL',
       confidence,
-      reason: `ELITE BULLISH BREAK & RETEST\n${volumeRatio10vs20.toFixed(1)}x 10-min volume explosion (climax + accelerating)\nRetesting ${rangeHigh.toFixed(4)} after ${pullbackATR.toFixed(2)} ATR pullback`,
+      reason: `ELITE BULLISH BREAK & RETEST\n${volumeRatio10vs20.toFixed(1)}x volume surge\nRetesting ${rangeHigh.toFixed(4)} after ${pullbackATR.toFixed(2)} ATR pullback`,
       entry: currentPrice,
-      sl: Math.max(rangeLow, currentPrice - atr * 0.8),
-      details: `Level: ${rangeHigh.toFixed(4)} | Pullback: ${pullbackATR.toFixed(2)} ATR | Vol surge: ${volumeRatio10vs20.toFixed(2)}x | Early in 30m candle`,
-      meta: { volumeRatio: volumeRatio10vs20.toFixed(2), pullbackATR: pullbackATR.toFixed(2) }
+      sl: Math.max(rangeLow, currentPrice - atr * 1.3),
+      details: `Pullback: ${pullbackATR.toFixed(2)} ATR | Vol: ${volumeRatio10vs20.toFixed(2)}x`
     };
   }
 
-  // ——————————————————— BEARISH BREAKOUT + RETEST ———————————————————
+  // BEARISH RETEST
   if (currentPrice < rangeLow && currentPrice < ema25) {
     if (lows30m.slice(-4).every(l => l >= rangeLow * 0.998) === false) return null;
 
     const lowestSinceBreak = Math.min(...lows30m.slice(-7));
     const pullbackATR = (currentPrice - lowestSinceBreak) / atr;
-
     if (pullbackATR < 0.35 || pullbackATR > 2.1) return null;
     if (currentPrice > rangeLow * 1.001) return null;
 
@@ -211,11 +213,10 @@ function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows3
       direction: 'SHORT',
       urgency: 'CRITICAL',
       confidence,
-      reason: `ELITE BEARISH BREAKDOWN & RETEST\n${volumeRatio10vs20.toFixed(1)}x 10-min volume explosion (climax + accelerating)\nRetesting ${rangeLow.toFixed(4)} after ${pullbackATR.toFixed(2)} ATR bounce`,
+      reason: `ELITE BEARISH BREAKDOWN & RETEST\n${volumeRatio10vs20.toFixed(1)}x volume surge\nRetesting ${rangeLow.toFixed(4)}`,
       entry: currentPrice,
-      sl: Math.min(rangeHigh, currentPrice + atr * 0.8),
-      details: `Level: ${rangeLow.toFixed(4)} | Bounce: ${pullbackATR.toFixed(2)} ATR | Vol surge: ${volumeRatio10vs20.toFixed(2)}x`,
-      meta: { volumeRatio: volumeRatio10vs20.toFixed(2), pullbackATR: pullbackATR.toFixed(2) }
+      sl: Math.min(rangeHigh, currentPrice + atr * 1.3),
+      details: `Bounce: ${pullbackATR.toFixed(2)} ATR | Vol: ${volumeRatio10vs20.toFixed(2)}x`
     };
   }
 
@@ -225,95 +226,83 @@ function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows3
  * 2. SUPPORT/RESISTANCE BOUNCE - HIGH urgency
   * ELITE SUPPORT/RESISTANCE 
  */
-function detectSRBounce(symbol, currentPrice, highs30m, lows30m, closes30m, atr, candles1m = null) {
+function detectSRBounce(symbol, currentPrice, highs30m, lows30m, closes30m, atr, candles1m = null, current30mCandle = null) {
   if (!candles1m || candles1m.length < 100) return null;
 
-  const current30m = wsCache[symbol].candles30m.at(-1);
-  const minutesInto30m = (Date.now() - current30m.openTime) / 60000;
-  if (minutesInto30m > 18) return null; // late-candle garbage
+  if (current30mCandle) {
+    const minutesInto30m = (Date.now() - current30mCandle.openTime) / 60000;
+    if (minutesInto30m > 18) return null;
+  }
 
-  // === 1. Find REAL S/R levels using 1-minute fractals (last 3 hours) ===
-  const recent1m = candles1m.slice(-180); // 3 hours
+  const recent1m = candles1m.slice(-180);
   const lows1m = recent1m.map(c => parseFloat(c.low));
   const highs1m = recent1m.map(c => parseFloat(c.high));
+  const vol1m = recent1m.map(c => parseFloat(c.volume));
 
-  // Multiple touches = real level
-  const supportLevels = findLevels(lows1m, 0.0015);  // 0.15% tolerance
+  const volLast10 = vol1m.slice(-10).reduce((a,b) => a+b, 0);
+  const volPrev20 = vol1m.slice(-30, -10).reduce((a,b) => a+b, 0) || 1;
+  const volumeSurge = volLast10 / volPrev20 > 2.1;
+
+  const supportLevels = findLevels(lows1m, 0.0015);
   const resistanceLevels = findLevels(highs1m, 0.0015);
 
   const keySupport = supportLevels[0]?.price;
   const keyResistance = resistanceLevels[0]?.price;
 
-  if (!keySupport && !keyResistance) return null;
-
-  // === 2. Volume confirmation on the touch ===
-  const vol1m = recent1m.map(c => parseFloat(c.volume));
-  const last10vol = vol1m.slice(-10).reduce((a,b) => a+b, 0);
-  const prev20vol = vol1m.slice(-30, -10).reduce((a,b) => a+b, 0) || 1;
-  const volumeSurge = last10vol / prev20vol > 2.1;
-
-  // === 3. BULLISH BOUNCE FROM SUPPORT (RETTEST LOGIC) ===
   if (keySupport && currentPrice > keySupport * 0.998) {
     const touched = lows1m.slice(-20).some(l => l <= keySupport * 1.003);
     const currentLow = Math.min(...lows1m.slice(-5));
-
-    // Must have wicked down and now recovering + volume
     const bounceATR = (currentPrice - currentLow) / atr;
-    if (touched && bounceATR > 0.4 && bounceATR < 2.3 && volumeSurge) {
-      // Second touch = money (retest)
-      const previousTouches = lows1m.slice(0, -20).filter(l => Math.abs(l - keySupport) < keySupport * 0.003).length;
-      const confidence = previousTouches >= 1 ? 92 : 84;
 
+    if (touched && bounceATR > 0.4 && bounceATR < 2.3 && volumeSurge) {
+      const previousTouches = lows1m.slice(0, -20).filter(l => Math.abs(l - keySupport) < keySupport * 0.003).length;
       return {
         type: 'ELITE_SUPPORT_BOUNCE',
         direction: 'LONG',
         urgency: 'HIGH',
-        confidence,
-        reason: `ELITE SUPPORT BOUNCE RETEST\n${keySupport.toFixed(4)} held with ${bounceATR.toFixed(2)} ATR recovery\n${volumeSurge ? '2.1x+ volume surge on touch' : ''}\n${previousTouches + 1}x touched`,
+        confidence: previousTouches >= 1 ? 92 : 84,
+        reason: `ELITE SUPPORT BOUNCE\n${keySupport.toFixed(4)} held with volume surge\n${previousTouches + 1}x touched`,
         entry: currentPrice,
         sl: keySupport - atr * 0.4,
-        details: `Support: ${keySupport.toFixed(4)} | Bounce: ${bounceATR.toFixed(2)} ATR | Touches: ${previousTouches + 1}x | Vol surge: ${volumeSurge ? 'YES' : 'NO'}`
+        details: `Support: ${keySupport.toFixed(4)} | Bounce: ${bounceATR.toFixed(2)} ATR`
       };
     }
   }
 
-  // === 4. BEARISH REJECTION FROM RESISTANCE ===
   if (keyResistance && currentPrice < keyResistance * 1.002) {
     const touched = highs1m.slice(-20).some(h => h >= keyResistance * 0.997);
     const currentHigh = Math.max(...highs1m.slice(-5));
-
     const rejectionATR = (currentHigh - currentPrice) / atr;
+
     if (touched && rejectionATR > 0.4 && rejectionATR < 2.3 && volumeSurge) {
       const previousTouches = highs1m.slice(0, -20).filter(h => Math.abs(h - keyResistance) < keyResistance * 0.003).length;
-      const confidence = previousTouches >= 1 ? 92 : 84;
-
       return {
         type: 'ELITE_RESISTANCE_REJECTION',
         direction: 'SHORT',
         urgency: 'HIGH',
-        confidence,
-        reason: `ELITE RESISTANCE REJECTION\n${keyResistance.toFixed(4)} rejected with ${rejectionATR.toFixed(2)} ATR drop\n${volumeSurge ? '2.1x+ volume on rejection' : ''}\n${previousTouches + 1}x touched`,
+        confidence: previousTouches >= 1 ? 92 : 84,
+        reason: `ELITE RESISTANCE REJECTION\n${keyResistance.toFixed(4)} capped with volume`,
         entry: currentPrice,
         sl: keyResistance + atr * 0.4,
-        details: `Resistance: ${keyResistance.toFixed(4)} | Rejection: ${rejectionATR.toFixed(2)} ATR | Touches: ${previousTouches + 1}x`
+        details: `Resistance: ${keyResistance.toFixed(4)} | Rejection: ${rejectionATR.toFixed(2)} ATR`
       };
     }
   }
 
   return null;
 }
-
 /** Helper: Find real S/R levels with multiple touches */
 function findLevels(prices, tolerance = 0.0015) {
   const levels = [];
-  for (let i = 5; i < prices.length - 5; i++) {
-    const price = prices[i];
-    const touches = prices.filter(p => Math.abs(p - price) < price * tolerance).length;
-    if (touches >= 3) { // at least 3 touches = real level
-      levels.push({ price, touches });
+  const seen = new Set();
+  for (const price of prices) {
+    if (seen.has(price.toFixed(6))) continue;
+    const touches = prices.filter(p => Math.abs(p - price) < price * tolerance);
+    if (touches.length >= 3) {
+      levels.push({ price, touches: touches.length });
+      seen.add(price.toFixed(6));
     }
   }
-  // Return strongest levels first
   return levels
     .sort((a, b) => b.touches - a.touches || Math.abs(prices[prices.length-1] - a.price) - Math.abs(prices[prices.length-1] - b.price))
     .slice(0, 3);
