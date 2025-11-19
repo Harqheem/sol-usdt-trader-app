@@ -8,7 +8,7 @@ module.exports = {
   checkInterval: 10000, // 10 seconds
   
   // Cooldown between same-type alerts for same symbol 
-  alertCooldown: 72000000, // 2 hour
+  alertCooldown: 7200000, // 2 hour
   
   // Signal type priorities and settings
   signals: {
@@ -58,7 +58,7 @@ module.exports = {
       useStructure: true
     },
     crossover: {
-      atrMultiplier: 1.0,         // 1 ATR or EMA25 (whichever closer)
+      atrMultiplier: 0.8,         // 1 ATR or EMA25 (whichever closer)
       useEMA: true
     },
     acceleration: {
