@@ -236,17 +236,8 @@ function getSortValue(signal, column) {
       return signal.symbol || '';
     case 'signal':
       return signal.signal_type || '';
-    case 'tp1':
-      return signal.tp1 || 0;
-    case 'tp2':
-      return signal.tp2 || 0;
-    case 'sl':
-      return signal.sl || 0;
-    case 'qty':
-      const customPosition = parseFloat(customPositionSizeInput.value) || 100;
-      const customLeverage = parseFloat(customLeverageInput.value) || 20;
-      const notional = customPosition * customLeverage;
-      return signal.entry ? (notional / signal.entry) : 0;
+    case 'system':
+      return signal.signal_source === 'fast' ? 1 : 0;
     case 'outcome':
       const outcomeOrder = { 'TP': 5, 'BE': 4, 'SL': 3, 'Terminated': 2, 'Expired': 1, '-': 0 };
       return outcomeOrder[getOutcome(signal)] || 0;
