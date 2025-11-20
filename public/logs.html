@@ -62,7 +62,7 @@
       color: #5568d3;
     }
 
-    /* Tabs - SIDE BY SIDE */
+    /* Tabs */
     .tabs-container {
       background: white;
       padding: 16px;
@@ -70,9 +70,6 @@
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
       border: 1px solid #e5e7eb;
       margin-bottom: 24px;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 24px;
     }
 
     .tab-section {
@@ -125,6 +122,12 @@
       background: #10b981;
       border-color: #10b981;
       box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+    }
+
+    .tabs.system-tabs button.active.all-tab {
+      background: #8b5cf6;
+      border-color: #8b5cf6;
+      box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
     }
 
     .tabs.system-tabs button.active.fast-tab {
@@ -606,10 +609,6 @@
         text-align: center;
       }
 
-      .tabs-container {
-        grid-template-columns: 1fr;
-      }
-
       .filter-controls {
         flex-direction: column;
         align-items: stretch;
@@ -686,15 +685,20 @@
       <a href="/">← Back to Dashboard</a>
     </div>
 
-    <!-- Combined Tabs (System & View Type) -->
+    <!-- Signal System Filter (Top Level) -->
     <div class="tabs-container">
       <div class="tab-section">
         <div class="tab-label">Signal System</div>
         <div class="tabs system-tabs">
-          <button id="default-system-tab" class="active">📊 Default System</button>
+          <button id="all-system-tab" class="active all-tab">🔄 All Trades</button>
+          <button id="default-system-tab">📊 Default System</button>
           <button id="fast-system-tab" class="fast-tab">⚡ Fast Signals</button>
         </div>
       </div>
+    </div>
+
+    <!-- View Type Tabs -->
+    <div class="tabs-container">
       <div class="tab-section">
         <div class="tab-label">View Type</div>
         <div class="tabs view-tabs">

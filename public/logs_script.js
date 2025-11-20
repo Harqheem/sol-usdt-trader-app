@@ -3,6 +3,7 @@
 const tableBody = document.querySelector('#signals-table tbody');
 const symbolFilter = document.getElementById('symbol-filter');
 const fromDateInput = document.getElementById('from-date');
+const toDateInput = document.getElementById('to-date');
 const refreshBtn = document.getElementById('refresh-btn');
 const statusFilter = document.getElementById('status-filter');
 const totalTradesEl = document.getElementById('total-trades');
@@ -18,6 +19,7 @@ const closeSheetBtn = document.getElementById('close-sheet');
 const sheetContent = document.getElementById('sheet-content');
 const logsTab = document.getElementById('logs-tab');
 const resultsTab = document.getElementById('results-tab');
+const allSystemTab = document.getElementById('all-system-tab');
 const defaultSystemTab = document.getElementById('default-system-tab');
 const fastSystemTab = document.getElementById('fast-system-tab');
 const outcomeHeader = document.getElementById('outcome-header');
@@ -39,7 +41,7 @@ const nextPageBtn = document.getElementById('next-page');
 let currentData = [];
 let allData = [];
 let currentTab = 'logs';
-let currentSystem = 'default'; // 'default' or 'fast'
+let currentSystem = 'all'; // 'all', 'default', or 'fast'
 let selectedTradeIds = new Set();
 let currentPage = 1;
 let pageSize = 25;
@@ -111,16 +113,19 @@ async function fetchSignals() {
   try {
     let fetchLimit = 500;
     
-    if (fromDateInput.value || symbolFilter.value) {
+    if (fromDateInput.value || toDateInput.value || symbolFilter.value) {
       fetchLimit = 200;
     }
     
     let url = `/signals?limit=${fetchLimit}`;
     if (symbolFilter.value) url += `&symbol=${symbolFilter.value}`;
     if (fromDateInput.value) url += `&fromDate=${fromDateInput.value}T00:00:00Z`;
+    if (toDateInput.value) url += `&toDate=${toDateInput.value}T23:59:59Z`;
     
-    // Add signal_source filter - THIS WAS MISSING!
-    url += `&signalSource=${currentSystem}`;
+    // Add signal_source filter - only if not "all"
+    if (currentSystem !== 'all') {
+      url += `&signalSource=${currentSystem}`;
+    }
     
     if (currentTab === 'results') {
       url += `&status=closed,terminated,expired`;
@@ -131,7 +136,8 @@ async function fetchSignals() {
     const res = await fetch(url);
     if (!res.ok) throw new Error('Fetch failed');
     const data = await res.json();
-    console.log(`Received ${data.length} ${currentSystem} trades`);
+    const systemLabel = currentSystem === 'all' ? 'all' : currentSystem;
+    console.log(`Received ${data.length} ${systemLabel} trades`);
     allData = data;
     currentPage = 1;
     sortAndPaginateData();
@@ -327,7 +333,8 @@ function renderTableAndSummary() {
   
   if (currentData.length === 0) {
     const colspan = hasPendingTrades && currentTab === 'logs' ? 13 : 12;
-    tableBody.innerHTML = `<tr><td colspan="${colspan}">No logs found for ${currentSystem} system</td></tr>`;
+    const systemLabel = currentSystem === 'all' ? 'all systems' : `${currentSystem} system`;
+    tableBody.innerHTML = `<tr><td colspan="${colspan}">No logs found for ${systemLabel}</td></tr>`;
     updateSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     return;
   }
@@ -651,21 +658,32 @@ document.querySelectorAll('.minimal-table th.sortable').forEach(th => {
   });
 });
 
-// System tabs (Default vs Fast) - FIXED TO TRIGGER FETCH
+// System tabs (All / Default / Fast) - FIXED TO PROPERLY SWITCH
+allSystemTab.addEventListener('click', () => {
+  if (currentSystem === 'all') return;
+  currentSystem = 'all';
+  allSystemTab.classList.add('active');
+  defaultSystemTab.classList.remove('active');
+  fastSystemTab.classList.remove('active');
+  fetchSignals();
+});
+
 defaultSystemTab.addEventListener('click', () => {
   if (currentSystem === 'default') return;
   currentSystem = 'default';
+  allSystemTab.classList.remove('active');
   defaultSystemTab.classList.add('active');
   fastSystemTab.classList.remove('active');
-  fetchSignals(); // This now properly fetches with signal_source=default
+  fetchSignals();
 });
 
 fastSystemTab.addEventListener('click', () => {
   if (currentSystem === 'fast') return;
   currentSystem = 'fast';
-  fastSystemTab.classList.add('active');
+  allSystemTab.classList.remove('active');
   defaultSystemTab.classList.remove('active');
-  fetchSignals(); // This now properly fetches with signal_source=fast
+  fastSystemTab.classList.add('active');
+  fetchSignals();
 });
 
 // View type tabs (Logs vs Results)
@@ -711,6 +729,7 @@ nextPageBtn.addEventListener('click', () => {
 refreshBtn.addEventListener('click', fetchSignals);
 symbolFilter.addEventListener('change', fetchSignals);
 fromDateInput.addEventListener('change', fetchSignals);
+toDateInput.addEventListener('change', fetchSignals);
 if (statusFilter) statusFilter.addEventListener('change', fetchSignals);
 customPositionSizeInput.addEventListener('input', () => {
   sortAndPaginateData();
