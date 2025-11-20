@@ -119,8 +119,8 @@ async function fetchSignals() {
     
     let url = `/signals?limit=${fetchLimit}`;
     if (symbolFilter.value) url += `&symbol=${symbolFilter.value}`;
-    if (fromDateInput.value) url += `&fromDate=${fromDateInput.value}T00:00:00Z`;
-    if (toDateInput.value) url += `&toDate=${toDateInput.value}T23:59:59Z`;
+    if (fromDateInput.value) url += `&fromDate=${fromDateInput.value}`;
+    if (toDateInput.value) url += `&toDate=${toDateInput.value}`;
     
     // Add signal_source filter - only if not "all"
     if (currentSystem !== 'all') {
@@ -348,16 +348,17 @@ function renderTableAndSummary() {
     
     const isLong = signal.signal_type === 'Enter Long' || signal.signal_type === 'Buy';
     
+    const systemBadge = signal.signal_source === 'fast' 
+      ? '<span style="background: #fef3c7; color: #92400e; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">âš¡ FAST</span>'
+      : '<span style="background: #e0e7ff; color: #4338ca; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">ðŸ"Š DEFAULT</span>';
+    
     const row = document.createElement('tr');
     row.innerHTML = `
       ${checkboxTd}
       <td>${formatTime(displayTime)}</td>
       <td>${signal.symbol}</td>
       <td class="${isLong ? 'signal-long' : 'signal-short'}">${signal.signal_type}</td>
-      <td>${signal.tp1 ? signal.tp1.toFixed(4) : '-'}</td>
-      <td>${signal.tp2 ? signal.tp2.toFixed(4) : '-'}</td>
-      <td>${signal.sl ? signal.sl.toFixed(4) : '-'}</td>
-      <td>${filledQty}</td>
+      <td>${systemBadge}</td>
       ${outcomeTd}
       <td class="${signal.raw_pnl_percentage > 0 ? 'pnl-positive' : signal.raw_pnl_percentage < 0 ? 'pnl-negative' : ''}">${signal.raw_pnl_percentage ? signal.raw_pnl_percentage.toFixed(2) + '%' : '-'}</td>
       <td class="${customPnlPct > 0 ? 'pnl-positive' : customPnlPct < 0 ? 'pnl-negative' : ''}">${customPnlPct !== 0 ? customPnlPct.toFixed(2) + '%' : '-'}</td>
