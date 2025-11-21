@@ -110,7 +110,6 @@ function getOutcome(signal) {
 
 async function fetchSignals() {
   const systemLabel = currentSystem === 'all' ? 'ALL SYSTEMS' : currentSystem.toUpperCase() + ' SYSTEM';
-  console.log(`\n🔄 Fetching signals for: ${systemLabel}`);
   
   tableBody.innerHTML = '<tr><td colspan="13">Loading...</td></tr>';
   try {
@@ -142,16 +141,10 @@ async function fetchSignals() {
     const res = await fetch(url);
     if (!res.ok) throw new Error('Fetch failed');
     const data = await res.json();
-    
-    console.log(`✅ Received ${data.length} trades for ${systemLabel}`);
+  
     
     // DEBUG: Log first 3 trades to verify signal_source
     if (data.length > 0) {
-      console.log('📊 Sample trades:', data.slice(0, 3).map(t => ({
-        symbol: t.symbol,
-        signal_source: t.signal_source,
-        timestamp: t.timestamp
-      })));
     }
     
     allData = data;
@@ -286,7 +279,6 @@ function sortData() {
   });
   
   const endTime = performance.now();
-  console.log(`⚡ Sorted ${allData.length} rows in ${(endTime - startTime).toFixed(2)}ms`);
 }
 
 function sortAndPaginateData() {
@@ -447,7 +439,6 @@ function renderTableAndSummary() {
   }
   
   const endTime = performance.now();
-  console.log(`⚡ Rendered ${currentData.length} rows in ${(endTime - startTime).toFixed(2)}ms`);
 }
 
 function updateSummary(trades, closedTrades, rawPnl, customPnlPct, customPnlDollars, customFeesPct, customFeesDollars, slCount, beCount, tpCount, winRate, terminatedCount, expiredCount) {

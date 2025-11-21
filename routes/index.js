@@ -163,17 +163,7 @@ router.get('/price', async (req, res) => {
 router.get('/signals', async (req, res) => {
   try {
     const { symbol, limit, fromDate, toDate, status, signalSource } = req.query;
-    
-    console.log('\n📡 ===== INCOMING /signals REQUEST =====');
-    console.log('Raw query params:', req.query);
-    console.log('Parsed params:', {
-      symbol: symbol || 'all',
-      limit: limit || 50,
-      fromDate: fromDate || 'none',
-      toDate: toDate || 'none',
-      status: status || 'all',
-      signalSource: signalSource || 'none'
-    });
+  
     
     const options = {
       symbol: symbol || undefined,

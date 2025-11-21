@@ -71,7 +71,7 @@ async function getSignals(options = {}) {
   if (signalSource && signalSource !== 'all') {
       query = query.eq('signal_source', signalSource);
   } else {
-    console.log(`  ⊘ NOT filtering by signal_source (showing all)`);
+
   }
   
   // Date range filtering - CRITICAL FIX
