@@ -174,6 +174,15 @@ async function checkFastSignals(symbol, currentPrice) {
       }
     }
 
+    // 4. RSI DIVERGENCE (HIGH urgency)
+    if (config.signals.rsiDivergence?.enabled !== false) {
+      const divergenceSignal = detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice);
+      if (divergenceSignal) {
+        const result = await sendFastAlert(symbol, divergenceSignal, currentPrice, assetConfig);
+    if (result && result.sent) return result;
+  }
+}
+
   } catch (error) {
     if (error.message && !error.message.includes('Insufficient') && !error.message.includes('Invalid')) {
       console.error(`⚠️ Fast signal error for ${symbol}:`, error.message);
@@ -575,6 +584,80 @@ function detectEMACrossover(symbol, closes, currentPrice) {
     }
   }
 
+  return null;
+}
+
+// 4. RSI Divergence
+function detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice) {
+  if (closes.length < 50) return null;
+  
+  const rsiValues = TI.RSI.calculate({ period: 14, values: closes });
+  if (rsiValues.length < 20) return null;
+  
+  const rsi = rsiValues.slice(-20);
+  const priceSlice = closes.slice(-20);
+  const lowSlice = lows.slice(-20);
+  const highSlice = highs.slice(-20);
+  
+  // Find recent swing points (last 20 bars)
+  const currentRSI = rsi[rsi.length - 1];
+  
+  // BULLISH DIVERGENCE: Price lower low, RSI higher low
+  if (currentRSI < 30) {
+    const recentLowIdx = lowSlice.reduce((minIdx, val, idx, arr) => val < arr[minIdx] ? idx : minIdx, 0);
+    const priorLowIdx = lowSlice.slice(0, -5).reduce((minIdx, val, idx, arr) => val < arr[minIdx] ? idx : minIdx, 0);
+    
+    if (recentLowIdx > priorLowIdx + 3) {
+      const priceLowerLow = lowSlice[recentLowIdx] < lowSlice[priorLowIdx];
+      const rsiHigherLow = rsi[recentLowIdx] > rsi[priorLowIdx] + 2;
+      
+      if (priceLowerLow && rsiHigherLow && currentRSI > rsi[recentLowIdx] - 3) {
+        const sl = lowSlice[recentLowIdx] - atr * 0.5;
+        const slCheck = validateStopLoss(currentPrice, sl, 'LONG', symbol);
+        if (!slCheck.valid) return null;
+        
+        return {
+          type: 'RSI_BULLISH_DIVERGENCE',
+          direction: 'LONG',
+          urgency: 'HIGH',
+          confidence: 88,
+          reason: `📈 BULLISH RSI DIVERGENCE\nPrice: Lower low | RSI: Higher low\nRSI: ${currentRSI.toFixed(1)}`,
+          entry: currentPrice,
+          sl: sl,
+          details: `RSI: ${currentRSI.toFixed(1)} | Divergence confirmed | SL: ${(slCheck.percent * 100).toFixed(1)}%`
+        };
+      }
+    }
+  }
+  
+  // BEARISH DIVERGENCE: Price higher high, RSI lower high
+  if (currentRSI > 70) {
+    const recentHighIdx = highSlice.reduce((maxIdx, val, idx, arr) => val > arr[maxIdx] ? idx : maxIdx, 0);
+    const priorHighIdx = highSlice.slice(0, -5).reduce((maxIdx, val, idx, arr) => val > arr[maxIdx] ? idx : maxIdx, 0);
+    
+    if (recentHighIdx > priorHighIdx + 3) {
+      const priceHigherHigh = highSlice[recentHighIdx] > highSlice[priorHighIdx];
+      const rsiLowerHigh = rsi[recentHighIdx] < rsi[priorHighIdx] - 2;
+      
+      if (priceHigherHigh && rsiLowerHigh && currentRSI < rsi[recentHighIdx] + 3) {
+        const sl = highSlice[recentHighIdx] + atr * 0.5;
+        const slCheck = validateStopLoss(currentPrice, sl, 'SHORT', symbol);
+        if (!slCheck.valid) return null;
+        
+        return {
+          type: 'RSI_BEARISH_DIVERGENCE',
+          direction: 'SHORT',
+          urgency: 'HIGH',
+          confidence: 88,
+          reason: `📉 BEARISH RSI DIVERGENCE\nPrice: Higher high | RSI: Lower high\nRSI: ${currentRSI.toFixed(1)}`,
+          entry: currentPrice,
+          sl: sl,
+          details: `RSI: ${currentRSI.toFixed(1)} | Divergence confirmed | SL: ${(slCheck.percent * 100).toFixed(1)}%`
+        };
+      }
+    }
+  }
+  
   return null;
 }
 
