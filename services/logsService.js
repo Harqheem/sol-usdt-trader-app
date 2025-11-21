@@ -1,4 +1,4 @@
-// services/logsService.js - UPDATED WITH signal_source
+// services/logsService.js - FIXED DATE FILTERING
 
 const { createClient } = require('@supabase/supabase-js');
 
@@ -52,16 +52,35 @@ async function logSignal(symbol, signalData, status = 'pending', errorMessage = 
 }
 
 async function getSignals(options = {}) {
-  const { symbol, limit = 50, fromDate, status, signalSource } = options;
+  const { symbol, limit = 50, fromDate, toDate, status, signalSource } = options;
   let query = supabase.from('signals').select('*');
 
   if (symbol) query = query.eq('symbol', symbol);
+  
   if (status) {
     const statuses = status.split(',');
     query = query.in('status', statuses);
   }
-  if (signalSource) query = query.eq('signal_source', signalSource);
-  if (fromDate) query = query.gte('timestamp', fromDate).lt('timestamp', new Date(new Date(fromDate).setDate(new Date(fromDate).getDate() + 1)).toISOString());
+  
+  // FIXED: Handle signal source filter properly
+  if (signalSource && signalSource !== 'all') {
+    query = query.eq('signal_source', signalSource);
+  }
+  
+  // FIXED: Handle date range filtering properly
+  if (fromDate) {
+    // Start of the from date
+    const fromDateTime = new Date(fromDate);
+    fromDateTime.setHours(0, 0, 0, 0);
+    query = query.gte('timestamp', fromDateTime.toISOString());
+  }
+  
+  if (toDate) {
+    // End of the to date (23:59:59.999)
+    const toDateTime = new Date(toDate);
+    toDateTime.setHours(23, 59, 59, 999);
+    query = query.lte('timestamp', toDateTime.toISOString());
+  }
 
   query = query.order('timestamp', { ascending: false }).limit(limit);
 

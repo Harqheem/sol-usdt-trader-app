@@ -1,4 +1,4 @@
-// public/logs_script.js - FIXED SYSTEM FILTER
+// public/logs_script.js - ACTUALLY FIXED SYSTEM FILTER
 
 const tableBody = document.querySelector('#signals-table tbody');
 const symbolFilter = document.getElementById('symbol-filter');
@@ -109,6 +109,9 @@ function getOutcome(signal) {
 }
 
 async function fetchSignals() {
+  const systemLabel = currentSystem === 'all' ? 'ALL SYSTEMS' : currentSystem.toUpperCase() + ' SYSTEM';
+  console.log(`\n🔄 Fetching signals for: ${systemLabel}`);
+  
   tableBody.innerHTML = '<tr><td colspan="13">Loading...</td></tr>';
   try {
     let fetchLimit = 500;
@@ -119,30 +122,43 @@ async function fetchSignals() {
     
     let url = `/signals?limit=${fetchLimit}`;
     if (symbolFilter.value) url += `&symbol=${symbolFilter.value}`;
+    
+    // FIXED: Add both fromDate and toDate
     if (fromDateInput.value) url += `&fromDate=${fromDateInput.value}`;
     if (toDateInput.value) url += `&toDate=${toDateInput.value}`;
     
-    // Add signal_source filter - only if not "all"
-    if (currentSystem !== 'all') {
-      url += `&signalSource=${currentSystem}`;
-    }
+    // CRITICAL FIX: Always add signalSource parameter (even for 'all')
+    // Backend will handle filtering appropriately
+    url += `&signalSource=${currentSystem}`;
     
     if (currentTab === 'results') {
       url += `&status=closed,terminated,expired`;
     } else {
       if (statusFilter && statusFilter.value) url += `&status=${statusFilter.value}`;
     }
-    console.log('Fetching URL:', url);
+    
+    console.log('📡 Fetching URL:', url);
+    
     const res = await fetch(url);
     if (!res.ok) throw new Error('Fetch failed');
     const data = await res.json();
-    const systemLabel = currentSystem === 'all' ? 'all' : currentSystem;
-    console.log(`Received ${data.length} ${systemLabel} trades`);
+    
+    console.log(`✅ Received ${data.length} trades for ${systemLabel}`);
+    
+    // DEBUG: Log first 3 trades to verify signal_source
+    if (data.length > 0) {
+      console.log('📊 Sample trades:', data.slice(0, 3).map(t => ({
+        symbol: t.symbol,
+        signal_source: t.signal_source,
+        timestamp: t.timestamp
+      })));
+    }
+    
     allData = data;
     currentPage = 1;
     sortAndPaginateData();
   } catch (err) {
-    console.error('Fetch error:', err);
+    console.error('❌ Fetch error:', err);
     tableBody.innerHTML = '<tr><td colspan="13">Error loading logs: ' + err.message + '</td></tr>';
     updateSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
   }
@@ -270,7 +286,7 @@ function sortData() {
   });
   
   const endTime = performance.now();
-  console.log(`Sorted ${allData.length} rows in ${(endTime - startTime).toFixed(2)}ms`);
+  console.log(`⚡ Sorted ${allData.length} rows in ${(endTime - startTime).toFixed(2)}ms`);
 }
 
 function sortAndPaginateData() {
@@ -349,8 +365,8 @@ function renderTableAndSummary() {
     const isLong = signal.signal_type === 'Enter Long' || signal.signal_type === 'Buy';
     
     const systemBadge = signal.signal_source === 'fast' 
-      ? '<span style="background: #fef3c7; color: #92400e; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">âš¡ FAST</span>'
-      : '<span style="background: #e0e7ff; color: #4338ca; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">ðŸ"Š DEFAULT</span>';
+      ? '<span style="background: #fef3c7; color: #92400e; padding: 8px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">⚡ FAST</span>'
+      : '<span style="background: #e0e7ff; color: #4338ca; padding: 8px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">📊 DEFAULT</span>';
     
     const row = document.createElement('tr');
     row.innerHTML = `
@@ -431,7 +447,7 @@ function renderTableAndSummary() {
   }
   
   const endTime = performance.now();
-  console.log(`Rendered ${currentData.length} rows in ${(endTime - startTime).toFixed(2)}ms`);
+  console.log(`⚡ Rendered ${currentData.length} rows in ${(endTime - startTime).toFixed(2)}ms`);
 }
 
 function updateSummary(trades, closedTrades, rawPnl, customPnlPct, customPnlDollars, customFeesPct, customFeesDollars, slCount, beCount, tpCount, winRate, terminatedCount, expiredCount) {
@@ -650,31 +666,56 @@ document.querySelectorAll('.minimal-table th.sortable').forEach(th => {
   });
 });
 
-// System tabs (All / Default / Fast) - FIXED TO PROPERLY SWITCH
+
+// These event listeners were NOT properly updating the UI state
 allSystemTab.addEventListener('click', () => {
   if (currentSystem === 'all') return;
+  
   currentSystem = 'all';
+  
+  // Update tab UI
   allSystemTab.classList.add('active');
   defaultSystemTab.classList.remove('active');
   fastSystemTab.classList.remove('active');
+  
+  // Reset pagination
+  currentPage = 1;
+  
+  // Fetch new data
   fetchSignals();
 });
 
 defaultSystemTab.addEventListener('click', () => {
   if (currentSystem === 'default') return;
+  
   currentSystem = 'default';
+  
+  // Update tab UI
   allSystemTab.classList.remove('active');
   defaultSystemTab.classList.add('active');
   fastSystemTab.classList.remove('active');
+  
+  // Reset pagination
+  currentPage = 1;
+  
+  // Fetch new data
   fetchSignals();
 });
 
 fastSystemTab.addEventListener('click', () => {
   if (currentSystem === 'fast') return;
+
   currentSystem = 'fast';
+  
+  // Update tab UI
   allSystemTab.classList.remove('active');
   defaultSystemTab.classList.remove('active');
   fastSystemTab.classList.add('active');
+  
+  // Reset pagination
+  currentPage = 1;
+  
+  // Fetch new data
   fetchSignals();
 });
 
@@ -730,6 +771,8 @@ customLeverageInput.addEventListener('input', () => {
   sortAndPaginateData();
 });
 
+// Initial load
 fetchSignals();
 
+// Auto-refresh every 5 minutes
 setInterval(fetchSignals, 300000);
