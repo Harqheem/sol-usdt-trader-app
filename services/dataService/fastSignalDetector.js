@@ -737,11 +737,17 @@ async function sendFastAlert(symbol, signal, currentPrice, assetConfig) {
   const decimals = getDecimalPlaces(currentPrice);
   const positionSize = 100;
 
+  // ========================================
+  // CRITICAL FIX: Use CURRENT PRICE as entry
+  // Fast signals are market orders, not limit orders
+  // ========================================
+  const actualEntry = currentPrice;
+
   const message1 = `⚡ URGENT ${symbol}
 ✅ ${signal.direction} - ${signal.urgency} URGENCY
 LEVERAGE: 20x
 
-Entry: ${signal.entry.toFixed(decimals)} 
+Entry: ${actualEntry.toFixed(decimals)} (MARKET ORDER - FILL NOW)
 TP1: ${tp1.toFixed(decimals)} 
 TP2: ${tp2.toFixed(decimals)} 
 SL: ${signal.sl.toFixed(decimals)}
@@ -756,9 +762,9 @@ Type: ${signal.type}
 
 ${signal.details}
 
-TIME SENSITIVE - Price moving NOW
-Entry at current market price
-Full analysis will follow at candle close
+⚠️ MARKET ORDER - IMMEDIATE EXECUTION
+Entry at CURRENT PRICE: ${actualEntry.toFixed(decimals)}
+This is NOT a pending order - trade starts NOW
 
 Position Size: ${(config.positionSizeMultiplier * 100).toFixed(0)}% of normal (fast signal)`;
 
@@ -769,7 +775,7 @@ Position Size: ${(config.positionSizeMultiplier * 100).toFixed(0)}% of normal (f
     alertedSignals.set(key, now);
     lastSymbolAlert.set(symbol, now);
     
-    console.log(`💾 ${symbol}: Logging fast signal to database...`);
+    console.log(`💾 ${symbol}: Logging fast signal to database as OPENED...`);
       
     const logsService = require('../logsService');
     
@@ -779,26 +785,26 @@ Position Size: ${(config.positionSizeMultiplier * 100).toFixed(0)}% of normal (f
     
     const logResult = await logsService.logSignal(symbol, {
       signal: signal.direction === 'LONG' ? 'Buy' : 'Sell',
-      notes: `⚡ FAST SIGNAL: ${signal.reason}\n\n${signal.details}\n\nUrgency: ${signal.urgency}\nConfidence: ${signal.confidence}%\nType: ${signal.type}`,
-      entry: signal.entry,
+      notes: `⚡ FAST SIGNAL: ${signal.reason}\n\n${signal.details}\n\nUrgency: ${signal.urgency}\nConfidence: ${signal.confidence}%\nType: ${signal.type}\n\n✅ MARKET ORDER - Executed immediately at current price`,
+      entry: actualEntry,  // Use current price
       tp1: tp1,
       tp2: tp2,
       sl: signal.sl,
       positionSize: positionSize,
       leverage: 20
-    }, 'pending', null, 'fast');
+    }, 'opened', null, 'fast');  // Status: 'opened', not 'pending'
     
-    console.log(`✅ ${symbol}: Fast signal logged with ID: ${logResult}`);
+    console.log(`✅ ${symbol}: Fast signal logged as OPENED with ID: ${logResult}`);
     
     incrementFastSignalCount(symbol);
     
-    console.log(`⚡ FAST ALERT SENT & LOGGED: ${symbol} ${signal.type} at ${currentPrice.toFixed(decimals)}`);
+    console.log(`⚡ FAST ALERT SENT & LOGGED AS OPENED: ${symbol} ${signal.type} at ${actualEntry.toFixed(decimals)}`);
     
     return {
       sent: true,
       type: signal.type,
       direction: signal.direction,
-      entry: signal.entry
+      entry: actualEntry  // Return actual entry
     };
   } catch (error) {
     console.error(`❌ Failed to send/log fast alert for ${symbol}:`);

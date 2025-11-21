@@ -96,7 +96,7 @@ function subscribeToSymbol(symbol) {
 
 async function processPriceUpdate(trade, currentPrice) {
   try {
-    // NEW: Skip if trade just transitioned (cooling down)
+    // Skip if trade just transitioned (cooling down)
     if (recentlyTransitioned.has(trade.id)) {
       return;
     }
@@ -147,8 +147,13 @@ This pending trade has been automatically expired because the entry level was no
         return;
       }
       
-      // Entry detection with tolerance
-      const entryTolerance = 0.0005; // 0.05% tolerance
+      // ========================================
+      // WIDER ENTRY TOLERANCE FOR FAST-MOVING MARKETS
+      // Fast signals should already be 'opened', but in case any slip through
+      // ========================================
+      const isFastSignal = trade.signal_source === 'fast';
+      const entryTolerance = isFastSignal ? 0.003 : 0.0005; // 0.3% for fast, 0.05% for default
+      
       let entryHit = false;
       
       if (isBuy) {
@@ -166,7 +171,7 @@ This pending trade has been automatically expired because the entry level was no
           entry: currentPrice // Use actual fill price
         };
         
-        // NEW: Add to transition cooldown BEFORE updating
+        // Add to transition cooldown BEFORE updating
         recentlyTransitioned.add(trade.id);
         
         await updateTrade(trade.id, updates);
@@ -174,7 +179,7 @@ This pending trade has been automatically expired because the entry level was no
         
         console.log(`✅ Opened ${trade.symbol} ${trade.signal_type} at ${currentPrice.toFixed(4)}`);
         
-        // NEW: Remove from cooldown after 3 seconds (give time for cache to stabilize)
+        // Remove from cooldown after 3 seconds
         setTimeout(() => {
           recentlyTransitioned.delete(trade.id);
           console.log(`🔓 ${trade.symbol}: Trade cooldown ended, now monitoring for exits`);
@@ -189,7 +194,7 @@ This pending trade has been automatically expired because the entry level was no
       let updates = {};
 
       // Check TP1 if full position remains
-      const tp1Tolerance = 0.0003; // 0.03% tolerance for TP1
+      const tp1Tolerance = 0.0003;
       let tp1Hit = false;
       
       if (isBuy) {
@@ -218,7 +223,6 @@ This pending trade has been automatically expired because the entry level was no
         
         console.log(`✅ Partial close at TP1 for ${trade.symbol} at ${currentPrice.toFixed(4)}, SL moved to entry`);
         
-        // Add transition cooldown
         recentlyTransitioned.add(trade.id);
         setTimeout(() => recentlyTransitioned.delete(trade.id), 2000);
       }
@@ -260,17 +264,15 @@ This pending trade has been automatically expired because the entry level was no
         console.log(`✅ Closed remaining at TP2 for ${trade.symbol} at ${currentPrice.toFixed(4)}`);
       }
 
-      // Check SL (original or updated) - FIXED: Add distance check
+      // Check SL - with distance check to prevent false hits
       const slTolerance = 0.0003;
       let slHit = false;
       
-      // NEW: Calculate distance from entry to prevent false SL hits right after entry
       const distanceFromEntry = Math.abs((currentPrice - trade.entry) / trade.entry);
-      const minDistanceForSL = 0.002; // Must move at least 0.2% from entry before SL can trigger
+      const minDistanceForSL = 0.002; // Must move at least 0.2% from entry
       
       if (distanceFromEntry < minDistanceForSL) {
-        // Too close to entry, skip SL check (prevents immediate SL hit)
-        // This handles the case where entry=240, SL=239.5, current=240.1
+        // Too close to entry, skip SL check
       } else {
         if (isBuy) {
           slHit = currentPrice <= currentSl * (1 + slTolerance);
@@ -282,17 +284,15 @@ This pending trade has been automatically expired because the entry level was no
       if (slHit) {
         let exitPrice = currentSl;
         
-        // EXTRA VALIDATION: Ensure price actually moved in losing direction
+        // Ensure price actually moved in losing direction
         const isActualLoss = isBuy ? (currentPrice < trade.entry) : (currentPrice > trade.entry);
         
         if (!isActualLoss && currentSl !== trade.entry) {
-          // Price hasn't actually moved against us, skip false SL hit
-          console.log(`⚠️ ${trade.symbol}: False SL hit detected (price not in losing direction), skipping`);
+          console.log(`⚠️ ${trade.symbol}: False SL hit detected, skipping`);
           return;
         }
         
         if (remainingFraction === 1.0) {
-          // Full position stopped out
           const fullLoss = calculatePnL(
             trade.entry, 
             exitPrice, 
@@ -314,7 +314,6 @@ This pending trade has been automatically expired because the entry level was no
           
           console.log(`❌ Closed full at SL for ${trade.symbol} at ${exitPrice.toFixed(4)} (Loss: ${fullLoss.netPnlPct.toFixed(2)}%)`);
         } else {
-          // Remaining 50% at breakeven
           const remainingPnl = calculatePnL(
             trade.entry, 
             exitPrice, 
@@ -347,7 +346,7 @@ This pending trade has been automatically expired because the entry level was no
         Object.assign(trade, updates);
         if (updates.status === 'closed') {
           openTradesCache = openTradesCache.filter(t => t.id !== trade.id);
-          recentlyTransitioned.delete(trade.id); // Clean up
+          recentlyTransitioned.delete(trade.id);
         }
       }
     }

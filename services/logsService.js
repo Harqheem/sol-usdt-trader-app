@@ -16,34 +16,44 @@ async function logSignal(symbol, signalData, status = 'pending', errorMessage = 
     if (signalType === 'Buy') signalType = 'Enter Long';
     if (signalType === 'Sell') signalType = 'Enter Short';
     
+    // ========================================
+    // CRITICAL FIX: Add open_time if status is 'opened'
+    // Fast signals start as 'opened', not 'pending'
+    // ========================================
+    const insertData = {
+      timestamp,
+      symbol,
+      signal_type: signalType,
+      notes,
+      entry,
+      tp1,
+      tp2,
+      sl,
+      position_size: positionSize,
+      leverage,
+      status,
+      error_message: errorMessage,
+      remaining_position: 1.0,
+      updated_sl: sl,
+      partial_pnl_percentage: null,
+      signal_source: signalSource
+    };
+    
+    // Add open_time if already opened (fast signals)
+    if (status === 'opened') {
+      insertData.open_time = timestamp;
+    }
+    
     const { data, error } = await supabase
       .from('signals')
-      .insert([
-        {
-          timestamp,
-          symbol,
-          signal_type: signalType,
-          notes,
-          entry,
-          tp1,
-          tp2,
-          sl,
-          position_size: positionSize,
-          leverage,
-          status,
-          error_message: errorMessage,
-          remaining_position: 1.0,
-          updated_sl: sl,
-          partial_pnl_percentage: null,
-          signal_source: signalSource // 'default' or 'fast'
-        }
-      ])
+      .insert([insertData])
       .select();
+      
     if (error) throw error;
     if (!data || data.length === 0) {
       throw new Error('No data returned from insert');
     }
-    console.log(`✅ Signal logged for ${symbol} (ID: ${data[0].id}, Source: ${signalSource})`);
+    console.log(`✅ Signal logged for ${symbol} (ID: ${data[0].id}, Status: ${status}, Source: ${signalSource})`);
     return data[0].id;
   } catch (err) {
     console.error(`Log error for ${symbol}:`, err.message);
