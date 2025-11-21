@@ -7,6 +7,32 @@ const { sendTelegramNotification } = require('../notificationService');
 const { getAssetConfig } = require('../../config/assetConfig');
 const config = require('../../config/fastSignalConfig');
 
+function findLevels(prices, tolerance = 0.0015) {
+  if (!prices || prices.length < 10) return [];
+  const levels = [];
+  const used = new Set();
+  for (let i = 0; i < prices.length; i++) {
+    if (used.has(i)) continue;
+    const basePrice = prices[i];
+    const cluster = [basePrice];
+    used.add(i);
+    for (let j = i + 1; j < prices.length; j++) {
+      if (used.has(j)) continue;
+      if (Math.abs(prices[j] - basePrice) / basePrice <= tolerance) {
+        cluster.push(prices[j]);
+        used.add(j);
+      }
+    }
+    if (cluster.length >= 2) {
+      levels.push({
+        price: cluster.reduce((a, b) => a + b, 0) / cluster.length,
+        touches: cluster.length
+      });
+    }
+  }
+  return levels.sort((a, b) => b.touches - a.touches);
+}
+
 // Track what we've already alerted on
 const alertedSignals = new Map();
 const lastSymbolAlert = new Map();
@@ -27,7 +53,6 @@ function validateStopLoss(entry, sl, direction, symbol) {
   const slPercent = Math.abs(entry - sl) / entry;
   const maxSL = config.riskManagement.maxStopLossPercent;
   if (slPercent > maxSL) {
-    console.log(`⛔ ${symbol}: Rejecting ${direction} - SL too wide (${(slPercent * 100).toFixed(1)}% > ${(maxSL * 100).toFixed(0)}%)`);
     return { valid: false, percent: slPercent };
   }
   return { valid: true, percent: slPercent };
@@ -159,9 +184,6 @@ async function checkFastSignals(symbol, currentPrice) {
 
 function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows30m, volumes30m, atr, ema7, ema25, candles1m = null, current30mCandle = null) {
   
-  // FIX 7: Add comprehensive logging
-  console.log(`\n🔍 ${symbol} Breakout Check @ ${currentPrice.toFixed(4)}`);
-  console.log(`   Data: 1m=${candles1m?.length || 0} | 30m=${closes30m.length} | ATR=${atr?.toFixed(4)}`);
   
   if (!candles1m || candles1m.length < 100 || volumes30m.length < 50) {
     console.log(`   ❌ Insufficient data`);
@@ -172,11 +194,9 @@ function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows3
   if (current30mCandle) {
     const minutesInto30m = (Date.now() - current30mCandle.openTime) / 60000;
     if (minutesInto30m > 27) {
-      console.log(`   ❌ Too late in candle: ${minutesInto30m.toFixed(1)} min`);
       return null;
     }
     if (minutesInto30m < 2) {
-      console.log(`   ❌ Too early: ${minutesInto30m.toFixed(1)} min`);
       return null;
     }
   }
@@ -228,17 +248,13 @@ function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows3
   const rangeSize = rangeHigh - rangeLow;
   
   if (rangeSize < atr * 1.0) {
-    console.log(`   ❌ Range too tight: ${rangeSize.toFixed(4)} < ${(atr * 1.0).toFixed(4)}`);
     return null;
   }
   
   const avgClose = swingData.closes.slice(-consolidationWindow).reduce((a, b) => a + b) / consolidationWindow;
   const rangePercent = rangeSize / avgClose;
   
-  console.log(`   Range: ${rangeLow.toFixed(4)} - ${rangeHigh.toFixed(4)} (${(rangePercent * 100).toFixed(2)}%)`);
-  
   if (rangePercent > 0.10) {
-    console.log(`   ❌ Range too wide - trending not consolidating`);
     return null;
   }
 
@@ -248,8 +264,6 @@ function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows3
   const ema25Previous = ema25Array[ema25Array.length - 5];
   const ema25Slope = (ema25Current - ema25Previous) / ema25Previous;
   
-  console.log(`   EMA25: ${ema25Current.toFixed(4)} | Slope: ${(ema25Slope * 100).toFixed(3)}%`);
-
   // === BULLISH BREAKOUT ===
   if (currentPrice > ema25Current) {
     console.log(`   ✓ Price above EMA25`);
@@ -263,10 +277,7 @@ function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows3
       return close > rangeHigh && low > rangeHigh * 0.995;
     }).length;
     
-    console.log(`   Bars above breakout: ${barsAboveBreakout}/5`);
-    
     if (barsAboveBreakout < 2) {
-      console.log(`   ❌ Breakout not sustained`);
       return null;
     }
     
@@ -275,10 +286,8 @@ function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows3
     const currentlyAbove = currentPrice >= rangeHigh * 0.997;
     const currentCandleBreak = parseFloat(current30mCandle.high) > rangeHigh;
     
-    console.log(`   Recent break=${recentBreak} | Currently above=${currentlyAbove} | Current candle broke=${currentCandleBreak}`);
-    
     if (!recentBreak && !currentlyAbove && !currentCandleBreak) {
-      console.log(`   ❌ No valid breakout detected`);
+  
       return null;
     }
     
@@ -286,14 +295,12 @@ function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows3
     const pullbackATR = (highestSinceBreak - currentPrice) / atr;
     
     if (pullbackATR > 4.0) {
-      console.log(`   ❌ Pullback too deep: ${pullbackATR.toFixed(2)} ATR`);
-      return null;
+          return null;
     }
     
     const distanceFromBreakout = (currentPrice - rangeHigh) / rangeHigh;
     
     if (distanceFromBreakout > 0.02) {
-      console.log(`   ❌ Too extended: ${(distanceFromBreakout * 100).toFixed(2)}% above breakout`);
       return null;
     }
     
@@ -324,8 +331,6 @@ function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows3
     
     confidence = Math.min(95, confidence);
     
-    console.log(`   ✅ BULLISH ${signalType} DETECTED | Confidence: ${confidence}%`);
-    
     return {
       type: signalType,
       direction: 'LONG',
@@ -340,7 +345,6 @@ function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows3
 
   // === BEARISH BREAKDOWN ===
   if (currentPrice < ema25Current) {
-    console.log(`   ✓ Price below EMA25`);
     
     const recent1mCandles = candles1m.slice(-5);
     const barsBelowBreakdown = recent1mCandles.filter(c => {
@@ -348,22 +352,16 @@ function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows3
       const high = parseFloat(c.high);
       return close < rangeLow && high < rangeLow * 1.005;
     }).length;
-    
-    console.log(`   Bars below breakdown: ${barsBelowBreakdown}/5`);
-    
+  
     if (barsBelowBreakdown < 2) {
-      console.log(`   ❌ Breakdown not sustained`);
       return null;
     }
     
     const recentBreak = lows30m.slice(-12).some(l => l < rangeLow * 0.9997);
     const currentlyBelow = currentPrice <= rangeLow * 1.003;
     const currentCandleBreak = parseFloat(current30mCandle.low) < rangeLow;
-    
-    console.log(`   Recent break=${recentBreak} | Currently below=${currentlyBelow} | Current candle broke=${currentCandleBreak}`);
-    
+      
     if (!recentBreak && !currentlyBelow && !currentCandleBreak) {
-      console.log(`   ❌ No valid breakdown detected`);
       return null;
     }
     
@@ -371,13 +369,11 @@ function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows3
     const pullbackATR = (currentPrice - lowestSinceBreak) / atr;
     
     if (pullbackATR > 4.0) {
-      console.log(`   ❌ Bounce too high: ${pullbackATR.toFixed(2)} ATR`);
-      return null;
+        return null;
     }
     
     const distanceFromBreakdown = (rangeLow - currentPrice) / rangeLow;
     if (distanceFromBreakdown > 0.02) {
-      console.log(`   ❌ Too extended: ${(distanceFromBreakdown * 100).toFixed(2)}% below breakdown`);
       return null;
     }
     
@@ -407,8 +403,7 @@ function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows3
     
     confidence = Math.min(95, confidence);
     
-    console.log(`   ✅ BEARISH ${signalType} DETECTED | Confidence: ${confidence}%`);
-    
+   
     return {
       type: signalType,
       direction: 'SHORT',
@@ -421,11 +416,10 @@ function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows3
     };
   }
 
-  console.log(`   ❌ Price not positioned for breakout (EMA25=${ema25Current.toFixed(4)})`);
   return null;
 }
 
-// 2. SUPPOR/RESISTANCE BOUNCE
+// 2. SUPPORT/RESISTANCE BOUNCE
 
 function detectSRBounce(symbol, currentPrice, highs30m, lows30m, closes30m, atr, candles1m = null, current30mCandle = null) {
   if (!candles1m || candles1m.length < 100) return null;
