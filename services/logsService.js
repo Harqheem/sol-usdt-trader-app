@@ -1,4 +1,4 @@
-// services/logsService.js - FIXED DATE FILTERING
+// services/logsService.js - PROPERLY FIXED WITH DEBUG LOGGING
 
 const { createClient } = require('@supabase/supabase-js');
 
@@ -53,39 +53,66 @@ async function logSignal(symbol, signalData, status = 'pending', errorMessage = 
 
 async function getSignals(options = {}) {
   const { symbol, limit = 50, fromDate, toDate, status, signalSource } = options;
+  
   let query = supabase.from('signals').select('*');
 
-  if (symbol) query = query.eq('symbol', symbol);
+  // Symbol filter
+  if (symbol) {
+    query = query.eq('symbol', symbol);
+  }
   
+  // Status filter
   if (status) {
     const statuses = status.split(',');
     query = query.in('status', statuses);
   }
   
-  // FIXED: Handle signal source filter properly
+  // Signal source filter - CRITICAL FIX
   if (signalSource && signalSource !== 'all') {
-    query = query.eq('signal_source', signalSource);
+      query = query.eq('signal_source', signalSource);
+  } else {
+    console.log(`  ⊘ NOT filtering by signal_source (showing all)`);
   }
   
-  // FIXED: Handle date range filtering properly
+  // Date range filtering - CRITICAL FIX
   if (fromDate) {
-    // Start of the from date
     const fromDateTime = new Date(fromDate);
     fromDateTime.setHours(0, 0, 0, 0);
-    query = query.gte('timestamp', fromDateTime.toISOString());
+    const fromISO = fromDateTime.toISOString();
+    query = query.gte('timestamp', fromISO);
   }
   
   if (toDate) {
-    // End of the to date (23:59:59.999)
     const toDateTime = new Date(toDate);
     toDateTime.setHours(23, 59, 59, 999);
-    query = query.lte('timestamp', toDateTime.toISOString());
+    const toISO = toDateTime.toISOString();
+    query = query.lte('timestamp', toISO);
   }
 
+  // Order and limit
   query = query.order('timestamp', { ascending: false }).limit(limit);
 
   const { data, error } = await query;
-  if (error) throw error;
+  
+  if (error) {
+    console.error('❌ Query error:', error);
+    throw error;
+  }
+  
+  // Debug: Show breakdown by signal_source
+  if (data.length > 0) {
+    const breakdown = data.reduce((acc, signal) => {
+      const source = signal.signal_source || 'unknown';
+      acc[source] = (acc[source] || 0) + 1;
+      return acc;
+    }, {});
+
+    // Show date range of returned data
+    const dates = data.map(d => new Date(d.timestamp));
+    const minDate = new Date(Math.min(...dates));
+    const maxDate = new Date(Math.max(...dates));
+  }
+  
   return data;
 }
 
