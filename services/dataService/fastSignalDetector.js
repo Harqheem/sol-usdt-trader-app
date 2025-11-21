@@ -13,7 +13,7 @@ const lastSymbolAlert = new Map();
 
 // Throttle checks to avoid performance issues
 const lastCheckTime = new Map();
-const CHECK_THROTTLE = config.checkInterval || 10000;
+const CHECK_THROTTLE = config.checkInterval || 2000;
 
 // Daily limits tracking
 const dailySignalCounts = {
@@ -21,6 +21,17 @@ const dailySignalCounts = {
   total: 0,
   bySymbol: new Map()
 };
+
+// === HELPER: Validate Stop Loss isn't too wide ===
+function validateStopLoss(entry, sl, direction, symbol) {
+  const slPercent = Math.abs(entry - sl) / entry;
+  const maxSL = config.riskManagement.maxStopLossPercent;
+  if (slPercent > maxSL) {
+    console.log(`⛔ ${symbol}: Rejecting ${direction} - SL too wide (${(slPercent * 100).toFixed(1)}% > ${(maxSL * 100).toFixed(0)}%)`);
+    return { valid: false, percent: slPercent };
+  }
+  return { valid: true, percent: slPercent };
+}
 
 /**
  * FAST SIGNAL DETECTION - Runs on price updates (throttled)
@@ -84,21 +95,21 @@ async function checkFastSignals(symbol, currentPrice) {
 
     // === FAST SIGNAL CHECKS (CRITICAL and HIGH urgency only) ===
     
-    // 1. BREAKOUT WITH VOLUME SURGE (CRITICAL urgency) - NOW USES 1M CANDLES
+    // 1. BREAKOUT WITH VOLUME SURGE (CRITICAL urgency)
     if (config.signals.breakout.enabled) {
-  const breakoutSignal = detectBreakoutMomentum(
-    symbol, 
-    currentPrice, 
-    closes, 
-    highs, 
-    lows, 
-    volumes30m, 
-    atr, 
-    ema7, 
-    ema25,
-    cache.candles1m,        // ← pass 1m candles
-    cache.candles30m.at(-1) // ← pass current 30m candle for freshness
-  );
+      const breakoutSignal = detectBreakoutMomentum(
+        symbol, 
+        currentPrice, 
+        closes, 
+        highs, 
+        lows, 
+        volumes30m, 
+        atr, 
+        ema7, 
+        ema25,
+        cache.candles1m,
+        cache.candles30m.at(-1)
+      );
       if (breakoutSignal) {
         const result = await sendFastAlert(symbol, breakoutSignal, currentPrice, assetConfig);
         if (result && result.sent) {
@@ -109,16 +120,16 @@ async function checkFastSignals(symbol, currentPrice) {
 
     // 2. SUPPORT/RESISTANCE BOUNCE (HIGH urgency)
     if (config.signals.supportResistanceBounce.enabled) {
-  const bounceSignal = detectSRBounce(
-    symbol,
-    currentPrice,
-    highs,
-    lows,
-    closes,
-    atr,
-    cache.candles1m,        // ← pass 1m candles
-    cache.candles30m.at(-1) // ← for freshness check
-  );
+      const bounceSignal = detectSRBounce(
+        symbol,
+        currentPrice,
+        highs,
+        lows,
+        closes,
+        atr,
+        cache.candles1m,
+        cache.candles30m.at(-1)
+      );
       if (bounceSignal) {
         const result = await sendFastAlert(symbol, bounceSignal, currentPrice, assetConfig);
         if (result && result.sent) {
@@ -139,92 +150,283 @@ async function checkFastSignals(symbol, currentPrice) {
     }
 
   } catch (error) {
-    // Silently fail for routine errors
     if (error.message && !error.message.includes('Insufficient') && !error.message.includes('Invalid')) {
       console.error(`⚠️ Fast signal error for ${symbol}:`, error.message);
     }
   }
 }
+// COMPLETE FIXES - Replace your detectBreakoutMomentum function with this:
 
 function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows30m, volumes30m, atr, ema7, ema25, candles1m = null, current30mCandle = null) {
-  if (!candles1m || candles1m.length < 80 || volumes30m.length < 50) return null;
-
-  // Freshness check
-  if (current30mCandle) {
-    const minutesInto30m = (Date.now() - current30mCandle.openTime) / 60000;
-    if (minutesInto30m > 17) return null;
+  
+  // FIX 7: Add comprehensive logging
+  console.log(`\n🔍 ${symbol} Breakout Check @ ${currentPrice.toFixed(4)}`);
+  console.log(`   Data: 1m=${candles1m?.length || 0} | 30m=${closes30m.length} | ATR=${atr?.toFixed(4)}`);
+  
+  if (!candles1m || candles1m.length < 100 || volumes30m.length < 50) {
+    console.log(`   ❌ Insufficient data`);
+    return null;
   }
 
-  // === ELITE 1M VOLUME SURGE ===
-  const vol1m = candles1m.slice(-60).map(c => parseFloat(c.volume));
-  const volLast10 = vol1m.slice(-10).reduce((a,b) => a+b, 0);
-  const volPrev20 = vol1m.slice(-30, -10).reduce((a,b) => a+b, 0) || 1;
-  const volumeRatio10vs20 = volLast10 / volPrev20;
+  // Time window check
+  if (current30mCandle) {
+    const minutesInto30m = (Date.now() - current30mCandle.openTime) / 60000;
+    if (minutesInto30m > 27) {
+      console.log(`   ❌ Too late in candle: ${minutesInto30m.toFixed(1)} min`);
+      return null;
+    }
+    if (minutesInto30m < 2) {
+      console.log(`   ❌ Too early: ${minutesInto30m.toFixed(1)} min`);
+      return null;
+    }
+  }
 
-  const last3vol = vol1m.slice(-3);
-  const accelerating = last3vol[2] > last3vol[1] * 1.20 && last3vol[1] > last3vol[0] * 1.20;
-  const recentHighVol = Math.max(...vol1m.slice(-30, -8));
-  const hasClimaxBar = vol1m.slice(-8).some(v => v > recentHighVol * 2.8);
+  // === VOLUME ANALYSIS ===
+  const vol1m = candles1m.slice(-80).map(c => parseFloat(c.volume));
+  
+  const volLast10 = vol1m.slice(-10);
+  const volPrev30 = vol1m.slice(-40, -10);
+  
+  const avgVolLast10 = volLast10.reduce((a, b) => a + b, 0) / 10;
+  const avgVolPrev30 = volPrev30.reduce((a, b) => a + b, 0) / 30;
+  const volumeRatio = avgVolLast10 / (avgVolPrev30 || 1);
+  
+  const volumeSurge = volumeRatio >= 1.4;
+  
+  const last5vol = vol1m.slice(-5);
+  const avgLast2 = (last5vol[4] + last5vol[3]) / 2;
+  const avgPrev3 = (last5vol[2] + last5vol[1] + last5vol[0]) / 3;
+  const accelerating = avgLast2 > avgPrev3 * 1.15;
+  
+  const maxRecentVol = Math.max(...vol1m.slice(-30, -5));
+  const hasClimaxBar = vol1m.slice(-5).some(v => v > maxRecentVol * 1.6);
+  
+  const hasVolumeConfirmation = volumeSurge || accelerating || hasClimaxBar;
+  
+  console.log(`   Vol: ${volumeRatio.toFixed(2)}x | Surge=${volumeSurge} | Accel=${accelerating} | Climax=${hasClimaxBar}`);
+  
+  if (!hasVolumeConfirmation) {
+    console.log(`   ❌ No volume confirmation`);
+    return null;
+  }
 
-  if (volumeRatio10vs20 < 3.4 || !accelerating || !hasClimaxBar) return null;
-
-  const recentHighs = highs30m.slice(-20, -1);
-  const recentLows  = lows30m.slice(-20, -1);
+  // === RANGE IDENTIFICATION ===
+  const lookback = 30;
+  const consolidationWindow = 12;
+  
+  const swingData = {
+    highs: highs30m.slice(-lookback, -1),
+    lows: lows30m.slice(-lookback, -1),
+    closes: closes30m.slice(-lookback, -1)
+  };
+  
+  const recentHighs = swingData.highs.slice(-consolidationWindow);
+  const recentLows = swingData.lows.slice(-consolidationWindow);
+  
   const rangeHigh = Math.max(...recentHighs);
-  const rangeLow  = Math.min(...recentLows);
+  const rangeLow = Math.min(...recentLows);
+  const rangeSize = rangeHigh - rangeLow;
+  
+  if (rangeSize < atr * 1.0) {
+    console.log(`   ❌ Range too tight: ${rangeSize.toFixed(4)} < ${(atr * 1.0).toFixed(4)}`);
+    return null;
+  }
+  
+  const avgClose = swingData.closes.slice(-consolidationWindow).reduce((a, b) => a + b) / consolidationWindow;
+  const rangePercent = rangeSize / avgClose;
+  
+  console.log(`   Range: ${rangeLow.toFixed(4)} - ${rangeHigh.toFixed(4)} (${(rangePercent * 100).toFixed(2)}%)`);
+  
+  if (rangePercent > 0.10) {
+    console.log(`   ❌ Range too wide - trending not consolidating`);
+    return null;
+  }
 
-  // BULLISH RETEST
-  if (currentPrice > rangeHigh && currentPrice > ema25) {
-    if (highs30m.slice(-4).every(h => h <= rangeHigh * 1.002) === false) return null;
+  // === TREND CONTEXT ===
+  const ema25Array = TI.EMA.calculate({ period: 25, values: closes30m.slice(0, -1) });
+  const ema25Current = ema25Array[ema25Array.length - 1];
+  const ema25Previous = ema25Array[ema25Array.length - 5];
+  const ema25Slope = (ema25Current - ema25Previous) / ema25Previous;
+  
+  console.log(`   EMA25: ${ema25Current.toFixed(4)} | Slope: ${(ema25Slope * 100).toFixed(3)}%`);
 
-    const highestSinceBreak = Math.max(...highs30m.slice(-7));
+  // === BULLISH BREAKOUT ===
+  if (currentPrice > ema25Current) {
+    console.log(`   ✓ Price above EMA25`);
+    
+    // FIX 4: More realistic sustained break check
+    const recent1mCandles = candles1m.slice(-5);
+    const barsAboveBreakout = recent1mCandles.filter(c => {
+      const close = parseFloat(c.close);
+      const low = parseFloat(c.low);
+      // Close must be above, low can wick down slightly
+      return close > rangeHigh && low > rangeHigh * 0.995;
+    }).length;
+    
+    console.log(`   Bars above breakout: ${barsAboveBreakout}/5`);
+    
+    if (barsAboveBreakout < 2) {
+      console.log(`   ❌ Breakout not sustained`);
+      return null;
+    }
+    
+    // FIX 5: Better recent break check
+    const recentBreak = highs30m.slice(-12).some(h => h > rangeHigh * 1.0003);
+    const currentlyAbove = currentPrice >= rangeHigh * 0.997;
+    const currentCandleBreak = parseFloat(current30mCandle.high) > rangeHigh;
+    
+    console.log(`   Recent break=${recentBreak} | Currently above=${currentlyAbove} | Current candle broke=${currentCandleBreak}`);
+    
+    if (!recentBreak && !currentlyAbove && !currentCandleBreak) {
+      console.log(`   ❌ No valid breakout detected`);
+      return null;
+    }
+    
+    const highestSinceBreak = Math.max(...highs30m.slice(-8), currentPrice);
     const pullbackATR = (highestSinceBreak - currentPrice) / atr;
-    if (pullbackATR < 0.35 || pullbackATR > 2.1) return null;
-    if (currentPrice < rangeHigh * 0.999) return null;
-
-    const confidence = Math.min(95, 82 + Math.floor(volumeRatio10vs20 * 1.8));
-
+    
+    if (pullbackATR > 4.0) {
+      console.log(`   ❌ Pullback too deep: ${pullbackATR.toFixed(2)} ATR`);
+      return null;
+    }
+    
+    const distanceFromBreakout = (currentPrice - rangeHigh) / rangeHigh;
+    
+    if (distanceFromBreakout > 0.02) {
+      console.log(`   ❌ Too extended: ${(distanceFromBreakout * 100).toFixed(2)}% above breakout`);
+      return null;
+    }
+    
+    const isRetest = currentPrice <= rangeHigh * 1.003 && pullbackATR > 0.3;
+    const signalType = isRetest ? 'BREAKOUT_BULLISH_RETEST' : 'BREAKOUT_BULLISH';
+    
+    let sl;
+    if (isRetest) {
+      sl = rangeLow - (atr * 0.6);
+    } else {
+      sl = Math.max(rangeLow, rangeHigh - (atr * 0.8));
+    }
+    
+    sl = Math.min(sl, currentPrice - (atr * 0.5));
+    
+    const slCheck = validateStopLoss(currentPrice, sl, 'LONG', symbol);
+    if (!slCheck.valid) return null;
+    
+    // FIX 6: Adjusted trend filter
+    let confidence = 72;
+    if (volumeRatio > 1.8) confidence += 8;
+    if (volumeRatio > 2.5) confidence += 5;
+    if (accelerating) confidence += 4;
+    if (hasClimaxBar) confidence += 3;
+    if (isRetest && pullbackATR > 0.4 && pullbackATR < 2.0) confidence += 8;
+    if (ema25Slope > 0.001) confidence += 5; // Lowered threshold
+    else if (ema25Slope < -0.002) confidence -= 8; // Only penalize strong counter-trend
+    
+    confidence = Math.min(95, confidence);
+    
+    console.log(`   ✅ BULLISH ${signalType} DETECTED | Confidence: ${confidence}%`);
+    
     return {
-      type: 'BREAKOUT_BULLISH_RETTEST',
+      type: signalType,
       direction: 'LONG',
       urgency: 'CRITICAL',
       confidence,
-      reason: `ELITE BULLISH BREAK & RETEST\n${volumeRatio10vs20.toFixed(1)}x volume surge\nRetesting ${rangeHigh.toFixed(4)} after ${pullbackATR.toFixed(2)} ATR pullback`,
+      reason: `${isRetest ? '🔄 RETEST' : '💥 BREAKOUT'} - BULLISH\n${volumeRatio.toFixed(1)}x volume surge\nBreakout level: ${rangeHigh.toFixed(4)}`,
       entry: currentPrice,
-      sl: Math.max(rangeLow, currentPrice - atr * 1.3),
-      details: `Pullback: ${pullbackATR.toFixed(2)} ATR | Vol: ${volumeRatio10vs20.toFixed(2)}x`
+      sl: sl,
+      details: `Pullback: ${pullbackATR.toFixed(2)} ATR | Vol: ${volumeRatio.toFixed(2)}x | Dist: ${(distanceFromBreakout * 100).toFixed(2)}% | Trend: ${ema25Slope > 0 ? 'WITH' : 'AGAINST'} | SL: ${(slCheck.percent * 100).toFixed(1)}%`
     };
   }
 
-  // BEARISH RETEST
-  if (currentPrice < rangeLow && currentPrice < ema25) {
-    if (lows30m.slice(-4).every(l => l >= rangeLow * 0.998) === false) return null;
-
-    const lowestSinceBreak = Math.min(...lows30m.slice(-7));
+  // === BEARISH BREAKDOWN ===
+  if (currentPrice < ema25Current) {
+    console.log(`   ✓ Price below EMA25`);
+    
+    const recent1mCandles = candles1m.slice(-5);
+    const barsBelowBreakdown = recent1mCandles.filter(c => {
+      const close = parseFloat(c.close);
+      const high = parseFloat(c.high);
+      return close < rangeLow && high < rangeLow * 1.005;
+    }).length;
+    
+    console.log(`   Bars below breakdown: ${barsBelowBreakdown}/5`);
+    
+    if (barsBelowBreakdown < 2) {
+      console.log(`   ❌ Breakdown not sustained`);
+      return null;
+    }
+    
+    const recentBreak = lows30m.slice(-12).some(l => l < rangeLow * 0.9997);
+    const currentlyBelow = currentPrice <= rangeLow * 1.003;
+    const currentCandleBreak = parseFloat(current30mCandle.low) < rangeLow;
+    
+    console.log(`   Recent break=${recentBreak} | Currently below=${currentlyBelow} | Current candle broke=${currentCandleBreak}`);
+    
+    if (!recentBreak && !currentlyBelow && !currentCandleBreak) {
+      console.log(`   ❌ No valid breakdown detected`);
+      return null;
+    }
+    
+    const lowestSinceBreak = Math.min(...lows30m.slice(-8), currentPrice);
     const pullbackATR = (currentPrice - lowestSinceBreak) / atr;
-    if (pullbackATR < 0.35 || pullbackATR > 2.1) return null;
-    if (currentPrice > rangeLow * 1.001) return null;
-
-    const confidence = Math.min(95, 82 + Math.floor(volumeRatio10vs20 * 1.8));
-
+    
+    if (pullbackATR > 4.0) {
+      console.log(`   ❌ Bounce too high: ${pullbackATR.toFixed(2)} ATR`);
+      return null;
+    }
+    
+    const distanceFromBreakdown = (rangeLow - currentPrice) / rangeLow;
+    if (distanceFromBreakdown > 0.02) {
+      console.log(`   ❌ Too extended: ${(distanceFromBreakdown * 100).toFixed(2)}% below breakdown`);
+      return null;
+    }
+    
+    const isRetest = currentPrice >= rangeLow * 0.997 && pullbackATR > 0.3;
+    const signalType = isRetest ? 'BREAKOUT_BEARISH_RETEST' : 'BREAKOUT_BEARISH';
+    
+    let sl;
+    if (isRetest) {
+      sl = rangeHigh + (atr * 0.6);
+    } else {
+      sl = Math.min(rangeHigh, rangeLow + (atr * 0.8));
+    }
+    
+    sl = Math.max(sl, currentPrice + (atr * 0.5));
+    
+    const slCheck = validateStopLoss(currentPrice, sl, 'SHORT', symbol);
+    if (!slCheck.valid) return null;
+    
+    let confidence = 72;
+    if (volumeRatio > 1.8) confidence += 8;
+    if (volumeRatio > 2.5) confidence += 5;
+    if (accelerating) confidence += 4;
+    if (hasClimaxBar) confidence += 3;
+    if (isRetest && pullbackATR > 0.4 && pullbackATR < 2.0) confidence += 8;
+    if (ema25Slope < -0.001) confidence += 5;
+    else if (ema25Slope > 0.002) confidence -= 8;
+    
+    confidence = Math.min(95, confidence);
+    
+    console.log(`   ✅ BEARISH ${signalType} DETECTED | Confidence: ${confidence}%`);
+    
     return {
-      type: 'BREAKOUT_BEARISH_RETTEST',
+      type: signalType,
       direction: 'SHORT',
       urgency: 'CRITICAL',
       confidence,
-      reason: `ELITE BEARISH BREAKDOWN & RETEST\n${volumeRatio10vs20.toFixed(1)}x volume surge\nRetesting ${rangeLow.toFixed(4)}`,
+      reason: `${isRetest ? '🔄 RETEST' : '💥 BREAKDOWN'} - BEARISH\n${volumeRatio.toFixed(1)}x volume surge\nBreakdown level: ${rangeLow.toFixed(4)}`,
       entry: currentPrice,
-      sl: Math.min(rangeHigh, currentPrice + atr * 1.3),
-      details: `Bounce: ${pullbackATR.toFixed(2)} ATR | Vol: ${volumeRatio10vs20.toFixed(2)}x`
+      sl: sl,
+      details: `Bounce: ${pullbackATR.toFixed(2)} ATR | Vol: ${volumeRatio.toFixed(2)}x | Dist: ${(distanceFromBreakdown * 100).toFixed(2)}% | Trend: ${ema25Slope < 0 ? 'WITH' : 'AGAINST'} | SL: ${(slCheck.percent * 100).toFixed(1)}%`
     };
   }
 
+  console.log(`   ❌ Price not positioned for breakout (EMA25=${ema25Current.toFixed(4)})`);
   return null;
 }
-/**
- * 2. SUPPORT/RESISTANCE BOUNCE - HIGH urgency
-  * ELITE SUPPORT/RESISTANCE 
- */
+
+// 2. SUPPOR/RESISTANCE BOUNCE
+
 function detectSRBounce(symbol, currentPrice, highs30m, lows30m, closes30m, atr, candles1m = null, current30mCandle = null) {
   if (!candles1m || candles1m.length < 100) return null;
 
@@ -238,9 +440,12 @@ function detectSRBounce(symbol, currentPrice, highs30m, lows30m, closes30m, atr,
   const highs1m = recent1m.map(c => parseFloat(c.high));
   const vol1m = recent1m.map(c => parseFloat(c.volume));
 
-  const volLast10 = vol1m.slice(-10).reduce((a,b) => a+b, 0);
-  const volPrev20 = vol1m.slice(-30, -10).reduce((a,b) => a+b, 0) || 1;
-  const volumeSurge = volLast10 / volPrev20 > 2.1;
+  // FIX: Compare averages, not totals
+  const volLast10 = vol1m.slice(-10);
+  const volPrev20 = vol1m.slice(-30, -10);
+  const avgVolLast10 = volLast10.reduce((a, b) => a + b, 0) / 10;
+  const avgVolPrev20 = volPrev20.reduce((a, b) => a + b, 0) / 20;
+  const volumeSurge = (avgVolLast10 / avgVolPrev20) > 1.8; // Lowered from 2.1
 
   const supportLevels = findLevels(lows1m, 0.0015);
   const resistanceLevels = findLevels(highs1m, 0.0015);
@@ -248,13 +453,20 @@ function detectSRBounce(symbol, currentPrice, highs30m, lows30m, closes30m, atr,
   const keySupport = supportLevels[0]?.price;
   const keyResistance = resistanceLevels[0]?.price;
 
+  // === SUPPORT BOUNCE (LONG) ===
   if (keySupport && currentPrice > keySupport * 0.998) {
     const touched = lows1m.slice(-20).some(l => l <= keySupport * 1.003);
     const currentLow = Math.min(...lows1m.slice(-5));
     const bounceATR = (currentPrice - currentLow) / atr;
 
     if (touched && bounceATR > 0.4 && bounceATR < 2.3 && volumeSurge) {
+      const sl = keySupport - atr * 0.4;
+      
+      const slCheck = validateStopLoss(currentPrice, sl, 'LONG', symbol);
+      if (!slCheck.valid) return null;
+
       const previousTouches = lows1m.slice(0, -20).filter(l => Math.abs(l - keySupport) < keySupport * 0.003).length;
+      
       return {
         type: 'ELITE_SUPPORT_BOUNCE',
         direction: 'LONG',
@@ -262,19 +474,26 @@ function detectSRBounce(symbol, currentPrice, highs30m, lows30m, closes30m, atr,
         confidence: previousTouches >= 1 ? 92 : 84,
         reason: `ELITE SUPPORT BOUNCE\n${keySupport.toFixed(4)} held with volume surge\n${previousTouches + 1}x touched`,
         entry: currentPrice,
-        sl: keySupport - atr * 0.4,
-        details: `Support: ${keySupport.toFixed(4)} | Bounce: ${bounceATR.toFixed(2)} ATR`
+        sl: sl,
+        details: `Support: ${keySupport.toFixed(4)} | Bounce: ${bounceATR.toFixed(2)} ATR | Vol: ${(avgVolLast10 / avgVolPrev20).toFixed(2)}x | SL: ${(slCheck.percent * 100).toFixed(1)}%`
       };
     }
   }
 
+  // === RESISTANCE REJECTION (SHORT) ===
   if (keyResistance && currentPrice < keyResistance * 1.002) {
     const touched = highs1m.slice(-20).some(h => h >= keyResistance * 0.997);
     const currentHigh = Math.max(...highs1m.slice(-5));
     const rejectionATR = (currentHigh - currentPrice) / atr;
 
     if (touched && rejectionATR > 0.4 && rejectionATR < 2.3 && volumeSurge) {
+      const sl = keyResistance + atr * 0.4;
+      
+      const slCheck = validateStopLoss(currentPrice, sl, 'SHORT', symbol);
+      if (!slCheck.valid) return null;
+
       const previousTouches = highs1m.slice(0, -20).filter(h => Math.abs(h - keyResistance) < keyResistance * 0.003).length;
+      
       return {
         type: 'ELITE_RESISTANCE_REJECTION',
         direction: 'SHORT',
@@ -282,33 +501,17 @@ function detectSRBounce(symbol, currentPrice, highs30m, lows30m, closes30m, atr,
         confidence: previousTouches >= 1 ? 92 : 84,
         reason: `ELITE RESISTANCE REJECTION\n${keyResistance.toFixed(4)} capped with volume`,
         entry: currentPrice,
-        sl: keyResistance + atr * 0.4,
-        details: `Resistance: ${keyResistance.toFixed(4)} | Rejection: ${rejectionATR.toFixed(2)} ATR`
+        sl: sl,
+        details: `Resistance: ${keyResistance.toFixed(4)} | Rejection: ${rejectionATR.toFixed(2)} ATR | Vol: ${(avgVolLast10 / avgVolPrev20).toFixed(2)}x | SL: ${(slCheck.percent * 100).toFixed(1)}%`
       };
     }
   }
 
   return null;
 }
-/** Helper: Find real S/R levels with multiple touches */
-function findLevels(prices, tolerance = 0.0015) {
-  const levels = [];
-  const seen = new Set();
-  for (const price of prices) {
-    if (seen.has(price.toFixed(6))) continue;
-    const touches = prices.filter(p => Math.abs(p - price) < price * tolerance);
-    if (touches.length >= 3) {
-      levels.push({ price, touches: touches.length });
-      seen.add(price.toFixed(6));
-    }
-  }
-  return levels
-    .sort((a, b) => b.touches - a.touches || Math.abs(prices[prices.length-1] - a.price) - Math.abs(prices[prices.length-1] - b.price))
-    .slice(0, 3);
-}
 
 /**
- * 3. EMA CROSSOVER - HIGH urgency
+ * 3. EMA CROSSOVER
  */
 function detectEMACrossover(symbol, closes, currentPrice) {
   if (closes.length < 30) return null;
@@ -334,6 +537,10 @@ function detectEMACrossover(symbol, closes, currentPrice) {
     
     if (!config.signals.emaCrossover.requireMomentum || hasUpMomentum) {
       const separation = ((ema7Current - ema25Current) / ema25Current) * 100;
+      const sl = ema25Current - (ema25Current * 0.01);
+      
+      const slCheck = validateStopLoss(currentPrice, sl, 'LONG', symbol);
+      if (!slCheck.valid) return null;
       
       return {
         type: 'EMA_CROSS_BULLISH',
@@ -342,8 +549,8 @@ function detectEMACrossover(symbol, closes, currentPrice) {
         confidence: Math.min(config.signals.emaCrossover.confidence + separation * 2, 95),
         reason: `🔄 FRESH BULLISH EMA CROSSOVER (7>${ema7Current.toFixed(2)} crossed 25>${ema25Current.toFixed(2)})`,
         entry: currentPrice,
-        sl: ema25Current - (ema25Current * 0.01),
-        details: `EMA7: ${ema7Current.toFixed(2)} | EMA25: ${ema25Current.toFixed(2)} | Separation: ${separation.toFixed(2)}% | Price: ${currentPrice.toFixed(2)}`
+        sl: sl,
+        details: `EMA7: ${ema7Current.toFixed(2)} | EMA25: ${ema25Current.toFixed(2)} | Sep: ${separation.toFixed(2)}% | SL: ${(slCheck.percent * 100).toFixed(1)}%`
       };
     }
   }
@@ -359,6 +566,10 @@ function detectEMACrossover(symbol, closes, currentPrice) {
     
     if (!config.signals.emaCrossover.requireMomentum || hasDownMomentum) {
       const separation = ((ema25Current - ema7Current) / ema25Current) * 100;
+      const sl = ema25Current + (ema25Current * 0.01);
+      
+      const slCheck = validateStopLoss(currentPrice, sl, 'SHORT', symbol);
+      if (!slCheck.valid) return null;
       
       return {
         type: 'EMA_CROSS_BEARISH',
@@ -367,8 +578,8 @@ function detectEMACrossover(symbol, closes, currentPrice) {
         confidence: Math.min(config.signals.emaCrossover.confidence + separation * 2, 95),
         reason: `🔄 FRESH BEARISH EMA CROSSOVER (7<${ema7Current.toFixed(2)} crossed 25<${ema25Current.toFixed(2)})`,
         entry: currentPrice,
-        sl: ema25Current + (ema25Current * 0.01),
-        details: `EMA7: ${ema7Current.toFixed(2)} | EMA25: ${ema25Current.toFixed(2)} | Separation: ${separation.toFixed(2)}% | Price: ${currentPrice.toFixed(2)}`
+        sl: sl,
+        details: `EMA7: ${ema7Current.toFixed(2)} | EMA25: ${ema25Current.toFixed(2)} | Sep: ${separation.toFixed(2)}% | SL: ${(slCheck.percent * 100).toFixed(1)}%`
       };
     }
   }
@@ -487,8 +698,6 @@ Position Size: ${(config.positionSizeMultiplier * 100).toFixed(0)}% of normal (f
     console.log(`💾 ${symbol}: Logging fast signal to database...`);
       
     const logsService = require('../logsService');
-    console.log(`   logsService loaded:`, typeof logsService);
-    console.log(`   logSignal exists:`, typeof logsService.logSignal);
     
     if (!logsService.logSignal) {
       throw new Error('logSignal function not found in logsService');

@@ -6,7 +6,7 @@ module.exports = {
   enabled: true,
   
   // How often to check for fast signals 
-  checkInterval: 10000, // 10 seconds
+  checkInterval: 2000, // 2 seconds
   
   // Cooldown between same-type alerts for same symbol 
   alertCooldown: 7200000, // 2 hour
@@ -90,6 +90,7 @@ module.exports = {
     maxDailyFastSignals: 20,      // Max fast signals per day across all symbols
     maxPerSymbolPerDay: 5,        // Max fast signals per symbol per day
     pauseAfterLoss: false,        // Don't auto-pause after fast signal loss
+    maxStopLossPercent: 0.50,
     requireRegimeAlignment: false // Don't require regime alignment for fast signals
   },
   
