@@ -9,7 +9,7 @@ module.exports = {
   checkInterval: 2000, // 2 seconds
   
   // Cooldown between same-type alerts for same symbol 
-  alertCooldown: 7200000, // 2 hour
+  alertCooldown: 4800000, // 1.5 hour
   
   // Signal type priorities and settings
   signals: {
