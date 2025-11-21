@@ -222,11 +222,9 @@ function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows3
   const hasClimaxBar = vol1m.slice(-5).some(v => v > maxRecentVol * 1.6);
   
   const hasVolumeConfirmation = volumeSurge || accelerating || hasClimaxBar;
-  
-  console.log(`   Vol: ${volumeRatio.toFixed(2)}x | Surge=${volumeSurge} | Accel=${accelerating} | Climax=${hasClimaxBar}`);
-  
+   
   if (!hasVolumeConfirmation) {
-    console.log(`   ❌ No volume confirmation`);
+  
     return null;
   }
 
@@ -266,8 +264,7 @@ function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows3
   
   // === BULLISH BREAKOUT ===
   if (currentPrice > ema25Current) {
-    console.log(`   ✓ Price above EMA25`);
-    
+
     // FIX 4: More realistic sustained break check
     const recent1mCandles = candles1m.slice(-5);
     const barsAboveBreakout = recent1mCandles.filter(c => {
