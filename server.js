@@ -6,6 +6,8 @@ const routes = require('./routes');
 const { initDataService, cleanup, getServiceStatus, forceRefresh } = require('./services/dataService');
 const config = require('./config');
 const pauseService = require('./services/pauseService');
+const { initializeRiskManagement } = require('./services/dataService/positionTracker');
+
 require('./services/monitorService'); // Start trade monitoring
 
 const { symbols } = config;
@@ -283,6 +285,12 @@ app.post('/force-refresh/:symbol', async (req, res) => {
     
     console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     
+    const riskInit = await initializeRiskManagement();
+  
+  if (!riskInit.success) {
+    console.error('⚠️ Risk management initialization had issues');
+    console.error('   Bot will continue but position tracking may be inaccurate');
+  }
     const port = process.env.PORT || 3000;
     server = app.listen(port, () => {
       console.log('\n✅ SERVER RUNNING');

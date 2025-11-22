@@ -126,4 +126,24 @@ async function getSignals(options = {}) {
   return data;
 }
 
-module.exports = { logSignal, getSignals, supabase };
+/**
+ * Get all open positions (for position tracking)
+ */
+async function getOpenPositions() {
+  const query = `
+    SELECT * FROM trades 
+    WHERE status = 'opened' 
+    AND (signal_type = 'fast' OR signal_type IS NULL)
+    ORDER BY timestamp DESC
+  `;
+  
+  try {
+    const result = await pool.query(query);
+    return result.rows;
+  } catch (error) {
+    console.error('Error fetching open positions:', error);
+    throw error;
+  }
+}
+
+module.exports = { logSignal, getSignals, getOpenPositions, supabase };
