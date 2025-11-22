@@ -130,7 +130,7 @@ async function getClosedTradesSince(sinceTimestamp) {
     const { data, error } = await supabase
       .from('signals')
       .select('*')
-      .in('status', ['closed', 'stopped', 'tp1_hit', 'tp2_hit', 'tp3_hit'])
+      .in('status', ['closed', 'stopped', 'tp1_hit', 'tp2_hit'])
       .gte('close_time', sinceTimestamp.toISOString())
       .order('close_time', { ascending: false });
     

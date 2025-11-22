@@ -91,7 +91,7 @@ function calculateStopLoss(entry, theoreticalSL, direction, signalType, atr, cur
   const finalStopPercent = Math.abs(entry - proposedSL) / entry;
   
   // Final validation against absolute max
-  const absoluteMax = config.riskManagement.maxStopLossPercent || 0.012;
+  const absoluteMax = config.riskManagement.maxStopLossPercent || 0.01;
   if (finalStopPercent > absoluteMax) {
     console.log(`   ❌ Stop loss exceeds absolute max: ${(finalStopPercent * 100).toFixed(2)}% > ${(absoluteMax * 100).toFixed(2)}%`);
     return {
@@ -130,12 +130,8 @@ function calculateTakeProfits(entry, sl, direction) {
   const tp2 = direction === 'LONG' 
     ? entry + (risk * config.takeProfit.tp2Multiplier)
     : entry - (risk * config.takeProfit.tp2Multiplier);
-    
-  const tp3 = direction === 'LONG' 
-    ? entry + (risk * config.takeProfit.tp3Multiplier)
-    : entry - (risk * config.takeProfit.tp3Multiplier);
   
-  return { tp1, tp2, tp3, risk };
+  return { tp1, tp2, risk };
 }
 
 // ========================================

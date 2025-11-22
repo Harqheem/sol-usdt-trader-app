@@ -135,12 +135,10 @@ module.exports = {
   takeProfit: {
     tp1Multiplier: 1.0,           // 1R - risk $10 to make $10 (was 0.3R)
     tp2Multiplier: 2.0,           // 2R - risk $10 to make $20 (was 0.9R)
-    tp3Multiplier: 3.5,           // NEW: 3.5R - risk $10 to make $35
     
     // Partial close percentages (optional - for future implementation)
     tp1ClosePercent: 0.33,        // Close 33% at TP1
     tp2ClosePercent: 0.33,        // Close 33% at TP2
-    tp3ClosePercent: 0.34         // Close remaining 34% at TP3
   },
   
   // ========================================
@@ -149,7 +147,7 @@ module.exports = {
   riskManagement: {
     // Daily limits
     maxDailyFastSignals: 12,      // Was 20 - reduce overtrading
-    maxPerSymbolPerDay: 2,        // CRITICAL: Was 5 - max 2 signals per symbol
+    maxPerSymbolPerDay: 4,        // CRITICAL: Was 5 - max 2 signals per symbol
     
     // Concurrent positions (NEW)
     maxConcurrentSignals: 3,      // NEW: Max 3 open positions at once
@@ -159,7 +157,7 @@ module.exports = {
     pauseDuration: 1800000,       // NEW: 30 minutes pause (1800000ms)
     
     // Stop loss limits
-    maxStopLossPercent: 0.012,    // NEW: 1.2% absolute max stop (was 50%)
+    maxStopLossPercent: 0.010,    // NEW: 1.0% absolute max stop (was 50%)
     
     // Other settings
     requireRegimeAlignment: false, // Don't require regime alignment for fast signals

@@ -822,8 +822,8 @@ async function sendFastAlert(symbol, signal, currentPrice, atr, assetConfig) {
     console.log(`⚠️ ${symbol}: SL adjusted from ${(slResult.originalPercent * 100).toFixed(2)}% to ${(slResult.percent * 100).toFixed(2)}%`);
   }
 
-  // CALCULATE TAKE PROFITS (1R, 2R, 3.5R)
-  const { tp1, tp2, tp3, risk } = calculateTakeProfits(currentPrice, finalSL, signal.direction);
+  // CALCULATE TAKE PROFITS (1R, 2R)
+  const { tp1, tp2, risk } = calculateTakeProfits(currentPrice, finalSL, signal.direction);
 
   const decimals = getDecimalPlaces(currentPrice);
   
@@ -838,7 +838,7 @@ async function sendFastAlert(symbol, signal, currentPrice, atr, assetConfig) {
   const riskAmount = Math.abs(actualEntry - finalSL);
   const rrTP1 = (Math.abs(tp1 - actualEntry) / riskAmount).toFixed(2);
   const rrTP2 = (Math.abs(tp2 - actualEntry) / riskAmount).toFixed(2);
-  const rrTP3 = (Math.abs(tp3 - actualEntry) / riskAmount).toFixed(2);
+
 
   // BUILD TELEGRAM MESSAGE
   const message1 = `⚡ URGENT ${symbol}
@@ -848,7 +848,6 @@ LEVERAGE: 20x
 Entry: ${actualEntry.toFixed(decimals)}
 TP1: ${tp1.toFixed(decimals)}
 TP2: ${tp2.toFixed(decimals)}
-TP3: ${tp3.toFixed(decimals)}
 SL: ${finalSL.toFixed(decimals)}
 
 ${signal.reason}`;
@@ -864,7 +863,7 @@ Entry: ${actualEntry.toFixed(decimals)}
 
 Position: ${positionSize}% (scaled by confidence)
 Risk: ${(slResult.percent * 100).toFixed(2)}%
-R:R → TP1: 1:${rrTP1} | TP2: 1:${rrTP2} | TP3: 1:${rrTP3} | SL:  (${(slResult.percent * 100).toFixed(2)}%)
+R:R → TP1: 1:${rrTP1} | TP2: 1:${rrTP2} | SL:  (${(slResult.percent * 100).toFixed(2)}%)
 
 ${slResult.wasAdjusted ? '⚠️ SL adjusted to max allowed\n' : ''}${signal.orderFlow ? `📊 Order Flow: ${signal.orderFlow.score.toFixed(1)} (${signal.orderFlow.strength})\n` : ''}${signal.liquiditySweep ? `🎣 Sweep: ${signal.liquiditySweep.type} (${signal.liquiditySweep.quality}%)\n` : ''}`;
 
@@ -883,7 +882,6 @@ ${slResult.wasAdjusted ? '⚠️ SL adjusted to max allowed\n' : ''}${signal.ord
       entry: actualEntry,
       tp1: tp1,
       tp2: tp2,
-      tp3: tp3,
       sl: finalSL,
       positionSize: positionSize,
       leverage: 20,
@@ -903,7 +901,7 @@ ${slResult.wasAdjusted ? '⚠️ SL adjusted to max allowed\n' : ''}${signal.ord
       direction: signal.direction,
       entry: actualEntry,
       sl: finalSL,
-      tp1, tp2, tp3,
+      tp1, tp2,
       positionSize,
       riskPercent: slResult.percent * 100
     };
