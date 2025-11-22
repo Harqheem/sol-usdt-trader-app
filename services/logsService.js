@@ -11,15 +11,10 @@ async function logSignal(symbol, signalData, status = 'pending', errorMessage = 
     const { signal, notes, entry, tp1, tp2, sl, positionSize, leverage = 20 } = signalData;
     const timestamp = new Date().toISOString();
     
-    // Convert "Buy"/"Sell" to "Enter Long"/"Enter Short"
     let signalType = signal || 'Unknown';
     if (signalType === 'Buy') signalType = 'Enter Long';
     if (signalType === 'Sell') signalType = 'Enter Short';
     
-    // ========================================
-    // CRITICAL FIX: Add open_time if status is 'opened'
-    // Fast signals start as 'opened', not 'pending'
-    // ========================================
     const insertData = {
       timestamp,
       symbol,
@@ -39,7 +34,6 @@ async function logSignal(symbol, signalData, status = 'pending', errorMessage = 
       signal_source: signalSource
     };
     
-    // Add open_time if already opened (fast signals)
     if (status === 'opened') {
       insertData.open_time = timestamp;
     }
@@ -66,40 +60,31 @@ async function getSignals(options = {}) {
   
   let query = supabase.from('signals').select('*');
 
-  // Symbol filter
   if (symbol) {
     query = query.eq('symbol', symbol);
   }
   
-  // Status filter
   if (status) {
     const statuses = status.split(',');
     query = query.in('status', statuses);
   }
   
-  // Signal source filter - CRITICAL FIX
   if (signalSource && signalSource !== 'all') {
-      query = query.eq('signal_source', signalSource);
-  } else {
-
+    query = query.eq('signal_source', signalSource);
   }
   
-  // Date range filtering - CRITICAL FIX
   if (fromDate) {
     const fromDateTime = new Date(fromDate);
     fromDateTime.setHours(0, 0, 0, 0);
-    const fromISO = fromDateTime.toISOString();
-    query = query.gte('timestamp', fromISO);
+    query = query.gte('timestamp', fromDateTime.toISOString());
   }
   
   if (toDate) {
     const toDateTime = new Date(toDate);
     toDateTime.setHours(23, 59, 59, 999);
-    const toISO = toDateTime.toISOString();
-    query = query.lte('timestamp', toISO);
+    query = query.lte('timestamp', toDateTime.toISOString());
   }
 
-  // Order and limit
   query = query.order('timestamp', { ascending: false }).limit(limit);
 
   const { data, error } = await query;
@@ -109,41 +94,56 @@ async function getSignals(options = {}) {
     throw error;
   }
   
-  // Debug: Show breakdown by signal_source
-  if (data.length > 0) {
-    const breakdown = data.reduce((acc, signal) => {
-      const source = signal.signal_source || 'unknown';
-      acc[source] = (acc[source] || 0) + 1;
-      return acc;
-    }, {});
-
-    // Show date range of returned data
-    const dates = data.map(d => new Date(d.timestamp));
-    const minDate = new Date(Math.min(...dates));
-    const maxDate = new Date(Math.max(...dates));
-  }
-  
   return data;
 }
 
 /**
  * Get all open positions (for position tracking)
+ * FIXED: Now uses Supabase instead of undefined pool
  */
 async function getOpenPositions() {
-  const query = `
-    SELECT * FROM trades 
-    WHERE status = 'opened' 
-    AND (signal_type = 'fast' OR signal_type IS NULL)
-    ORDER BY timestamp DESC
-  `;
-  
   try {
-    const result = await pool.query(query);
-    return result.rows;
+    const { data, error } = await supabase
+      .from('signals')
+      .select('*')
+      .eq('status', 'opened')
+      .order('timestamp', { ascending: false });
+    
+    if (error) {
+      console.error('❌ Error fetching open positions:', error.message);
+      throw error;
+    }
+    
+    return data || [];
   } catch (error) {
-    console.error('Error fetching open positions:', error);
+    console.error('❌ Error fetching open positions:', error.message);
     throw error;
   }
 }
 
-module.exports = { logSignal, getSignals, getOpenPositions, supabase };
+/**
+ * Get trades that were closed since a given timestamp
+ * Used for position tracking synchronization
+ */
+async function getClosedTradesSince(sinceTimestamp) {
+  try {
+    const { data, error } = await supabase
+      .from('signals')
+      .select('*')
+      .in('status', ['closed', 'stopped', 'tp1_hit', 'tp2_hit', 'tp3_hit'])
+      .gte('close_time', sinceTimestamp.toISOString())
+      .order('close_time', { ascending: false });
+    
+    if (error) {
+      console.error('❌ Error fetching closed trades:', error.message);
+      throw error;
+    }
+    
+    return data || [];
+  } catch (error) {
+    console.error('❌ Error fetching closed trades:', error.message);
+    throw error;
+  }
+}
+
+module.exports = { logSignal, getSignals, getOpenPositions, getClosedTradesSince, supabase };
