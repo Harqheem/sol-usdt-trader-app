@@ -438,7 +438,6 @@ function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows3
     // ORDER FLOW FILTER: Check for selling pressure
     // ========================================
     if (!orderFlow.isBearish) {
-      console.log(`   ❌ ${symbol}: BEARISH breakdown rejected - no selling pressure (score: ${orderFlow.score.toFixed(1)})`);
       return null;
     }
     
@@ -450,7 +449,7 @@ function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows3
     const trapCheck = isLikelyTrap(candles1m, 'SHORT', rangeLow, atr);
     
     if (trapCheck.isTrap) {
-      console.log(`   ❌ ${symbol}: BEARISH breakdown rejected - ${trapCheck.reason}`);
+      
       return null;
     }
     
@@ -670,7 +669,6 @@ function detectSRBounce(symbol, currentPrice, highs30m, lows30m, closes30m, atr,
       // ORDER FLOW FILTER: Require buying pressure
       // ========================================
       if (!orderFlow.isBullish) {
-        console.log(`   ❌ ${symbol}: SUPPORT bounce rejected - no buying pressure (OF: ${orderFlow.score.toFixed(1)})`);
         return null;
       }
       
@@ -680,7 +678,7 @@ function detectSRBounce(symbol, currentPrice, highs30m, lows30m, closes30m, atr,
       const trapCheck = isLikelyTrap(candles1m, 'LONG', keySupport, atr);
       
       if (trapCheck.isTrap) {
-        console.log(`   ❌ ${symbol}: SUPPORT bounce rejected - ${trapCheck.reason}`);
+        
         return null;
       }
       
@@ -826,7 +824,6 @@ function detectSRBounce(symbol, currentPrice, highs30m, lows30m, closes30m, atr,
       // ORDER FLOW FILTER: Require selling pressure
       // ========================================
       if (!orderFlow.isBearish) {
-        console.log(`   ❌ ${symbol}: RESISTANCE rejection rejected - no selling pressure (OF: ${orderFlow.score.toFixed(1)})`);
         return null;
       }
       
@@ -836,7 +833,7 @@ function detectSRBounce(symbol, currentPrice, highs30m, lows30m, closes30m, atr,
       const trapCheck = isLikelyTrap(candles1m, 'SHORT', keyResistance, atr);
       
       if (trapCheck.isTrap) {
-        console.log(`   ❌ ${symbol}: RESISTANCE rejection rejected - ${trapCheck.reason}`);
+        
         return null;
       }
       
