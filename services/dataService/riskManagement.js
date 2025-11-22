@@ -4,11 +4,11 @@
 const config = require('../../config/fastSignalConfig');
 
 // ========================================
-// TRACKING VARIABLES
+// TRACKING VARIABLES (FAST SIGNALS ONLY)
 // ========================================
 
-let openPositionsCount = 0;
-let lastLossTime = 0;
+let openFastPositionsCount = 0;  // Only track FAST signal positions
+let lastFastLossTime = 0;        // Only track FAST signal losses
 
 // Track last check for daily limits (imported from detector)
 const dailySignalCounts = {
@@ -176,42 +176,40 @@ function meetsConfidenceRequirement(confidence) {
 
 /**
  * Check if we can send signal (comprehensive checks)
+ * ONLY FOR FAST SIGNALS
  */
 function canSendSignalWithLimits(symbol) {
   const now = Date.now();
   
-  // 1. Check pause after loss
-  if (config.riskManagement.pauseAfterLoss && lastLossTime > 0) {
-    const timeSinceLoss = now - lastLossTime;
+  // 1. Check pause after FAST loss
+  if (config.riskManagement.pauseAfterLoss && lastFastLossTime > 0) {
+    const timeSinceLoss = now - lastFastLossTime;
     if (timeSinceLoss < config.riskManagement.pauseDuration) {
       const remainingMinutes = Math.ceil((config.riskManagement.pauseDuration - timeSinceLoss) / 60000);
       
       if (config.logging?.logRiskManagement) {
-        console.log(`⏸️ PAUSED after loss - ${remainingMinutes} minutes remaining`);
+        console.log(`⏸️ FAST SIGNALS PAUSED after loss - ${remainingMinutes} minutes remaining`);
       }
       
       return { canSend: false, reason: 'PAUSED_AFTER_LOSS', remainingMinutes };
     } else {
       // Pause expired, reset
-      lastLossTime = 0;
+      lastFastLossTime = 0;
       if (config.logging?.logRiskManagement) {
-        console.log(`✅ Pause expired - trading resumed`);
+        console.log(`✅ Fast signals pause expired - trading resumed`);
       }
     }
   }
   
-  // 2. Check concurrent positions limit
+  // 2. Check concurrent FAST positions limit
   if (config.riskManagement.maxConcurrentSignals) {
-    if (openPositionsCount >= config.riskManagement.maxConcurrentSignals) {
+    if (openFastPositionsCount >= config.riskManagement.maxConcurrentSignals) {
       if (config.logging?.logRiskManagement) {
-        console.log(`⛔ Max concurrent positions: ${openPositionsCount}/${config.riskManagement.maxConcurrentSignals}`);
+        console.log(`⛔ Max concurrent FAST positions: ${openFastPositionsCount}/${config.riskManagement.maxConcurrentSignals}`);
       }
-      return { canSend: false, reason: 'MAX_CONCURRENT', current: openPositionsCount };
+      return { canSend: false, reason: 'MAX_CONCURRENT', current: openFastPositionsCount };
     }
   }
-  
-  // 3. Check daily limits (handled by detector's canSendFastSignal)
-  // This function should be imported from detector if needed
   
   return { canSend: true };
 }
@@ -221,77 +219,78 @@ function canSendSignalWithLimits(symbol) {
 // ========================================
 
 /**
- * Increment position count when signal sent
+ * Increment FAST position count when signal sent
  */
 function incrementPositionCount() {
-  openPositionsCount++;
+  openFastPositionsCount++;
   
   const maxConcurrent = config.riskManagement.maxConcurrentSignals || '∞';
   
   if (config.logging?.logRiskManagement) {
-    console.log(`📊 Open positions: ${openPositionsCount}/${maxConcurrent}`);
+    console.log(`📊 Open FAST positions: ${openFastPositionsCount}/${maxConcurrent}`);
   }
   
-  return openPositionsCount;
+  return openFastPositionsCount;
 }
 
 /**
- * Decrement position count when trade closes
- * Trigger pause if it was a loss
+ * Decrement FAST position count when trade closes
+ * Trigger pause if it was a FAST loss
  */
 function decrementPositionCount(wasLoss = false) {
-  openPositionsCount = Math.max(0, openPositionsCount - 1);
+  openFastPositionsCount = Math.max(0, openFastPositionsCount - 1);
   
   if (wasLoss && config.riskManagement.pauseAfterLoss) {
-    lastLossTime = Date.now();
+    lastFastLossTime = Date.now();
     const pauseMinutes = config.riskManagement.pauseDuration / 60000;
     
-    console.log(`❌ Loss recorded - pausing for ${pauseMinutes} minutes`);
+    console.log(`❌ FAST loss recorded - pausing FAST signals for ${pauseMinutes} minutes`);
+    console.log(`   ℹ️  Default signals will continue normally`);
     
     if (config.logging?.logRiskManagement) {
-      console.log(`⏸️ Trading paused until ${new Date(Date.now() + config.riskManagement.pauseDuration).toLocaleTimeString()}`);
+      console.log(`⏸️ FAST signals paused until ${new Date(Date.now() + config.riskManagement.pauseDuration).toLocaleTimeString()}`);
     }
   }
   
   const maxConcurrent = config.riskManagement.maxConcurrentSignals || '∞';
   
   if (config.logging?.logRiskManagement) {
-    console.log(`📊 Open positions: ${openPositionsCount}/${maxConcurrent}`);
+    console.log(`📊 Open FAST positions: ${openFastPositionsCount}/${maxConcurrent}`);
   }
   
-  return openPositionsCount;
+  return openFastPositionsCount;
 }
 
 /**
- * Get current position count (for external queries)
+ * Get current FAST position count
  */
 function getOpenPositionsCount() {
-  return openPositionsCount;
+  return openFastPositionsCount;
 }
 
 /**
- * Set position count (for syncing with database on startup)
+ * Set FAST position count (for syncing with database on startup)
  */
 function setOpenPositionsCount(count) {
-  openPositionsCount = Math.max(0, count);
+  openFastPositionsCount = Math.max(0, count);
   
   if (config.logging?.logRiskManagement) {
-    console.log(`📊 Position count set to: ${openPositionsCount}`);
+    console.log(`📊 FAST position count set to: ${openFastPositionsCount}`);
   }
   
-  return openPositionsCount;
+  return openFastPositionsCount;
 }
 
 /**
- * Get pause status
+ * Get pause status (FAST signals only)
  */
 function getPauseStatus() {
-  if (!config.riskManagement.pauseAfterLoss || lastLossTime === 0) {
+  if (!config.riskManagement.pauseAfterLoss || lastFastLossTime === 0) {
     return { isPaused: false };
   }
   
   const now = Date.now();
-  const timeSinceLoss = now - lastLossTime;
+  const timeSinceLoss = now - lastFastLossTime;
   
   if (timeSinceLoss < config.riskManagement.pauseDuration) {
     const remainingMs = config.riskManagement.pauseDuration - timeSinceLoss;
@@ -302,7 +301,8 @@ function getPauseStatus() {
       isPaused: true,
       remainingMinutes,
       resumeTime,
-      lossTime: new Date(lastLossTime)
+      lossTime: new Date(lastFastLossTime),
+      affectsOnlyFastSignals: true
     };
   }
   
@@ -310,28 +310,30 @@ function getPauseStatus() {
 }
 
 /**
- * Clear pause (manual override)
+ * Clear pause (manual override) - FAST signals only
  */
 function clearPause() {
-  lastLossTime = 0;
-  console.log(`✅ Pause manually cleared - trading resumed`);
+  lastFastLossTime = 0;
+  console.log(`✅ FAST signals pause manually cleared - fast trading resumed`);
+  console.log(`   ℹ️  Default signals were not affected`);
   return true;
 }
 
 /**
- * Force pause (manual trigger)
+ * Force pause (manual trigger) - FAST signals only
  */
 function forcePause(durationMinutes = null) {
   const duration = durationMinutes 
     ? durationMinutes * 60000 
     : config.riskManagement.pauseDuration;
   
-  lastLossTime = Date.now();
+  lastFastLossTime = Date.now();
   
   const resumeTime = new Date(Date.now() + duration);
-  console.log(`⏸️ Manual pause activated until ${resumeTime.toLocaleTimeString()}`);
+  console.log(`⏸️ FAST signals manually paused until ${resumeTime.toLocaleTimeString()}`);
+  console.log(`   ℹ️  Default signals will continue normally`);
   
-  return { paused: true, resumeTime };
+  return { paused: true, resumeTime, affectsOnlyFastSignals: true };
 }
 
 // ========================================
@@ -339,15 +341,16 @@ function forcePause(durationMinutes = null) {
 // ========================================
 
 /**
- * Get risk management statistics
+ * Get risk management statistics (FAST signals only)
  */
 function getRiskStats() {
   const pauseStatus = getPauseStatus();
   
   return {
-    openPositions: openPositionsCount,
+    openPositions: openFastPositionsCount,
     maxConcurrent: config.riskManagement.maxConcurrentSignals || null,
     pauseStatus: pauseStatus,
+    appliesOnlyToFastSignals: true,
     limits: {
       maxDailySignals: config.riskManagement.maxDailyFastSignals,
       maxPerSymbol: config.riskManagement.maxPerSymbolPerDay,

@@ -137,8 +137,8 @@ module.exports = {
     tp2Multiplier: 2.0,           // 2R - risk $10 to make $20 (was 0.9R)
     
     // Partial close percentages (optional - for future implementation)
-    tp1ClosePercent: 0.33,        // Close 33% at TP1
-    tp2ClosePercent: 0.33,        // Close 33% at TP2
+    tp1ClosePercent: 0.5,       // Close 33% at TP1
+    tp2ClosePercent: 0.5,        // Close 33% at TP2
   },
   
   // ========================================
