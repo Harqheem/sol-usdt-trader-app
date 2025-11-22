@@ -6,6 +6,8 @@ const { wsCache } = require('./cacheManager');
 const { sendTelegramNotification } = require('../notificationService');
 const { getAssetConfig } = require('../../config/assetConfig');
 const config = require('../../config/fastSignalConfig');
+const { analyzeBuyingPressure, isLikelyTrap } = require('./orderFlowFilters');
+
 
 function findLevels(prices, tolerance = 0.0015) {
   if (!prices || prices.length < 10) return [];
@@ -193,321 +195,784 @@ async function checkFastSignals(symbol, currentPrice) {
 
 function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows30m, volumes30m, atr, ema7, ema25, candles1m = null, current30mCandle = null) {
   
-  
   if (!candles1m || candles1m.length < 100 || volumes30m.length < 50) {
-    console.log(`   ❌ Insufficient data`);
     return null;
   }
 
-  // Time window check
-  if (current30mCandle) {
-    const minutesInto30m = (Date.now() - current30mCandle.openTime) / 60000;
-    if (minutesInto30m > 27) {
-      return null;
-    }
-    if (minutesInto30m < 2) {
-      return null;
-    }
-  }
-
-  // === VOLUME ANALYSIS ===
-  const vol1m = candles1m.slice(-80).map(c => parseFloat(c.volume));
+  // ========================================
+  // VOLUME ANALYSIS
+  // ========================================
+  const vol1m = candles1m.slice(-100).map(c => parseFloat(c.volume));
   
   const volLast10 = vol1m.slice(-10);
-  const volPrev30 = vol1m.slice(-40, -10);
+  const volPrev10 = vol1m.slice(-20, -10);
   
   const avgVolLast10 = volLast10.reduce((a, b) => a + b, 0) / 10;
-  const avgVolPrev30 = volPrev30.reduce((a, b) => a + b, 0) / 30;
-  const volumeRatio = avgVolLast10 / (avgVolPrev30 || 1);
+  const avgVolPrev10 = volPrev10.reduce((a, b) => a + b, 0) / 10;
   
-  const volumeSurge = volumeRatio >= 1.4;
+  const volumeRatio = avgVolLast10 / (avgVolPrev10 || 1);
   
-  const last5vol = vol1m.slice(-5);
-  const avgLast2 = (last5vol[4] + last5vol[3]) / 2;
-  const avgPrev3 = (last5vol[2] + last5vol[1] + last5vol[0]) / 3;
-  const accelerating = avgLast2 > avgPrev3 * 1.15;
+  const last3 = vol1m.slice(-3);
+  const prev3 = vol1m.slice(-6, -3);
+  const avg3Last = last3.reduce((a, b) => a + b, 0) / 3;
+  const avg3Prev = prev3.reduce((a, b) => a + b, 0) / 3;
+  const isAccelerating = avg3Last > avg3Prev * 1.3;
   
-  const maxRecentVol = Math.max(...vol1m.slice(-30, -5));
-  const hasClimaxBar = vol1m.slice(-5).some(v => v > maxRecentVol * 1.6);
+  const maxRecentVol = Math.max(...vol1m.slice(-30, -3));
+  const hasClimaxBar = vol1m.slice(-3).some(v => v > maxRecentVol * 1.8);
   
-  const hasVolumeConfirmation = volumeSurge || accelerating || hasClimaxBar;
-   
+  const hasVolumeConfirmation = volumeRatio >= 1.5 || isAccelerating || hasClimaxBar;
+  
   if (!hasVolumeConfirmation) {
-  
     return null;
   }
 
-  // === RANGE IDENTIFICATION ===
-  const lookback = 30;
-  const consolidationWindow = 12;
+  // ========================================
+  // RANGE IDENTIFICATION
+  // ========================================
+  const lookback = 40;
+  const consolidationPeriod = 15;
   
-  const swingData = {
-    highs: highs30m.slice(-lookback, -1),
-    lows: lows30m.slice(-lookback, -1),
-    closes: closes30m.slice(-lookback, -1)
-  };
-  
-  const recentHighs = swingData.highs.slice(-consolidationWindow);
-  const recentLows = swingData.lows.slice(-consolidationWindow);
+  const recentHighs = highs30m.slice(-consolidationPeriod, -1);
+  const recentLows = lows30m.slice(-consolidationPeriod, -1);
+  const recentCloses = closes30m.slice(-consolidationPeriod, -1);
   
   const rangeHigh = Math.max(...recentHighs);
   const rangeLow = Math.min(...recentLows);
   const rangeSize = rangeHigh - rangeLow;
+  const rangeMid = (rangeHigh + rangeLow) / 2;
   
-  if (rangeSize < atr * 1.0) {
+  if (rangeSize < atr * 1.2) {
     return null;
   }
   
-  const avgClose = swingData.closes.slice(-consolidationWindow).reduce((a, b) => a + b) / consolidationWindow;
+  const avgClose = recentCloses.reduce((a, b) => a + b, 0) / recentCloses.length;
   const rangePercent = rangeSize / avgClose;
   
-  if (rangePercent > 0.10) {
+  if (rangePercent > 0.08) {
     return null;
   }
 
-  // === TREND CONTEXT ===
-  const ema25Array = TI.EMA.calculate({ period: 25, values: closes30m.slice(0, -1) });
-  const ema25Current = ema25Array[ema25Array.length - 1];
-  const ema25Previous = ema25Array[ema25Array.length - 5];
-  const ema25Slope = (ema25Current - ema25Previous) / ema25Previous;
+  // ========================================
+  // ORDER FLOW FILTER #1: BUYING PRESSURE
+  // ========================================
+  const orderFlow = analyzeBuyingPressure(candles1m);
   
-  // === BULLISH BREAKOUT ===
-  if (currentPrice > ema25Current) {
+  if (!orderFlow.valid) {
+    console.log(`   ⚠️ ${symbol}: Order flow data insufficient`);
+    return null;
+  }
 
-    // FIX 4: More realistic sustained break check
-    const recent1mCandles = candles1m.slice(-5);
-    const barsAboveBreakout = recent1mCandles.filter(c => {
+  // ========================================
+  // DETECT BREAKOUT SCENARIOS
+  // ========================================
+  const last5_1m = candles1m.slice(-5);
+  const last5Highs = last5_1m.map(c => parseFloat(c.high));
+  const last5Lows = last5_1m.map(c => parseFloat(c.low));
+  const last5Closes = last5_1m.map(c => parseFloat(c.close));
+  
+  // ========================================
+  // BULLISH BREAKOUT
+  // ========================================
+  
+  const distanceToResistance = (rangeHigh - currentPrice) / rangeHigh;
+  const distanceAboveResistance = (currentPrice - rangeHigh) / rangeHigh;
+  
+  const isApproachingResistance = distanceToResistance > 0 && distanceToResistance < 0.003;
+  const justBrokeAbove = distanceAboveResistance > 0 && distanceAboveResistance < 0.005;
+  const isRetestingFromAbove = currentPrice > rangeHigh * 0.998 && 
+                                currentPrice < rangeHigh * 1.008 &&
+                                last5Highs.some(h => h > rangeHigh * 1.01);
+  
+  if (isApproachingResistance || justBrokeAbove || isRetestingFromAbove) {
+    
+    // ========================================
+    // ORDER FLOW FILTER: Check for buying pressure
+    // ========================================
+    if (!orderFlow.isBullish) {
+     
+      return null;
+    }
+    
+    // Boost confidence if order flow is very strong
+    const orderFlowBoost = orderFlow.isStrong ? 8 : orderFlow.isBullish ? 4 : 0;
+    
+    // ========================================
+    // LIQUIDITY SWEEP FILTER #2: Check for trap
+    // ========================================
+    const trapCheck = isLikelyTrap(candles1m, 'LONG', rangeHigh, atr);
+    
+    if (trapCheck.isTrap) {
+        return null;
+    }
+    
+    // Boost confidence if we detected a sweep in our favor
+    const sweepBoost = trapCheck.isOpportunity && trapCheck.sweepData.confidence === 'HIGH' ? 10 : 
+                       trapCheck.isOpportunity ? 5 : 0;
+    
+    // ========================================
+    // VALIDATE BREAKOUT CONDITIONS
+    // ========================================
+    const recent1mBullish = last5_1m.filter(c => {
       const close = parseFloat(c.close);
-      const low = parseFloat(c.low);
-      // Close must be above, low can wick down slightly
-      return close > rangeHigh && low > rangeHigh * 0.995;
+      const open = parseFloat(c.open);
+      const high = parseFloat(c.high);
+      
+      return close > open && high >= rangeHigh * 0.997;
     }).length;
     
-    if (barsAboveBreakout < 2) {
+    if (recent1mBullish < 2) {
       return null;
     }
     
-    // FIX 5: Better recent break check
-    const recentBreak = highs30m.slice(-12).some(h => h > rangeHigh * 1.0003);
-    const currentlyAbove = currentPrice >= rangeHigh * 0.997;
-    const currentCandleBreak = parseFloat(current30mCandle.high) > rangeHigh;
+    const currentHigh30m = parseFloat(current30mCandle.high);
+    const hasAlreadyBroken = highs30m.slice(-8, -1).some(h => h > rangeHigh * 1.005);
     
-    if (!recentBreak && !currentlyAbove && !currentCandleBreak) {
-  
+    if (hasAlreadyBroken && !isRetestingFromAbove) {
       return null;
     }
     
-    const highestSinceBreak = Math.max(...highs30m.slice(-8), currentPrice);
-    const pullbackATR = (highestSinceBreak - currentPrice) / atr;
+    // ========================================
+    // DETERMINE SIGNAL TYPE & PARAMETERS
+    // ========================================
+    let signalType, sl, confidence;
     
-    if (pullbackATR > 4.0) {
-          return null;
-    }
-    
-    const distanceFromBreakout = (currentPrice - rangeHigh) / rangeHigh;
-    
-    if (distanceFromBreakout > 0.02) {
-      return null;
-    }
-    
-    const isRetest = currentPrice <= rangeHigh * 1.003 && pullbackATR > 0.3;
-    const signalType = isRetest ? 'BREAKOUT_BULLISH_RETEST' : 'BREAKOUT_BULLISH';
-    
-    let sl;
-    if (isRetest) {
-      sl = rangeLow - (atr * 0.6);
+    if (isRetestingFromAbove) {
+      signalType = 'BREAKOUT_BULLISH_RETEST';
+      sl = rangeHigh - (atr * 0.4);
+      confidence = 82;
+      
+      if (volumeRatio > 1.8) confidence += 6;
+      if (isAccelerating) confidence += 4;
+      
+    } else if (justBrokeAbove) {
+      signalType = 'BREAKOUT_BULLISH';
+      sl = rangeLow;
+      confidence = 76;
+      
+      if (volumeRatio > 2.0) confidence += 8;
+      if (hasClimaxBar) confidence += 5;
+      if (distanceAboveResistance < 0.002) confidence += 4;
+      
     } else {
-      sl = Math.max(rangeLow, rangeHigh - (atr * 0.8));
+      signalType = 'BREAKOUT_BULLISH_PENDING';
+      sl = rangeMid;
+      confidence = 72;
+      
+      if (volumeRatio > 2.0) confidence += 6;
+      if (isAccelerating) confidence += 4;
     }
     
-    sl = Math.min(sl, currentPrice - (atr * 0.5));
+    // Add order flow and sweep boosts
+    confidence += orderFlowBoost;
+    confidence += sweepBoost;
+    
+    const ema25Slope = (ema25 - closes30m[closes30m.length - 6]) / closes30m[closes30m.length - 6];
+    if (ema25Slope < -0.003) {
+      confidence -= 10;
+    } else if (ema25Slope > 0.002) {
+      confidence += 5;
+    }
     
     const slCheck = validateStopLoss(currentPrice, sl, 'LONG', symbol);
     if (!slCheck.valid) return null;
     
-    // FIX 6: Adjusted trend filter
-    let confidence = 72;
-    if (volumeRatio > 1.8) confidence += 8;
-    if (volumeRatio > 2.5) confidence += 5;
-    if (accelerating) confidence += 4;
-    if (hasClimaxBar) confidence += 3;
-    if (isRetest && pullbackATR > 0.4 && pullbackATR < 2.0) confidence += 8;
-    if (ema25Slope > 0.001) confidence += 5; // Lowered threshold
-    else if (ema25Slope < -0.002) confidence -= 8; // Only penalize strong counter-trend
+    confidence = Math.min(95, Math.max(65, confidence));
     
-    confidence = Math.min(95, confidence);
+    // Build reason with order flow info
+    let reason = `${signalType.includes('RETEST') ? '🔄 RETEST' : '💥 BREAKOUT'} - BULLISH\n` +
+                 `${volumeRatio.toFixed(1)}x volume ${isAccelerating ? '(accelerating)' : ''}\n` +
+                 `Breakout level: ${rangeHigh.toFixed(6)}\n` +
+                 `Current: ${currentPrice.toFixed(6)} ${isApproachingResistance ? '(approaching)' : justBrokeAbove ? '(breaking)' : '(retesting)'}\n` +
+                 `📊 Order Flow: ${orderFlow.score > 0 ? '+' : ''}${orderFlow.score.toFixed(1)} ${orderFlow.isStrong ? '(STRONG)' : ''}`;
+    
+    if (trapCheck.isOpportunity) {
+      reason += `\n✅ ${trapCheck.sweepData.sweepType} detected - FAVORABLE`;
+    }
     
     return {
       type: signalType,
       direction: 'LONG',
       urgency: 'CRITICAL',
       confidence,
-      reason: `${isRetest ? '🔄 RETEST' : '💥 BREAKOUT'} - BULLISH\n${volumeRatio.toFixed(1)}x volume surge\nBreakout level: ${rangeHigh.toFixed(4)}`,
+      reason: reason,
       entry: currentPrice,
       sl: sl,
-      details: `Pullback: ${pullbackATR.toFixed(2)} ATR | Vol: ${volumeRatio.toFixed(2)}x | Dist: ${(distanceFromBreakout * 100).toFixed(2)}% | Trend: ${ema25Slope > 0 ? 'WITH' : 'AGAINST'} | SL: ${(slCheck.percent * 100).toFixed(1)}%`
+      orderFlow: {
+        score: orderFlow.score,
+        buying: orderFlow.buying,
+        selling: orderFlow.selling,
+        strength: orderFlow.isStrong ? 'STRONG' : 'NORMAL'
+      },
+      liquiditySweep: trapCheck.isOpportunity ? {
+        detected: true,
+        type: trapCheck.sweepData.sweepType,
+        quality: trapCheck.sweepData.quality,
+        confidence: trapCheck.sweepData.confidence
+      } : null,
+      details: `Range: ${rangeLow.toFixed(6)} - ${rangeHigh.toFixed(6)} | ` +
+               `Vol: ${volumeRatio.toFixed(2)}x${isAccelerating ? ' ACC' : ''}${hasClimaxBar ? ' CLIMAX' : ''} | ` +
+               `Dist: ${isApproachingResistance ? `-${(distanceToResistance * 100).toFixed(2)}%` : `+${(distanceAboveResistance * 100).toFixed(2)}%`} | ` +
+               `OF: ${orderFlow.score > 0 ? '+' : ''}${orderFlow.score.toFixed(0)}${orderFlow.isStrong ? '⚡' : ''} | ` +
+               `Trend: ${ema25Slope > 0.002 ? 'WITH ✓' : ema25Slope < -0.003 ? 'AGAINST ✗' : 'NEUTRAL'} | ` +
+               `SL: ${(slCheck.percent * 100).toFixed(1)}%`
     };
   }
-
-  // === BEARISH BREAKDOWN ===
-  if (currentPrice < ema25Current) {
-    
-    const recent1mCandles = candles1m.slice(-5);
-    const barsBelowBreakdown = recent1mCandles.filter(c => {
-      const close = parseFloat(c.close);
-      const high = parseFloat(c.high);
-      return close < rangeLow && high < rangeLow * 1.005;
-    }).length;
   
-    if (barsBelowBreakdown < 2) {
+  // ========================================
+  // BEARISH BREAKDOWN
+  // ========================================
+  
+  const distanceToSupport = (currentPrice - rangeLow) / rangeLow;
+  const distanceBelowSupport = (rangeLow - currentPrice) / rangeLow;
+  
+  const isApproachingSupport = distanceToSupport > 0 && distanceToSupport < 0.003;
+  const justBrokeBelow = distanceBelowSupport > 0 && distanceBelowSupport < 0.005;
+  const isRetestingFromBelow = currentPrice < rangeLow * 1.002 && 
+                                currentPrice > rangeLow * 0.992 &&
+                                last5Lows.some(l => l < rangeLow * 0.99);
+  
+  if (isApproachingSupport || justBrokeBelow || isRetestingFromBelow) {
+    
+    // ========================================
+    // ORDER FLOW FILTER: Check for selling pressure
+    // ========================================
+    if (!orderFlow.isBearish) {
+      console.log(`   ❌ ${symbol}: BEARISH breakdown rejected - no selling pressure (score: ${orderFlow.score.toFixed(1)})`);
       return null;
     }
     
-    const recentBreak = lows30m.slice(-12).some(l => l < rangeLow * 0.9997);
-    const currentlyBelow = currentPrice <= rangeLow * 1.003;
-    const currentCandleBreak = parseFloat(current30mCandle.low) < rangeLow;
+    const orderFlowBoost = orderFlow.isStrong ? 8 : orderFlow.isBearish ? 4 : 0;
+    
+    // ========================================
+    // LIQUIDITY SWEEP FILTER: Check for trap
+    // ========================================
+    const trapCheck = isLikelyTrap(candles1m, 'SHORT', rangeLow, atr);
+    
+    if (trapCheck.isTrap) {
+      console.log(`   ❌ ${symbol}: BEARISH breakdown rejected - ${trapCheck.reason}`);
+      return null;
+    }
+    
+    const sweepBoost = trapCheck.isOpportunity && trapCheck.sweepData.confidence === 'HIGH' ? 10 : 
+                       trapCheck.isOpportunity ? 5 : 0;
+    
+    // ========================================
+    // VALIDATE BREAKDOWN CONDITIONS
+    // ========================================
+    const recent1mBearish = last5_1m.filter(c => {
+      const close = parseFloat(c.close);
+      const open = parseFloat(c.open);
+      const low = parseFloat(c.low);
       
-    if (!recentBreak && !currentlyBelow && !currentCandleBreak) {
+      return close < open && low <= rangeLow * 1.003;
+    }).length;
+    
+    if (recent1mBearish < 2) {
       return null;
     }
     
-    const lowestSinceBreak = Math.min(...lows30m.slice(-8), currentPrice);
-    const pullbackATR = (currentPrice - lowestSinceBreak) / atr;
+    const currentLow30m = parseFloat(current30mCandle.low);
+    const hasAlreadyBroken = lows30m.slice(-8, -1).some(l => l < rangeLow * 0.995);
     
-    if (pullbackATR > 4.0) {
-        return null;
-    }
-    
-    const distanceFromBreakdown = (rangeLow - currentPrice) / rangeLow;
-    if (distanceFromBreakdown > 0.02) {
+    if (hasAlreadyBroken && !isRetestingFromBelow) {
       return null;
     }
     
-    const isRetest = currentPrice >= rangeLow * 0.997 && pullbackATR > 0.3;
-    const signalType = isRetest ? 'BREAKOUT_BEARISH_RETEST' : 'BREAKOUT_BEARISH';
+    let signalType, sl, confidence;
     
-    let sl;
-    if (isRetest) {
-      sl = rangeHigh + (atr * 0.6);
+    if (isRetestingFromBelow) {
+      signalType = 'BREAKOUT_BEARISH_RETEST';
+      sl = rangeLow + (atr * 0.4);
+      confidence = 82;
+      
+      if (volumeRatio > 1.8) confidence += 6;
+      if (isAccelerating) confidence += 4;
+      
+    } else if (justBrokeBelow) {
+      signalType = 'BREAKOUT_BEARISH';
+      sl = rangeHigh;
+      confidence = 76;
+      
+      if (volumeRatio > 2.0) confidence += 8;
+      if (hasClimaxBar) confidence += 5;
+      if (distanceBelowSupport < 0.002) confidence += 4;
+      
     } else {
-      sl = Math.min(rangeHigh, rangeLow + (atr * 0.8));
+      signalType = 'BREAKOUT_BEARISH_PENDING';
+      sl = rangeMid;
+      confidence = 72;
+      
+      if (volumeRatio > 2.0) confidence += 6;
+      if (isAccelerating) confidence += 4;
     }
     
-    sl = Math.max(sl, currentPrice + (atr * 0.5));
+    confidence += orderFlowBoost;
+    confidence += sweepBoost;
+    
+    const ema25Slope = (ema25 - closes30m[closes30m.length - 6]) / closes30m[closes30m.length - 6];
+    if (ema25Slope > 0.003) {
+      confidence -= 10;
+    } else if (ema25Slope < -0.002) {
+      confidence += 5;
+    }
     
     const slCheck = validateStopLoss(currentPrice, sl, 'SHORT', symbol);
     if (!slCheck.valid) return null;
     
-    let confidence = 72;
-    if (volumeRatio > 1.8) confidence += 8;
-    if (volumeRatio > 2.5) confidence += 5;
-    if (accelerating) confidence += 4;
-    if (hasClimaxBar) confidence += 3;
-    if (isRetest && pullbackATR > 0.4 && pullbackATR < 2.0) confidence += 8;
-    if (ema25Slope < -0.001) confidence += 5;
-    else if (ema25Slope > 0.002) confidence -= 8;
+    confidence = Math.min(95, Math.max(65, confidence));
     
-    confidence = Math.min(95, confidence);
+    let reason = `${signalType.includes('RETEST') ? '🔄 RETEST' : '💥 BREAKDOWN'} - BEARISH\n` +
+                 `${volumeRatio.toFixed(1)}x volume ${isAccelerating ? '(accelerating)' : ''}\n` +
+                 `Breakdown level: ${rangeLow.toFixed(6)}\n` +
+                 `Current: ${currentPrice.toFixed(6)} ${isApproachingSupport ? '(approaching)' : justBrokeBelow ? '(breaking)' : '(retesting)'}\n` +
+                 `📊 Order Flow: ${orderFlow.score > 0 ? '+' : ''}${orderFlow.score.toFixed(1)} ${orderFlow.isStrong ? '(STRONG)' : ''}`;
     
-   
+    if (trapCheck.isOpportunity) {
+      reason += `\n✅ ${trapCheck.sweepData.sweepType} detected - FAVORABLE`;
+    }
+    
     return {
       type: signalType,
       direction: 'SHORT',
       urgency: 'CRITICAL',
       confidence,
-      reason: `${isRetest ? '🔄 RETEST' : '💥 BREAKDOWN'} - BEARISH\n${volumeRatio.toFixed(1)}x volume surge\nBreakdown level: ${rangeLow.toFixed(4)}`,
+      reason: reason,
       entry: currentPrice,
       sl: sl,
-      details: `Bounce: ${pullbackATR.toFixed(2)} ATR | Vol: ${volumeRatio.toFixed(2)}x | Dist: ${(distanceFromBreakdown * 100).toFixed(2)}% | Trend: ${ema25Slope < 0 ? 'WITH' : 'AGAINST'} | SL: ${(slCheck.percent * 100).toFixed(1)}%`
+      orderFlow: {
+        score: orderFlow.score,
+        buying: orderFlow.buying,
+        selling: orderFlow.selling,
+        strength: orderFlow.isStrong ? 'STRONG' : 'NORMAL'
+      },
+      liquiditySweep: trapCheck.isOpportunity ? {
+        detected: true,
+        type: trapCheck.sweepData.sweepType,
+        quality: trapCheck.sweepData.quality,
+        confidence: trapCheck.sweepData.confidence
+      } : null,
+      details: `Range: ${rangeLow.toFixed(6)} - ${rangeHigh.toFixed(6)} | ` +
+               `Vol: ${volumeRatio.toFixed(2)}x${isAccelerating ? ' ACC' : ''}${hasClimaxBar ? ' CLIMAX' : ''} | ` +
+               `Dist: ${isApproachingSupport ? `+${(distanceToSupport * 100).toFixed(2)}%` : `-${(distanceBelowSupport * 100).toFixed(2)}%`} | ` +
+               `OF: ${orderFlow.score > 0 ? '+' : ''}${orderFlow.score.toFixed(0)}${orderFlow.isStrong ? '⚡' : ''} | ` +
+               `Trend: ${ema25Slope < -0.002 ? 'WITH ✓' : ema25Slope > 0.003 ? 'AGAINST ✗' : 'NEUTRAL'} | ` +
+               `SL: ${(slCheck.percent * 100).toFixed(1)}%`
     };
   }
 
   return null;
 }
 
+function validateStopLoss(entry, sl, direction, symbol) {
+  const slPercent = Math.abs(entry - sl) / entry;
+  const maxSL = 0.50;
+  if (slPercent > maxSL) {
+    return { valid: false, percent: slPercent };
+  }
+  return { valid: true, percent: slPercent };
+}
+
+
 // 2. SUPPORT/RESISTANCE BOUNCE
 
+// COMPLETE S/R BOUNCE DETECTION WITH ORDER FLOW FILTERS
+
 function detectSRBounce(symbol, currentPrice, highs30m, lows30m, closes30m, atr, candles1m = null, current30mCandle = null) {
+  
   if (!candles1m || candles1m.length < 100) return null;
 
-  if (current30mCandle) {
-    const minutesInto30m = (Date.now() - current30mCandle.openTime) / 60000;
-    if (minutesInto30m > 18) return null;
-  }
-
-  const recent1m = candles1m.slice(-180);
+  const recent1m = candles1m.slice(-200);
   const lows1m = recent1m.map(c => parseFloat(c.low));
   const highs1m = recent1m.map(c => parseFloat(c.high));
+  const closes1m = recent1m.map(c => parseFloat(c.close));
   const vol1m = recent1m.map(c => parseFloat(c.volume));
 
-  // FIX: Compare averages, not totals
-  const volLast10 = vol1m.slice(-10);
-  const volPrev20 = vol1m.slice(-30, -10);
-  const avgVolLast10 = volLast10.reduce((a, b) => a + b, 0) / 10;
-  const avgVolPrev20 = volPrev20.reduce((a, b) => a + b, 0) / 20;
-  const volumeSurge = (avgVolLast10 / avgVolPrev20) > 1.8; // Lowered from 2.1
+  // ========================================
+  // VOLUME ANALYSIS
+  // ========================================
+  const volLast5 = vol1m.slice(-5);
+  const volPrev10 = vol1m.slice(-15, -5);
+  
+  const avgVolLast5 = volLast5.reduce((a, b) => a + b, 0) / 5;
+  const avgVolPrev10 = volPrev10.reduce((a, b) => a + b, 0) / 10;
+  
+  const volumeRatio = avgVolLast5 / (avgVolPrev10 || 1);
+  
+  const last3vol = vol1m.slice(-3);
+  const prev3vol = vol1m.slice(-6, -3);
+  const avg3last = last3vol.reduce((a, b) => a + b, 0) / 3;
+  const avg3prev = prev3vol.reduce((a, b) => a + b, 0) / 3;
+  const isVolAccelerating = avg3last > avg3prev * 1.4;
+  
+  if (!volumeRatio >= 1.6 && !isVolAccelerating) {
+    return null;
+  }
 
-  const supportLevels = findLevels(lows1m, 0.0015);
-  const resistanceLevels = findLevels(highs1m, 0.0015);
+  // ========================================
+  // ORDER FLOW FILTER #1: BUYING/SELLING PRESSURE
+  // ========================================
+  const orderFlow = analyzeBuyingPressure(candles1m);
+  
+  if (!orderFlow.valid) {
+    return null;
+  }
 
-  const keySupport = supportLevels[0]?.price;
-  const keyResistance = resistanceLevels[0]?.price;
+  // ========================================
+  // LEVEL IDENTIFICATION
+  // ========================================
+  const supportLevels = findLevels(lows1m.slice(-150), 0.0015);
+  const resistanceLevels = findLevels(highs1m.slice(-150), 0.0015);
+  
+  if (supportLevels.length === 0 && resistanceLevels.length === 0) {
+    return null;
+  }
 
-  // === SUPPORT BOUNCE (LONG) ===
-  if (keySupport && currentPrice > keySupport * 0.998) {
-    const touched = lows1m.slice(-20).some(l => l <= keySupport * 1.003);
-    const currentLow = Math.min(...lows1m.slice(-5));
-    const bounceATR = (currentPrice - currentLow) / atr;
-
-    if (touched && bounceATR > 0.4 && bounceATR < 2.3 && volumeSurge) {
-      const sl = keySupport - atr * 0.4;
+  const last10_1m = candles1m.slice(-10);
+  const currentLow1m = Math.min(...last10_1m.map(c => parseFloat(c.low)));
+  const currentHigh1m = Math.max(...last10_1m.map(c => parseFloat(c.high)));
+  
+  // ========================================
+  // SUPPORT BOUNCE (LONG)
+  // ========================================
+  
+  if (supportLevels.length > 0) {
+    const keySupport = supportLevels[0].price;
+    const touches = supportLevels[0].touches;
+    
+    const distanceToSupport = (currentPrice - keySupport) / keySupport;
+    const isAtSupport = Math.abs(distanceToSupport) < 0.004;
+    
+    const recentTouch = last10_1m.some(c => {
+      const low = parseFloat(c.low);
+      return low <= keySupport * 1.003 && low >= keySupport * 0.997;
+    });
+    
+    const last3candles = last10_1m.slice(-3);
+    const hasWickRejection = last3candles.some(c => {
+      const low = parseFloat(c.low);
+      const close = parseFloat(c.close);
+      const open = parseFloat(c.open);
+      const body = Math.abs(close - open);
+      const lowerWick = Math.min(open, close) - low;
+      
+      return low <= keySupport * 1.002 && 
+             close > low &&
+             lowerWick > body * 1.5;
+    });
+    
+    const recentLow = Math.min(...last10_1m.slice(-5).map(c => parseFloat(c.low)));
+    const isBouncing = currentPrice > recentLow * 1.001;
+    
+    if (isAtSupport && recentTouch && (hasWickRejection || isBouncing)) {
+      
+      // ========================================
+      // ORDER FLOW FILTER: Require buying pressure
+      // ========================================
+      if (!orderFlow.isBullish) {
+        console.log(`   ❌ ${symbol}: SUPPORT bounce rejected - no buying pressure (OF: ${orderFlow.score.toFixed(1)})`);
+        return null;
+      }
+      
+      // ========================================
+      // LIQUIDITY SWEEP FILTER #2
+      // ========================================
+      const trapCheck = isLikelyTrap(candles1m, 'LONG', keySupport, atr);
+      
+      if (trapCheck.isTrap) {
+        console.log(`   ❌ ${symbol}: SUPPORT bounce rejected - ${trapCheck.reason}`);
+        return null;
+      }
+      
+      // If we detected a liquidity sweep in our favor, this is HIGH quality
+      const sweepBoost = trapCheck.isOpportunity && trapCheck.sweepData.confidence === 'HIGH' ? 12 : 
+                         trapCheck.isOpportunity ? 6 : 0;
+      
+      const bounceAmount = (currentPrice - recentLow) / atr;
+      
+      if (bounceAmount > 1.5) {
+        return null;
+      }
+      
+      const wasRecentlyAtLevel = lows1m.slice(-50, -10).some(l => 
+        Math.abs(l - keySupport) / keySupport < 0.003
+      );
+      
+      if (wasRecentlyAtLevel) {
+        return null;
+      }
+      
+      const sl = keySupport - (atr * 0.4);
       
       const slCheck = validateStopLoss(currentPrice, sl, 'LONG', symbol);
       if (!slCheck.valid) return null;
-
-      const previousTouches = lows1m.slice(0, -20).filter(l => Math.abs(l - keySupport) < keySupport * 0.003).length;
+      
+      // ========================================
+      // CALCULATE CONFIDENCE WITH ORDER FLOW
+      // ========================================
+      let confidence = 75;
+      
+      // Level strength
+      if (touches >= 3) confidence += 8;
+      else if (touches >= 2) confidence += 4;
+      
+      // Volume
+      if (volumeRatio > 2.0) confidence += 6;
+      else if (volumeRatio > 1.8) confidence += 3;
+      
+      // Wick rejection
+      if (hasWickRejection) confidence += 5;
+      
+      // Early entry
+      if (bounceAmount < 0.3) confidence += 6;
+      else if (bounceAmount < 0.7) confidence += 3;
+      
+      // ORDER FLOW BOOST
+      const orderFlowBoost = orderFlow.isStrong ? 10 : orderFlow.isBullish ? 5 : 0;
+      confidence += orderFlowBoost;
+      
+      // LIQUIDITY SWEEP BOOST
+      confidence += sweepBoost;
+      
+      // Trend context
+      const ema25 = closes30m[closes30m.length - 1];
+      const ema25_5ago = closes30m[closes30m.length - 6];
+      const trend = (ema25 - ema25_5ago) / ema25_5ago;
+      
+      if (trend > 0.002) confidence += 4;
+      else if (trend < -0.003) confidence -= 6;
+      
+      confidence = Math.min(95, confidence);
+      
+      // Build reason with order flow
+      let reason = `🎯 SUPPORT BOUNCE - ${touches}x TESTED\n` +
+                   `Support: ${keySupport.toFixed(6)}\n` +
+                   `Current: ${currentPrice.toFixed(6)} ${hasWickRejection ? '(wick rejection)' : '(bouncing)'}\n` +
+                   `${volumeRatio.toFixed(1)}x volume at level\n` +
+                   `📊 Order Flow: ${orderFlow.score > 0 ? '+' : ''}${orderFlow.score.toFixed(1)} ${orderFlow.isStrong ? '(STRONG)' : ''}`;
+      
+      if (trapCheck.isOpportunity) {
+        reason += `\n✅ ${trapCheck.sweepData.sweepType} detected (${trapCheck.sweepData.quality}% quality)`;
+      }
       
       return {
         type: 'ELITE_SUPPORT_BOUNCE',
         direction: 'LONG',
         urgency: 'HIGH',
-        confidence: previousTouches >= 1 ? 92 : 84,
-        reason: `ELITE SUPPORT BOUNCE\n${keySupport.toFixed(4)} held with volume surge\n${previousTouches + 1}x touched`,
+        confidence,
+        reason: reason,
         entry: currentPrice,
         sl: sl,
-        details: `Support: ${keySupport.toFixed(4)} | Bounce: ${bounceATR.toFixed(2)} ATR | Vol: ${(avgVolLast10 / avgVolPrev20).toFixed(2)}x | SL: ${(slCheck.percent * 100).toFixed(1)}%`
+        orderFlow: {
+          score: orderFlow.score,
+          buying: orderFlow.buying,
+          selling: orderFlow.selling,
+          strength: orderFlow.isStrong ? 'STRONG' : 'NORMAL'
+        },
+        liquiditySweep: trapCheck.isOpportunity ? {
+          detected: true,
+          type: trapCheck.sweepData.sweepType,
+          quality: trapCheck.sweepData.quality,
+          wickSize: trapCheck.sweepData.wickSize,
+          confidence: trapCheck.sweepData.confidence
+        } : null,
+        details: `Level: ${keySupport.toFixed(6)} (${touches}x) | ` +
+                 `Dist: ${(distanceToSupport * 100).toFixed(2)}% | ` +
+                 `Bounce: ${bounceAmount.toFixed(2)} ATR | ` +
+                 `Vol: ${volumeRatio.toFixed(2)}x${isVolAccelerating ? ' ACC' : ''} | ` +
+                 `OF: ${orderFlow.score > 0 ? '+' : ''}${orderFlow.score.toFixed(0)}${orderFlow.isStrong ? '⚡' : ''} | ` +
+                 `${hasWickRejection ? 'WICK ✓ | ' : ''}` +
+                 `${trapCheck.isOpportunity ? `SWEEP(${trapCheck.sweepData.quality}) | ` : ''}` +
+                 `SL: ${(slCheck.percent * 100).toFixed(1)}%`
       };
     }
   }
-
-  // === RESISTANCE REJECTION (SHORT) ===
-  if (keyResistance && currentPrice < keyResistance * 1.002) {
-    const touched = highs1m.slice(-20).some(h => h >= keyResistance * 0.997);
-    const currentHigh = Math.max(...highs1m.slice(-5));
-    const rejectionATR = (currentHigh - currentPrice) / atr;
-
-    if (touched && rejectionATR > 0.4 && rejectionATR < 2.3 && volumeSurge) {
-      const sl = keyResistance + atr * 0.4;
+  
+  // ========================================
+  // RESISTANCE REJECTION (SHORT)
+  // ========================================
+  
+  if (resistanceLevels.length > 0) {
+    const keyResistance = resistanceLevels[0].price;
+    const touches = resistanceLevels[0].touches;
+    
+    const distanceToResistance = (keyResistance - currentPrice) / keyResistance;
+    const isAtResistance = Math.abs(distanceToResistance) < 0.004;
+    
+    const recentTouch = last10_1m.some(c => {
+      const high = parseFloat(c.high);
+      return high >= keyResistance * 0.997 && high <= keyResistance * 1.003;
+    });
+    
+    const last3candles = last10_1m.slice(-3);
+    const hasWickRejection = last3candles.some(c => {
+      const high = parseFloat(c.high);
+      const close = parseFloat(c.close);
+      const open = parseFloat(c.open);
+      const body = Math.abs(close - open);
+      const upperWick = high - Math.max(open, close);
+      
+      return high >= keyResistance * 0.998 && 
+             close < high &&
+             upperWick > body * 1.5;
+    });
+    
+    const recentHigh = Math.max(...last10_1m.slice(-5).map(c => parseFloat(c.high)));
+    const isRejecting = currentPrice < recentHigh * 0.999;
+    
+    if (isAtResistance && recentTouch && (hasWickRejection || isRejecting)) {
+      
+      // ========================================
+      // ORDER FLOW FILTER: Require selling pressure
+      // ========================================
+      if (!orderFlow.isBearish) {
+        console.log(`   ❌ ${symbol}: RESISTANCE rejection rejected - no selling pressure (OF: ${orderFlow.score.toFixed(1)})`);
+        return null;
+      }
+      
+      // ========================================
+      // LIQUIDITY SWEEP FILTER
+      // ========================================
+      const trapCheck = isLikelyTrap(candles1m, 'SHORT', keyResistance, atr);
+      
+      if (trapCheck.isTrap) {
+        console.log(`   ❌ ${symbol}: RESISTANCE rejection rejected - ${trapCheck.reason}`);
+        return null;
+      }
+      
+      const sweepBoost = trapCheck.isOpportunity && trapCheck.sweepData.confidence === 'HIGH' ? 12 : 
+                         trapCheck.isOpportunity ? 6 : 0;
+      
+      const rejectionAmount = (recentHigh - currentPrice) / atr;
+      
+      if (rejectionAmount > 1.5) {
+        return null;
+      }
+      
+      const wasRecentlyAtLevel = highs1m.slice(-50, -10).some(h => 
+        Math.abs(h - keyResistance) / keyResistance < 0.003
+      );
+      
+      if (wasRecentlyAtLevel) {
+        return null;
+      }
+      
+      const sl = keyResistance + (atr * 0.4);
       
       const slCheck = validateStopLoss(currentPrice, sl, 'SHORT', symbol);
       if (!slCheck.valid) return null;
-
-      const previousTouches = highs1m.slice(0, -20).filter(h => Math.abs(h - keyResistance) < keyResistance * 0.003).length;
+      
+      let confidence = 75;
+      
+      if (touches >= 3) confidence += 8;
+      else if (touches >= 2) confidence += 4;
+      
+      if (volumeRatio > 2.0) confidence += 6;
+      else if (volumeRatio > 1.8) confidence += 3;
+      
+      if (hasWickRejection) confidence += 5;
+      
+      if (rejectionAmount < 0.3) confidence += 6;
+      else if (rejectionAmount < 0.7) confidence += 3;
+      
+      const orderFlowBoost = orderFlow.isStrong ? 10 : orderFlow.isBearish ? 5 : 0;
+      confidence += orderFlowBoost;
+      
+      confidence += sweepBoost;
+      
+      const ema25 = closes30m[closes30m.length - 1];
+      const ema25_5ago = closes30m[closes30m.length - 6];
+      const trend = (ema25 - ema25_5ago) / ema25_5ago;
+      
+      if (trend < -0.002) confidence += 4;
+      else if (trend > 0.003) confidence -= 6;
+      
+      confidence = Math.min(95, confidence);
+      
+      let reason = `🎯 RESISTANCE REJECTION - ${touches}x TESTED\n` +
+                   `Resistance: ${keyResistance.toFixed(6)}\n` +
+                   `Current: ${currentPrice.toFixed(6)} ${hasWickRejection ? '(wick rejection)' : '(rejecting)'}\n` +
+                   `${volumeRatio.toFixed(1)}x volume at level\n` +
+                   `📊 Order Flow: ${orderFlow.score > 0 ? '+' : ''}${orderFlow.score.toFixed(1)} ${orderFlow.isStrong ? '(STRONG)' : ''}`;
+      
+      if (trapCheck.isOpportunity) {
+        reason += `\n✅ ${trapCheck.sweepData.sweepType} detected (${trapCheck.sweepData.quality}% quality)`;
+      }
       
       return {
         type: 'ELITE_RESISTANCE_REJECTION',
         direction: 'SHORT',
         urgency: 'HIGH',
-        confidence: previousTouches >= 1 ? 92 : 84,
-        reason: `ELITE RESISTANCE REJECTION\n${keyResistance.toFixed(4)} capped with volume`,
+        confidence,
+        reason: reason,
         entry: currentPrice,
         sl: sl,
-        details: `Resistance: ${keyResistance.toFixed(4)} | Rejection: ${rejectionATR.toFixed(2)} ATR | Vol: ${(avgVolLast10 / avgVolPrev20).toFixed(2)}x | SL: ${(slCheck.percent * 100).toFixed(1)}%`
+        orderFlow: {
+          score: orderFlow.score,
+          buying: orderFlow.buying,
+          selling: orderFlow.selling,
+          strength: orderFlow.isStrong ? 'STRONG' : 'NORMAL'
+        },
+        liquiditySweep: trapCheck.isOpportunity ? {
+          detected: true,
+          type: trapCheck.sweepData.sweepType,
+          quality: trapCheck.sweepData.quality,
+          wickSize: trapCheck.sweepData.wickSize,
+          confidence: trapCheck.sweepData.confidence
+        } : null,
+        details: `Level: ${keyResistance.toFixed(6)} (${touches}x) | ` +
+                 `Dist: ${(distanceToResistance * 100).toFixed(2)}% | ` +
+                 `Reject: ${rejectionAmount.toFixed(2)} ATR | ` +
+                 `Vol: ${volumeRatio.toFixed(2)}x${isVolAccelerating ? ' ACC' : ''} | ` +
+                 `OF: ${orderFlow.score > 0 ? '+' : ''}${orderFlow.score.toFixed(0)}${orderFlow.isStrong ? '⚡' : ''} | ` +
+                 `${hasWickRejection ? 'WICK ✓ | ' : ''}` +
+                 `${trapCheck.isOpportunity ? `SWEEP(${trapCheck.sweepData.quality}) | ` : ''}` +
+                 `SL: ${(slCheck.percent * 100).toFixed(1)}%`
       };
     }
   }
 
   return null;
+}
+
+// Helper functions
+function findLevels(prices, tolerance = 0.0015) {
+  if (!prices || prices.length < 10) return [];
+  const levels = [];
+  const used = new Set();
+  
+  for (let i = 0; i < prices.length; i++) {
+    if (used.has(i)) continue;
+    const basePrice = prices[i];
+    const cluster = [basePrice];
+    used.add(i);
+    
+    for (let j = i + 1; j < prices.length; j++) {
+      if (used.has(j)) continue;
+      if (Math.abs(prices[j] - basePrice) / basePrice <= tolerance) {
+        cluster.push(prices[j]);
+        used.add(j);
+      }
+    }
+    
+    if (cluster.length >= 2) {
+      levels.push({
+        price: cluster.reduce((a, b) => a + b, 0) / cluster.length,
+        touches: cluster.length
+      });
+    }
+  }
+  
+  return levels.sort((a, b) => b.touches - a.touches);
+}
+
+function validateStopLoss(entry, sl, direction, symbol) {
+  const slPercent = Math.abs(entry - sl) / entry;
+  const maxSL = 0.50;
+  if (slPercent > maxSL) {
+    return { valid: false, percent: slPercent };
+  }
+  return { valid: true, percent: slPercent };
 }
 
 /**
@@ -603,7 +1068,7 @@ function detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice) {
   const currentRSI = rsi[rsi.length - 1];
   
   // BULLISH DIVERGENCE: Price lower low, RSI higher low
-  if (currentRSI < 30) {
+  if (currentRSI < 20) {
     const recentLowIdx = lowSlice.reduce((minIdx, val, idx, arr) => val < arr[minIdx] ? idx : minIdx, 0);
     const priorLowIdx = lowSlice.slice(0, -5).reduce((minIdx, val, idx, arr) => val < arr[minIdx] ? idx : minIdx, 0);
     
@@ -631,7 +1096,7 @@ function detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice) {
   }
   
   // BEARISH DIVERGENCE: Price higher high, RSI lower high
-  if (currentRSI > 70) {
+  if (currentRSI > 75) {
     const recentHighIdx = highSlice.reduce((maxIdx, val, idx, arr) => val > arr[maxIdx] ? idx : maxIdx, 0);
     const priorHighIdx = highSlice.slice(0, -5).reduce((maxIdx, val, idx, arr) => val > arr[maxIdx] ? idx : maxIdx, 0);
     
