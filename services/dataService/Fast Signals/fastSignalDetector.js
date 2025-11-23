@@ -1,12 +1,12 @@
-// COMPLETE FAST SIGNAL DETECTOR - FULLY REWRITTEN
-// Includes: Order flow filters, liquidity sweeps, proper risk management, RSI divergence
+// CLEAN FAST SIGNAL DETECTOR - RSI DIVERGENCE + LIQUIDITY SWEEPS ONLY
+// Focused, proven strategies only - no noise
 
 const TI = require('technicalindicators');
 const { wsCache } = require('../cacheManager');
 const { sendTelegramNotification } = require('../../notificationService');
 const { getAssetConfig } = require('../../../config/assetConfig');
 const config = require('../../../config/fastSignalConfig');
-const { analyzeBuyingPressure, isLikelyTrap } = require('./orderFlowFilters');
+const { analyzeBuyingPressure, detectLiquiditySweep } = require('./orderFlowFilters');
 const { 
   calculateStopLoss, 
   canSendSignalWithLimits, 
@@ -18,36 +18,6 @@ const {
 // ========================================
 // HELPER FUNCTIONS
 // ========================================
-
-function findLevels(prices, tolerance = 0.0015) {
-  if (!prices || prices.length < 10) return [];
-  const levels = [];
-  const used = new Set();
-  
-  for (let i = 0; i < prices.length; i++) {
-    if (used.has(i)) continue;
-    const basePrice = prices[i];
-    const cluster = [basePrice];
-    used.add(i);
-    
-    for (let j = i + 1; j < prices.length; j++) {
-      if (used.has(j)) continue;
-      if (Math.abs(prices[j] - basePrice) / basePrice <= tolerance) {
-        cluster.push(prices[j]);
-        used.add(j);
-      }
-    }
-    
-    if (cluster.length >= 2) {
-      levels.push({
-        price: cluster.reduce((a, b) => a + b, 0) / cluster.length,
-        touches: cluster.length
-      });
-    }
-  }
-  
-  return levels.sort((a, b) => b.touches - a.touches);
-}
 
 function getLast(arr) {
   return arr && arr.length > 0 ? arr[arr.length - 1] : null;
@@ -144,7 +114,7 @@ async function checkFastSignals(symbol, currentPrice) {
     if (!cache || !cache.isReady) return;
 
     const { candles30m, candles1m } = cache;
-    if (candles30m.length < 50) return;
+    if (candles30m.length < 50 || !candles1m || candles1m.length < 100) return;
 
     // Get completed candles + current live data
     const completedCandles = candles30m.slice(0, -1);
@@ -159,12 +129,8 @@ async function checkFastSignals(symbol, currentPrice) {
     
     const lows = completedCandles.map(c => parseFloat(c.low));
     lows.push(Math.min(parseFloat(currentCandle.low), currentPrice));
-    
-    const volumes30m = candles30m.map(c => parseFloat(c.volume));
 
-    // Calculate indicators
-    const ema7 = getLast(TI.EMA.calculate({ period: 7, values: closes }));
-    const ema25 = getLast(TI.EMA.calculate({ period: 25, values: closes }));
+    // Calculate ATR
     const atr = getLast(TI.ATR.calculate({ 
       high: highs.slice(-30), 
       low: lows.slice(-30), 
@@ -172,51 +138,30 @@ async function checkFastSignals(symbol, currentPrice) {
       period: 14 
     }));
 
-    if (!ema7 || !ema25 || !atr) return;
+    if (!atr) return;
 
     const assetConfig = getAssetConfig(symbol);
 
     // === SIGNAL DETECTION (Priority Order) ===
     
-    // 1. BREAKOUT (CRITICAL urgency)
-    if (config.signals.breakout.enabled) {
-      const breakoutSignal = detectBreakoutMomentum(
-        symbol, currentPrice, closes, highs, lows, volumes30m, 
-        atr, ema7, ema25, candles1m, currentCandle
+    // 1. LIQUIDITY SWEEP REVERSALS (HIGHEST PRIORITY)
+    if (config.signals.liquiditySweepReversal.enabled) {
+      const sweepSignal = detectLiquiditySweepReversal(
+        symbol, currentPrice, highs, lows, closes, atr, candles1m
       );
-      if (breakoutSignal) {
-        const result = await sendFastAlert(symbol, breakoutSignal, currentPrice, atr, assetConfig);
+      if (sweepSignal) {
+        const result = await sendFastAlert(symbol, sweepSignal, currentPrice, atr, assetConfig);
         if (result && result.sent) return result;
       }
     }
 
-    // 2. SUPPORT/RESISTANCE BOUNCE (HIGH urgency)
-    if (config.signals.supportResistanceBounce.enabled) {
-      const bounceSignal = detectSRBounce(
-        symbol, currentPrice, highs, lows, closes, atr, candles1m, currentCandle
-      );
-      if (bounceSignal) {
-        const result = await sendFastAlert(symbol, bounceSignal, currentPrice, atr, assetConfig);
-        if (result && result.sent) return result;
-      }
-    }
-
-    // 3. RSI DIVERGENCE (HIGH urgency)
-    if (config.signals.rsiDivergence?.enabled) {
+    // 2. RSI DIVERGENCE (HIGH PRIORITY)
+    if (config.signals.rsiDivergence.enabled) {
       const divergenceSignal = detectRSIDivergence(
         symbol, closes, highs, lows, atr, currentPrice, candles1m
       );
       if (divergenceSignal) {
         const result = await sendFastAlert(symbol, divergenceSignal, currentPrice, atr, assetConfig);
-        if (result && result.sent) return result;
-      }
-    }
-
-    // 4. EMA CROSSOVER (HIGH urgency)
-    if (config.signals.emaCrossover.enabled) {
-      const crossoverSignal = detectEMACrossover(symbol, closes, currentPrice, ema7, ema25);
-      if (crossoverSignal) {
-        const result = await sendFastAlert(symbol, crossoverSignal, currentPrice, atr, assetConfig);
         if (result && result.sent) return result;
       }
     }
@@ -229,337 +174,151 @@ async function checkFastSignals(symbol, currentPrice) {
 }
 
 // ========================================
-// 1. BREAKOUT DETECTION
+// 1. LIQUIDITY SWEEP REVERSAL DETECTION
 // ========================================
 
-function detectBreakoutMomentum(symbol, currentPrice, closes30m, highs30m, lows30m, volumes30m, atr, ema7, ema25, candles1m, current30mCandle) {
-  
-  if (!candles1m || candles1m.length < 100 || volumes30m.length < 50) {
-    return null;
-  }
-
-  // Volume analysis
-  const vol1m = candles1m.slice(-100).map(c => parseFloat(c.volume));
-  const volLast10 = vol1m.slice(-10);
-  const volPrev10 = vol1m.slice(-20, -10);
-  const avgVolLast10 = volLast10.reduce((a, b) => a + b, 0) / 10;
-  const avgVolPrev10 = volPrev10.reduce((a, b) => a + b, 0) / 10;
-  const volumeRatio = avgVolLast10 / (avgVolPrev10 || 1);
-  
-  const last3 = vol1m.slice(-3);
-  const prev3 = vol1m.slice(-6, -3);
-  const isAccelerating = (last3.reduce((a, b) => a + b) / 3) > (prev3.reduce((a, b) => a + b) / 3) * 1.3;
-  
-  const maxRecentVol = Math.max(...vol1m.slice(-30, -3));
-  const hasClimaxBar = vol1m.slice(-3).some(v => v > maxRecentVol * 1.8);
-  
-  if (volumeRatio < 1.5 && !isAccelerating && !hasClimaxBar) return null;
-
-  // Range identification
-  const consolidationPeriod = 15;
-  const recentHighs = highs30m.slice(-consolidationPeriod, -1);
-  const recentLows = lows30m.slice(-consolidationPeriod, -1);
-  const recentCloses = closes30m.slice(-consolidationPeriod, -1);
-  
-  const rangeHigh = Math.max(...recentHighs);
-  const rangeLow = Math.min(...recentLows);
-  const rangeSize = rangeHigh - rangeLow;
-  const rangeMid = (rangeHigh + rangeLow) / 2;
-  
-  if (rangeSize < atr * 1.2) return null;
-  
-  const avgClose = recentCloses.reduce((a, b) => a + b) / recentCloses.length;
-  if ((rangeSize / avgClose) > 0.08) return null;
-
-  // Order flow analysis
-  const orderFlow = analyzeBuyingPressure(candles1m);
-  if (!orderFlow.valid) return null;
-
-  const last5_1m = candles1m.slice(-5);
-  const last5Highs = last5_1m.map(c => parseFloat(c.high));
-  const last5Lows = last5_1m.map(c => parseFloat(c.low));
-
-  // BULLISH BREAKOUT
-  const distanceToResistance = (rangeHigh - currentPrice) / rangeHigh;
-  const distanceAboveResistance = (currentPrice - rangeHigh) / rangeHigh;
-  
-  const isApproachingResistance = distanceToResistance > 0 && distanceToResistance < 0.003;
-  const justBrokeAbove = distanceAboveResistance > 0 && distanceAboveResistance < 0.005;
-  const isRetestingFromAbove = currentPrice > rangeHigh * 0.998 && 
-                                currentPrice < rangeHigh * 1.008 &&
-                                last5Highs.some(h => h > rangeHigh * 1.01);
-  
-  if (isApproachingResistance || justBrokeAbove || isRetestingFromAbove) {
-    if (!orderFlow.isBullish) return null;
-    
-    const trapCheck = isLikelyTrap(candles1m, 'LONG', rangeHigh, atr);
-    if (trapCheck.isTrap) return null;
-    
-    const recent1mBullish = last5_1m.filter(c => {
-      const close = parseFloat(c.close);
-      const open = parseFloat(c.open);
-      const high = parseFloat(c.high);
-      return close > open && high >= rangeHigh * 0.997;
-    }).length;
-    
-    if (recent1mBullish < 2) return null;
-    
-    const hasAlreadyBroken = highs30m.slice(-8, -1).some(h => h > rangeHigh * 1.005);
-    if (hasAlreadyBroken && !isRetestingFromAbove) return null;
-    
-    let signalType, sl, confidence;
-    
-    if (isRetestingFromAbove) {
-      signalType = 'BREAKOUT_BULLISH_RETEST';
-      sl = rangeHigh - (atr * 0.35);
-      confidence = 82;
-    } else if (justBrokeAbove) {
-      signalType = 'BREAKOUT_BULLISH';
-      sl = rangeLow;
-      confidence = 76;
-    } else {
-      signalType = 'BREAKOUT_BULLISH_PENDING';
-      sl = rangeMid;
-      confidence = 72;
-    }
-    
-    confidence += orderFlow.isStrong ? 8 : 4;
-    confidence += trapCheck.isOpportunity ? (trapCheck.sweepData.confidence === 'HIGH' ? 10 : 5) : 0;
-    confidence += volumeRatio > 2.0 ? 8 : volumeRatio > 1.8 ? 4 : 0;
-    
-    const ema25Slope = (ema25 - closes30m[closes30m.length - 6]) / closes30m[closes30m.length - 6];
-    confidence += ema25Slope > 0.002 ? 5 : ema25Slope < -0.003 ? -10 : 0;
-    
-    confidence = Math.min(95, Math.max(65, confidence));
-    
-    return {
-      type: signalType,
-      direction: 'LONG',
-      urgency: 'CRITICAL',
-      confidence,
-      reason: `${isRetestingFromAbove ? '🔄 RETEST' : '💥 BREAKOUT'} - BULLISH\n${volumeRatio.toFixed(1)}x volume\nLevel: ${rangeHigh.toFixed(6)}\n📊 OF: ${orderFlow.score.toFixed(1)}`,
-      entry: currentPrice,
-      sl: sl,
-      orderFlow: { score: orderFlow.score, strength: orderFlow.isStrong ? 'STRONG' : 'NORMAL' },
-      liquiditySweep: trapCheck.isOpportunity ? { type: trapCheck.sweepData.sweepType, quality: trapCheck.sweepData.quality } : null
-    };
-  }
-
-  // BEARISH BREAKDOWN
-  const distanceToSupport = (currentPrice - rangeLow) / rangeLow;
-  const distanceBelowSupport = (rangeLow - currentPrice) / rangeLow;
-  
-  const isApproachingSupport = distanceToSupport > 0 && distanceToSupport < 0.003;
-  const justBrokeBelow = distanceBelowSupport > 0 && distanceBelowSupport < 0.005;
-  const isRetestingFromBelow = currentPrice < rangeLow * 1.002 && 
-                                currentPrice > rangeLow * 0.992 &&
-                                last5Lows.some(l => l < rangeLow * 0.99);
-  
-  if (isApproachingSupport || justBrokeBelow || isRetestingFromBelow) {
-    if (!orderFlow.isBearish) return null;
-    
-    const trapCheck = isLikelyTrap(candles1m, 'SHORT', rangeLow, atr);
-    if (trapCheck.isTrap) return null;
-    
-    const recent1mBearish = last5_1m.filter(c => {
-      const close = parseFloat(c.close);
-      const open = parseFloat(c.open);
-      const low = parseFloat(c.low);
-      return close < open && low <= rangeLow * 1.003;
-    }).length;
-    
-    if (recent1mBearish < 2) return null;
-    
-    const hasAlreadyBroken = lows30m.slice(-8, -1).some(l => l < rangeLow * 0.995);
-    if (hasAlreadyBroken && !isRetestingFromBelow) return null;
-    
-    let signalType, sl, confidence;
-    
-    if (isRetestingFromBelow) {
-      signalType = 'BREAKOUT_BEARISH_RETEST';
-      sl = rangeLow + (atr * 0.35);
-      confidence = 82;
-    } else if (justBrokeBelow) {
-      signalType = 'BREAKOUT_BEARISH';
-      sl = rangeHigh;
-      confidence = 76;
-    } else {
-      signalType = 'BREAKOUT_BEARISH_PENDING';
-      sl = rangeMid;
-      confidence = 72;
-    }
-    
-    confidence += orderFlow.isStrong ? 8 : 4;
-    confidence += trapCheck.isOpportunity ? (trapCheck.sweepData.confidence === 'HIGH' ? 10 : 5) : 0;
-    confidence += volumeRatio > 2.0 ? 8 : volumeRatio > 1.8 ? 4 : 0;
-    
-    const ema25Slope = (ema25 - closes30m[closes30m.length - 6]) / closes30m[closes30m.length - 6];
-    confidence += ema25Slope < -0.002 ? 5 : ema25Slope > 0.003 ? -10 : 0;
-    
-    confidence = Math.min(95, Math.max(65, confidence));
-    
-    return {
-      type: signalType,
-      direction: 'SHORT',
-      urgency: 'CRITICAL',
-      confidence,
-      reason: `${isRetestingFromBelow ? '🔄 RETEST' : '💥 BREAKDOWN'} - BEARISH\n${volumeRatio.toFixed(1)}x volume\nLevel: ${rangeLow.toFixed(6)}\n📊 OF: ${orderFlow.score.toFixed(1)}`,
-      entry: currentPrice,
-      sl: sl,
-      orderFlow: { score: orderFlow.score, strength: orderFlow.isStrong ? 'STRONG' : 'NORMAL' },
-      liquiditySweep: trapCheck.isOpportunity ? { type: trapCheck.sweepData.sweepType, quality: trapCheck.sweepData.quality } : null
-    };
-  }
-
-  return null;
-}
-
-// ========================================
-// 2. S/R BOUNCE DETECTION
-// ========================================
-
-function detectSRBounce(symbol, currentPrice, highs30m, lows30m, closes30m, atr, candles1m, current30mCandle) {
+function detectLiquiditySweepReversal(symbol, currentPrice, highs30m, lows30m, closes30m, atr, candles1m) {
   
   if (!candles1m || candles1m.length < 100) return null;
 
+  // Analyze order flow first
+  const orderFlow = analyzeBuyingPressure(candles1m);
+  if (!orderFlow.valid) return null;
+
+  // Get recent price action to find key levels
   const recent1m = candles1m.slice(-200);
   const lows1m = recent1m.map(c => parseFloat(c.low));
   const highs1m = recent1m.map(c => parseFloat(c.high));
-  const vol1m = recent1m.map(c => parseFloat(c.volume));
-
-  // Volume analysis
+  
+  // Find recent swing high and low (simple approach)
+  const recentHigh = Math.max(...highs1m.slice(-50));
+  const recentLow = Math.min(...lows1m.slice(-50));
+  
+  // Volume confirmation
+  const vol1m = candles1m.slice(-20).map(c => parseFloat(c.volume));
   const volLast5 = vol1m.slice(-5);
   const volPrev10 = vol1m.slice(-15, -5);
   const volumeRatio = (volLast5.reduce((a, b) => a + b) / 5) / (volPrev10.reduce((a, b) => a + b) / 10 || 1);
   
-  const last3vol = vol1m.slice(-3);
-  const prev3vol = vol1m.slice(-6, -3);
-  const isVolAccelerating = (last3vol.reduce((a, b) => a + b) / 3) > (prev3vol.reduce((a, b) => a + b) / 3) * 1.4;
+  if (volumeRatio < config.signals.liquiditySweepReversal.minVolumeRatio) return null;
+
+  // === CHECK FOR BULLISH SWEEP REVERSAL ===
+  // (Price swept below support, now reversing up)
   
-  if (volumeRatio < 1.6 && !isVolAccelerating) return null;
-
-  const orderFlow = analyzeBuyingPressure(candles1m);
-  if (!orderFlow.valid) return null;
-
-  const supportLevels = findLevels(lows1m.slice(-150), 0.0015);
-  const resistanceLevels = findLevels(highs1m.slice(-150), 0.0015);
-  
-  if (supportLevels.length === 0 && resistanceLevels.length === 0) return null;
-
-  const last10_1m = candles1m.slice(-10);
-
-  // SUPPORT BOUNCE
-  if (supportLevels.length > 0) {
-    const keySupport = supportLevels[0].price;
-    const touches = supportLevels[0].touches;
+  if (orderFlow.isBullish && orderFlow.score >= config.signals.liquiditySweepReversal.minOrderFlowScore) {
+    const sweepCheck = detectLiquiditySweep(candles1m, 'LONG', recentLow, atr);
     
-    const isAtSupport = Math.abs((currentPrice - keySupport) / keySupport) < 0.004;
-    const recentTouch = last10_1m.some(c => {
-      const low = parseFloat(c.low);
-      return low <= keySupport * 1.003 && low >= keySupport * 0.997;
-    });
-    
-    const hasWickRejection = last10_1m.slice(-3).some(c => {
-      const low = parseFloat(c.low);
-      const close = parseFloat(c.close);
-      const open = parseFloat(c.open);
-      const lowerWick = Math.min(open, close) - low;
-      return low <= keySupport * 1.002 && close > low && lowerWick > Math.abs(close - open) * 1.5;
-    });
-    
-    const recentLow = Math.min(...last10_1m.slice(-5).map(c => parseFloat(c.low)));
-    const isBouncing = currentPrice > recentLow * 1.001;
-    
-    if (isAtSupport && recentTouch && (hasWickRejection || isBouncing)) {
-      if (!orderFlow.isBullish) return null;
+    if (sweepCheck.isSweep && 
+        sweepCheck.direction === 'BULLISH' && 
+        sweepCheck.quality >= config.signals.liquiditySweepReversal.minSweepQuality) {
       
-      const trapCheck = isLikelyTrap(candles1m, 'LONG', keySupport, atr);
-      if (trapCheck.isTrap) return null;
+      // Confirm price is recovering
+      const last5 = candles1m.slice(-5);
+      const bullishCandles = last5.filter(c => parseFloat(c.close) > parseFloat(c.open)).length;
       
-      const bounceAmount = (currentPrice - recentLow) / atr;
-      if (bounceAmount > 1.5) return null;
+      if (bullishCandles < 3) return null; // Need strong recovery
       
-      const wasRecentlyAtLevel = lows1m.slice(-50, -10).some(l => Math.abs(l - keySupport) / keySupport < 0.003);
-      if (wasRecentlyAtLevel) return null;
+      // Check that we're not too far from the sweep
+      const distanceFromSweep = (currentPrice - sweepCheck.sweepLow) / atr;
+      if (distanceFromSweep > 1.5) return null; // Too late
       
-      let confidence = 75;
-      confidence += touches >= 3 ? 8 : touches >= 2 ? 4 : 0;
-      confidence += volumeRatio > 2.0 ? 6 : volumeRatio > 1.8 ? 3 : 0;
-      confidence += hasWickRejection ? 5 : 0;
-      confidence += bounceAmount < 0.3 ? 6 : bounceAmount < 0.7 ? 3 : 0;
+      let confidence = config.signals.liquiditySweepReversal.baseConfidence;
+      
+      // Confidence boosts
+      confidence += sweepCheck.confidence === 'HIGH' ? 12 : 6;
       confidence += orderFlow.isStrong ? 10 : 5;
-      confidence += trapCheck.isOpportunity ? (trapCheck.sweepData.confidence === 'HIGH' ? 12 : 6) : 0;
+      confidence += volumeRatio > 2.0 ? 8 : 4;
+      confidence += sweepCheck.quality >= 90 ? 5 : 0;
+      confidence += distanceFromSweep < 0.5 ? 5 : 0; // Very early entry
       
       confidence = Math.min(95, confidence);
       
+      // Stop loss below the sweep low with buffer
+      const bufferATR = config.stopLoss.liquiditySweep.bufferATR || 0.2;
+      const sl = sweepCheck.sweepLow - (atr * (config.stopLoss.liquiditySweep.atrMultiplier + bufferATR));
+      
       return {
-        type: 'ELITE_SUPPORT_BOUNCE',
+        type: 'LIQUIDITY_SWEEP_BULLISH',
         direction: 'LONG',
-        urgency: 'HIGH',
+        urgency: 'CRITICAL',
         confidence,
-        reason: `🎯 SUPPORT BOUNCE - ${touches}x\nLevel: ${keySupport.toFixed(6)}\n${hasWickRejection ? 'Wick rejection' : 'Bouncing'}\n📊 OF: ${orderFlow.score.toFixed(1)}`,
+        reason: `🎣 LIQUIDITY SWEEP REVERSAL - BULLISH\n` +
+                `Swept: ${sweepCheck.sweepLow.toFixed(6)}\n` +
+                `Quality: ${sweepCheck.quality}% | ${sweepCheck.confidence}\n` +
+                `📊 OF: ${orderFlow.score.toFixed(1)} (${orderFlow.isStrong ? 'STRONG' : 'NORMAL'})\n` +
+                `Volume: ${volumeRatio.toFixed(1)}x`,
         entry: currentPrice,
-        sl: keySupport - (atr * 0.35),
-        orderFlow: { score: orderFlow.score, strength: orderFlow.isStrong ? 'STRONG' : 'NORMAL' },
-        liquiditySweep: trapCheck.isOpportunity ? { type: trapCheck.sweepData.sweepType, quality: trapCheck.sweepData.quality } : null
+        sl: sl,
+        orderFlow: { 
+          score: orderFlow.score, 
+          strength: orderFlow.isStrong ? 'STRONG' : 'NORMAL' 
+        },
+        sweepData: {
+          sweepLow: sweepCheck.sweepLow,
+          quality: sweepCheck.quality,
+          confidence: sweepCheck.confidence,
+          penetrationDepth: sweepCheck.penetrationDepth,
+          wickSize: sweepCheck.wickSize
+        }
       };
     }
   }
 
-  // RESISTANCE REJECTION
-  if (resistanceLevels.length > 0) {
-    const keyResistance = resistanceLevels[0].price;
-    const touches = resistanceLevels[0].touches;
+  // === CHECK FOR BEARISH SWEEP REVERSAL ===
+  // (Price swept above resistance, now reversing down)
+  
+  if (orderFlow.isBearish && orderFlow.score <= -config.signals.liquiditySweepReversal.minOrderFlowScore) {
+    const sweepCheck = detectLiquiditySweep(candles1m, 'SHORT', recentHigh, atr);
     
-    const isAtResistance = Math.abs((keyResistance - currentPrice) / keyResistance) < 0.004;
-    const recentTouch = last10_1m.some(c => {
-      const high = parseFloat(c.high);
-      return high >= keyResistance * 0.997 && high <= keyResistance * 1.003;
-    });
-    
-    const hasWickRejection = last10_1m.slice(-3).some(c => {
-      const high = parseFloat(c.high);
-      const close = parseFloat(c.close);
-      const open = parseFloat(c.open);
-      const upperWick = high - Math.max(open, close);
-      return high >= keyResistance * 0.998 && close < high && upperWick > Math.abs(close - open) * 1.5;
-    });
-    
-    const recentHigh = Math.max(...last10_1m.slice(-5).map(c => parseFloat(c.high)));
-    const isRejecting = currentPrice < recentHigh * 0.999;
-    
-    if (isAtResistance && recentTouch && (hasWickRejection || isRejecting)) {
-      if (!orderFlow.isBearish) return null;
+    if (sweepCheck.isSweep && 
+        sweepCheck.direction === 'BEARISH' && 
+        sweepCheck.quality >= config.signals.liquiditySweepReversal.minSweepQuality) {
       
-      const trapCheck = isLikelyTrap(candles1m, 'SHORT', keyResistance, atr);
-      if (trapCheck.isTrap) return null;
+      const last5 = candles1m.slice(-5);
+      const bearishCandles = last5.filter(c => parseFloat(c.close) < parseFloat(c.open)).length;
       
-      const rejectionAmount = (recentHigh - currentPrice) / atr;
-      if (rejectionAmount > 1.5) return null;
+      if (bearishCandles < 3) return null;
       
-      const wasRecentlyAtLevel = highs1m.slice(-50, -10).some(h => Math.abs(h - keyResistance) / keyResistance < 0.003);
-      if (wasRecentlyAtLevel) return null;
+      const distanceFromSweep = (sweepCheck.sweepHigh - currentPrice) / atr;
+      if (distanceFromSweep > 1.5) return null;
       
-      let confidence = 75;
-      confidence += touches >= 3 ? 8 : touches >= 2 ? 4 : 0;
-      confidence += volumeRatio > 2.0 ? 6 : volumeRatio > 1.8 ? 3 : 0;
-      confidence += hasWickRejection ? 5 : 0;
-      confidence += rejectionAmount < 0.3 ? 6 : rejectionAmount < 0.7 ? 3 : 0;
+      let confidence = config.signals.liquiditySweepReversal.baseConfidence;
+      
+      confidence += sweepCheck.confidence === 'HIGH' ? 12 : 6;
       confidence += orderFlow.isStrong ? 10 : 5;
-      confidence += trapCheck.isOpportunity ? (trapCheck.sweepData.confidence === 'HIGH' ? 12 : 6) : 0;
+      confidence += volumeRatio > 2.0 ? 8 : 4;
+      confidence += sweepCheck.quality >= 90 ? 5 : 0;
+      confidence += distanceFromSweep < 0.5 ? 5 : 0;
       
       confidence = Math.min(95, confidence);
       
+      // Stop loss above the sweep high with buffer
+      const bufferATR = config.stopLoss.liquiditySweep.bufferATR || 0.2;
+      const sl = sweepCheck.sweepHigh + (atr * (config.stopLoss.liquiditySweep.atrMultiplier + bufferATR));
+      
       return {
-        type: 'ELITE_RESISTANCE_REJECTION',
+        type: 'LIQUIDITY_SWEEP_BEARISH',
         direction: 'SHORT',
-        urgency: 'HIGH',
+        urgency: 'CRITICAL',
         confidence,
-        reason: `🎯 RESISTANCE REJECTION - ${touches}x\nLevel: ${keyResistance.toFixed(6)}\n${hasWickRejection ? 'Wick rejection' : 'Rejecting'}\n📊 OF: ${orderFlow.score.toFixed(1)}`,
+        reason: `🎣 LIQUIDITY SWEEP REVERSAL - BEARISH\n` +
+                `Swept: ${sweepCheck.sweepHigh.toFixed(6)}\n` +
+                `Quality: ${sweepCheck.quality}% | ${sweepCheck.confidence}\n` +
+                `📊 OF: ${orderFlow.score.toFixed(1)} (${orderFlow.isStrong ? 'STRONG' : 'NORMAL'})\n` +
+                `Volume: ${volumeRatio.toFixed(1)}x`,
         entry: currentPrice,
-        sl: keyResistance + (atr * 0.35),
-        orderFlow: { score: orderFlow.score, strength: orderFlow.isStrong ? 'STRONG' : 'NORMAL' },
-        liquiditySweep: trapCheck.isOpportunity ? { type: trapCheck.sweepData.sweepType, quality: trapCheck.sweepData.quality } : null
+        sl: sl,
+        orderFlow: { 
+          score: orderFlow.score, 
+          strength: orderFlow.isStrong ? 'STRONG' : 'NORMAL' 
+        },
+        sweepData: {
+          sweepHigh: sweepCheck.sweepHigh,
+          quality: sweepCheck.quality,
+          confidence: sweepCheck.confidence,
+          penetrationDepth: sweepCheck.penetrationDepth,
+          wickSize: sweepCheck.wickSize
+        }
       };
     }
   }
@@ -568,15 +327,12 @@ function detectSRBounce(symbol, currentPrice, highs30m, lows30m, closes30m, atr,
 }
 
 // ========================================
-// 3. RSI DIVERGENCE DETECTION
+// 2. RSI DIVERGENCE DETECTION
 // ========================================
-
-// FIXED RSI DIVERGENCE DETECTION - PROPER PIVOT DETECTION
-// Replace your detectRSIDivergence function with this
 
 function detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice, candles1m) {
   
-  if (!config.signals.rsiDivergence?.enabled) return null;
+  if (!config.signals.rsiDivergence.enabled) return null;
   
   const rsiConfig = config.signals.rsiDivergence;
   if (closes.length < rsiConfig.lookbackBars + 20) return null;
@@ -589,35 +345,25 @@ function detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice, can
   const highSlice = highs.slice(-rsiConfig.lookbackBars);
   const currentRSI = rsi[rsi.length - 1];
   
-  // Order flow and volume check
+  // Order flow validation
   let orderFlow = null;
-  let hasVolumeConfirmation = true;
-  
-  if (config.orderFlow?.enabled && candles1m && candles1m.length >= 20) {
+  if (candles1m && candles1m.length >= 20) {
     orderFlow = analyzeBuyingPressure(candles1m);
+    if (!orderFlow.valid) return null;
   }
   
+  // Volume confirmation
   if (rsiConfig.requireVolumeConfirmation && candles1m && candles1m.length >= 20) {
     const vol1m = candles1m.slice(-20).map(c => parseFloat(c.volume));
     const volLast5 = vol1m.slice(-5);
     const volPrev10 = vol1m.slice(-15, -5);
     const volumeRatio = (volLast5.reduce((a, b) => a + b) / 5) / (volPrev10.reduce((a, b) => a + b) / 10 || 1);
-    hasVolumeConfirmation = volumeRatio >= rsiConfig.minVolumeRatio;
+    
+    if (volumeRatio < rsiConfig.minVolumeRatio) return null;
   }
   
-  if (!hasVolumeConfirmation) return null;
+  // === PIVOT DETECTION FUNCTIONS ===
   
-  // ========================================
-  // IMPROVED PIVOT DETECTION
-  // ========================================
-  
-  /**
-   * Find proper swing lows (valleys with higher bars on both sides)
-   * @param {Array} data - Price array
-   * @param {number} leftBars - Bars that must be higher on left
-   * @param {number} rightBars - Bars that must be higher on right
-   * @returns {Array} Array of {index, value} objects
-   */
   function findSwingLows(data, leftBars = 2, rightBars = 2) {
     const swings = [];
     
@@ -625,7 +371,6 @@ function detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice, can
       const currentLow = data[i];
       let isSwingLow = true;
       
-      // Check left side - all must be higher
       for (let j = 1; j <= leftBars; j++) {
         if (data[i - j] <= currentLow) {
           isSwingLow = false;
@@ -635,7 +380,6 @@ function detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice, can
       
       if (!isSwingLow) continue;
       
-      // Check right side - all must be higher
       for (let j = 1; j <= rightBars; j++) {
         if (data[i + j] <= currentLow) {
           isSwingLow = false;
@@ -651,9 +395,6 @@ function detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice, can
     return swings;
   }
   
-  /**
-   * Find proper swing highs (peaks with lower bars on both sides)
-   */
   function findSwingHighs(data, leftBars = 2, rightBars = 2) {
     const swings = [];
     
@@ -661,7 +402,6 @@ function detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice, can
       const currentHigh = data[i];
       let isSwingHigh = true;
       
-      // Check left side - all must be lower
       for (let j = 1; j <= leftBars; j++) {
         if (data[i - j] >= currentHigh) {
           isSwingHigh = false;
@@ -671,7 +411,6 @@ function detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice, can
       
       if (!isSwingHigh) continue;
       
-      // Check right side - all must be lower
       for (let j = 1; j <= rightBars; j++) {
         if (data[i + j] >= currentHigh) {
           isSwingHigh = false;
@@ -687,26 +426,20 @@ function detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice, can
     return swings;
   }
   
-  // ========================================
-  // BULLISH DIVERGENCE (Price lower low, RSI higher low)
-  // ========================================
+  // === BULLISH DIVERGENCE ===
   
   if (currentRSI < rsiConfig.oversoldLevel) {
-    if (orderFlow && orderFlow.valid && !orderFlow.isBullish) return null;
+    if (orderFlow && !orderFlow.isBullish) return null;
     
-    // Find proper swing lows (require 2 bars higher on each side)
+    // Require strong or very strong order flow
+    if (orderFlow && orderFlow.score < rsiConfig.minOrderFlowScore) return null;
     
-    const swingLows = findSwingLows(lowSlice, rsiConfig.pivotLeftBars || 2, rsiConfig.pivotRightBars || 2);
-
-    if (swingLows.length < 2) {
-      // Need at least 2 swing lows to compare
-      return null;
-    }
+    const swingLows = findSwingLows(lowSlice, rsiConfig.pivotLeftBars, rsiConfig.pivotRightBars);
     
-    // Get the two most recent swing lows
+    if (swingLows.length < 2) return null;
+    
     const recentSwing = swingLows[swingLows.length - 1];
     
-    // Find prior swing that's far enough back
     let priorSwing = null;
     for (let i = swingLows.length - 2; i >= 0; i--) {
       if (recentSwing.index - swingLows[i].index >= rsiConfig.minPivotGap) {
@@ -717,55 +450,56 @@ function detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice, can
     
     if (!priorSwing) return null;
     
-    // Check divergence conditions
     const priceLowerLow = recentSwing.value < priorSwing.value;
     const rsiAtRecent = rsi[recentSwing.index];
     const rsiAtPrior = rsi[priorSwing.index];
     const rsiHigherLow = rsiAtRecent > rsiAtPrior + rsiConfig.minRSIDifference;
-    
-    // Current RSI should be recovering from the recent low
     const rsiConfirming = currentRSI > rsiAtRecent - 3;
-    
-    // Additional validation: Recent swing should be relatively recent (within last 10 bars)
     const recentEnough = (lowSlice.length - 1 - recentSwing.index) <= 10;
     
     if (priceLowerLow && rsiHigherLow && rsiConfirming && recentEnough) {
       
-      // Use the actual swing low for stop loss
-      let sl = config.stopLoss.divergence.useSwingPoint 
-        ? recentSwing.value - (atr * config.stopLoss.divergence.atrMultiplier)
-        : currentPrice - (atr * config.stopLoss.divergence.atrMultiplier);
+      // Optionally check for liquidity sweep confirmation
+      let sweepBoost = 0;
+      if (rsiConfig.requireLiquiditySweep && candles1m) {
+        const sweepCheck = detectLiquiditySweep(candles1m, 'LONG', recentSwing.value, atr);
+        if (!sweepCheck.isSweep) return null; // REQUIRED
+        if (sweepCheck.quality >= 80) sweepBoost = 10;
+        else if (sweepCheck.quality >= 70) sweepBoost = 5;
+      }
       
-      const maxStopDistance = currentPrice * config.stopLoss.divergence.maxStopPercent;
+      // Stop loss below swing with buffer
+      const bufferATR = config.stopLoss.divergence.bufferATR || 0.3;
+      let sl = recentSwing.value - (atr * (config.stopLoss.divergence.atrMultiplier + bufferATR));
+      
+      const maxStopDistance = currentPrice * 0.020;
       if (currentPrice - sl > maxStopDistance) {
         sl = currentPrice - maxStopDistance;
       }
       
-      if (candles1m) {
-        const trapCheck = isLikelyTrap(candles1m, 'LONG', recentSwing.value, atr);
-        if (trapCheck.isTrap) return null;
-      }
-      
       let confidence = rsiConfig.confidence;
-      confidence += orderFlow && orderFlow.isStrong ? 10 : orderFlow && orderFlow.isBullish ? 5 : 0;
+      confidence += orderFlow && orderFlow.isStrong ? 12 : 8;
       confidence += currentRSI < 25 ? 5 : currentRSI < 20 ? 8 : 0;
+      confidence += sweepBoost;
       
       const rsiDivStrength = rsiAtRecent - rsiAtPrior;
-      confidence += rsiDivStrength > 5 ? 4 : 0;
-      confidence += rsiDivStrength > 10 ? 4 : 0;
+      confidence += rsiDivStrength > 10 ? 8 : rsiDivStrength > 5 ? 4 : 0;
       
-      // Boost confidence if divergence is clean (swing points are clear)
       const barsApart = recentSwing.index - priorSwing.index;
-      if (barsApart >= 5 && barsApart <= 12) confidence += 3; // Ideal spacing
+      if (barsApart >= 5 && barsApart <= 12) confidence += 5;
       
       confidence = Math.min(95, confidence);
       
       return {
         type: 'RSI_BULLISH_DIVERGENCE',
         direction: 'LONG',
-        urgency: rsiConfig.urgency,
+        urgency: 'HIGH',
         confidence,
-        reason: `📈 BULLISH RSI DIVERGENCE\nPrice: Lower low | RSI: Higher low\nRSI: ${currentRSI.toFixed(1)}\nSwing spacing: ${barsApart} bars\n${orderFlow ? `📊 OF: ${orderFlow.score.toFixed(1)}` : ''}`,
+        reason: `📈 BULLISH RSI DIVERGENCE\n` +
+                `Price: Lower low | RSI: Higher low\n` +
+                `RSI: ${currentRSI.toFixed(1)} (Oversold)\n` +
+                `Swing spacing: ${barsApart} bars\n` +
+                `${orderFlow ? `📊 OF: ${orderFlow.score.toFixed(1)} (${orderFlow.isStrong ? 'STRONG' : 'NORMAL'})` : ''}`,
         entry: currentPrice,
         sl: sl,
         orderFlow: orderFlow && orderFlow.valid ? { 
@@ -783,19 +517,16 @@ function detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice, can
     }
   }
   
-  // ========================================
-  // BEARISH DIVERGENCE (Price higher high, RSI lower high)
-  // ========================================
+  // === BEARISH DIVERGENCE ===
   
   if (currentRSI > rsiConfig.overboughtLevel) {
-    if (orderFlow && orderFlow.valid && !orderFlow.isBearish) return null;
+    if (orderFlow && !orderFlow.isBearish) return null;
     
-    // Find proper swing highs (require 2 bars lower on each side)
-    const swingHighs = findSwingHighs(highSlice, 2, 2);
+    if (orderFlow && Math.abs(orderFlow.score) < rsiConfig.minOrderFlowScore) return null;
     
-    if (swingHighs.length < 2) {
-      return null;
-    }
+    const swingHighs = findSwingHighs(highSlice, rsiConfig.pivotLeftBars, rsiConfig.pivotRightBars);
+    
+    if (swingHighs.length < 2) return null;
     
     const recentSwing = swingHighs[swingHighs.length - 1];
     
@@ -818,39 +549,46 @@ function detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice, can
     
     if (priceHigherHigh && rsiLowerHigh && rsiConfirming && recentEnough) {
       
-      let sl = config.stopLoss.divergence.useSwingPoint 
-        ? recentSwing.value + (atr * config.stopLoss.divergence.atrMultiplier)
-        : currentPrice + (atr * config.stopLoss.divergence.atrMultiplier);
+      let sweepBoost = 0;
+      if (rsiConfig.requireLiquiditySweep && candles1m) {
+        const sweepCheck = detectLiquiditySweep(candles1m, 'SHORT', recentSwing.value, atr);
+        if (!sweepCheck.isSweep) return null;
+        if (sweepCheck.quality >= 80) sweepBoost = 10;
+        else if (sweepCheck.quality >= 70) sweepBoost = 5;
+      }
       
-      const maxStopDistance = currentPrice * config.stopLoss.divergence.maxStopPercent;
+      // Stop loss above swing with buffer
+      const bufferATR = config.stopLoss.divergence.bufferATR || 0.3;
+      let sl = recentSwing.value + (atr * (config.stopLoss.divergence.atrMultiplier + bufferATR));
+      
+      const maxStopDistance = currentPrice * 0.020;
       if (sl - currentPrice > maxStopDistance) {
         sl = currentPrice + maxStopDistance;
       }
       
-      if (candles1m) {
-        const trapCheck = isLikelyTrap(candles1m, 'SHORT', recentSwing.value, atr);
-        if (trapCheck.isTrap) return null;
-      }
-      
       let confidence = rsiConfig.confidence;
-      confidence += orderFlow && orderFlow.isStrong ? 10 : orderFlow && orderFlow.isBearish ? 5 : 0;
+      confidence += orderFlow && orderFlow.isStrong ? 12 : 8;
       confidence += currentRSI > 75 ? 5 : currentRSI > 80 ? 8 : 0;
+      confidence += sweepBoost;
       
       const rsiDivStrength = rsiAtPrior - rsiAtRecent;
-      confidence += rsiDivStrength > 5 ? 4 : 0;
-      confidence += rsiDivStrength > 10 ? 4 : 0;
+      confidence += rsiDivStrength > 10 ? 8 : rsiDivStrength > 5 ? 4 : 0;
       
       const barsApart = recentSwing.index - priorSwing.index;
-      if (barsApart >= 5 && barsApart <= 12) confidence += 3;
+      if (barsApart >= 5 && barsApart <= 12) confidence += 5;
       
       confidence = Math.min(95, confidence);
       
       return {
         type: 'RSI_BEARISH_DIVERGENCE',
         direction: 'SHORT',
-        urgency: rsiConfig.urgency,
+        urgency: 'HIGH',
         confidence,
-        reason: `📉 BEARISH RSI DIVERGENCE\nPrice: Higher high | RSI: Lower high\nRSI: ${currentRSI.toFixed(1)}\nSwing spacing: ${barsApart} bars\n${orderFlow ? `📊 OF: ${orderFlow.score.toFixed(1)}` : ''}`,
+        reason: `📉 BEARISH RSI DIVERGENCE\n` +
+                `Price: Higher high | RSI: Lower high\n` +
+                `RSI: ${currentRSI.toFixed(1)} (Overbought)\n` +
+                `Swing spacing: ${barsApart} bars\n` +
+                `${orderFlow ? `📊 OF: ${orderFlow.score.toFixed(1)} (${orderFlow.isStrong ? 'STRONG' : 'NORMAL'})` : ''}`,
         entry: currentPrice,
         sl: sl,
         orderFlow: orderFlow && orderFlow.valid ? { 
@@ -871,84 +609,17 @@ function detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice, can
   return null;
 }
 
-
 // ========================================
-// 4. EMA CROSSOVER DETECTION
-// ========================================
-
-function detectEMACrossover(symbol, closes, currentPrice, ema7Current, ema25Current) {
-  if (closes.length < 30) return null;
-
-  const ema7Array = TI.EMA.calculate({ period: 7, values: closes });
-  const ema25Array = TI.EMA.calculate({ period: 25, values: closes });
-  
-  if (ema7Array.length < 2 || ema25Array.length < 2) return null;
-  
-  const ema7Prev = ema7Array[ema7Array.length - 2];
-  const ema25Prev = ema25Array[ema25Array.length - 2];
-
-  // BULLISH CROSSOVER
-  if (ema7Current > ema25Current && ema7Prev <= ema25Prev) {
-    if (config.signals.emaCrossover.requirePriceAboveBelow && currentPrice <= ema25Current) return null;
-    
-    const recentCloses = closes.slice(-3);
-    const hasUpMomentum = recentCloses[2] > recentCloses[1] && recentCloses[1] > recentCloses[0];
-    
-    if (config.signals.emaCrossover.requireMomentum && !hasUpMomentum) return null;
-    
-    const separation = ((ema7Current - ema25Current) / ema25Current) * 100;
-    const sl = ema25Current - (ema25Current * 0.01);
-    
-    return {
-      type: 'EMA_CROSS_BULLISH',
-      direction: 'LONG',
-      urgency: 'HIGH',
-      confidence: Math.min(config.signals.emaCrossover.confidence + separation * 2, 95),
-      reason: `🔄 BULLISH EMA CROSSOVER\nEMA7: ${ema7Current.toFixed(2)} | EMA25: ${ema25Current.toFixed(2)}`,
-      entry: currentPrice,
-      sl: sl
-    };
-  }
-
-  // BEARISH CROSSOVER
-  if (ema7Current < ema25Current && ema7Prev >= ema25Prev) {
-    if (config.signals.emaCrossover.requirePriceAboveBelow && currentPrice >= ema25Current) return null;
-    
-    const recentCloses = closes.slice(-3);
-    const hasDownMomentum = recentCloses[2] < recentCloses[1] && recentCloses[1] < recentCloses[0];
-    
-    if (config.signals.emaCrossover.requireMomentum && !hasDownMomentum) return null;
-    
-    const separation = ((ema25Current - ema7Current) / ema25Current) * 100;
-    const sl = ema25Current + (ema25Current * 0.01);
-    
-    return {
-      type: 'EMA_CROSS_BEARISH',
-      direction: 'SHORT',
-      urgency: 'HIGH',
-      confidence: Math.min(config.signals.emaCrossover.confidence + separation * 2, 95),
-      reason: `🔄 BEARISH EMA CROSSOVER\nEMA7: ${ema7Current.toFixed(2)} | EMA25: ${ema25Current.toFixed(2)}`,
-      entry: currentPrice,
-      sl: sl
-    };
-  }
-
-  return null;
-}
-
-// ========================================
-// SEND FAST ALERT (COMPLETE REWRITE)
+// SEND FAST ALERT
 // ========================================
 
 async function sendFastAlert(symbol, signal, currentPrice, atr, assetConfig) {
-  // Check all limits
   const limitCheck = canSendSignalWithLimits(symbol);
   if (!limitCheck.canSend) {
     console.log(`⛔ ${symbol}: Signal blocked - ${limitCheck.reason}`);
     return { sent: false, reason: limitCheck.reason };
   }
   
-  // Check confidence requirement
   const confidenceCheck = meetsConfidenceRequirement(signal.confidence);
   if (!confidenceCheck.valid) {
     return { sent: false, reason: 'CONFIDENCE_TOO_LOW' };
@@ -956,7 +627,6 @@ async function sendFastAlert(symbol, signal, currentPrice, atr, assetConfig) {
   
   const now = Date.now();
   
-  // Check symbol cooldown
   if (lastSymbolAlert.has(symbol)) {
     const timeSinceAlert = now - lastSymbolAlert.get(symbol);
     if (timeSinceAlert < config.alertCooldown) return;
@@ -968,7 +638,6 @@ async function sendFastAlert(symbol, signal, currentPrice, atr, assetConfig) {
     if (timeSinceAlert < config.alertCooldown) return;
   }
 
-  // CALCULATE PROPER STOP LOSS with max limits
   const slResult = calculateStopLoss(
     currentPrice, 
     signal.sl, 
@@ -989,25 +658,17 @@ async function sendFastAlert(symbol, signal, currentPrice, atr, assetConfig) {
     console.log(`⚠️ ${symbol}: SL adjusted from ${(slResult.originalPercent * 100).toFixed(2)}% to ${(slResult.percent * 100).toFixed(2)}%`);
   }
 
-  // CALCULATE TAKE PROFITS (1R, 2R)
   const { tp1, tp2, risk } = calculateTakeProfits(currentPrice, finalSL, signal.direction);
 
   const decimals = getDecimalPlaces(currentPrice);
-  
-  // SCALE POSITION SIZE based on confidence
   const basePositionSize = 100;
   const positionSize = Math.round(basePositionSize * confidenceCheck.positionSize);
-
-  // Entry is CURRENT PRICE (market order)
   const actualEntry = currentPrice;
 
-  // Calculate R:R ratios
   const riskAmount = Math.abs(actualEntry - finalSL);
   const rrTP1 = (Math.abs(tp1 - actualEntry) / riskAmount).toFixed(2);
   const rrTP2 = (Math.abs(tp2 - actualEntry) / riskAmount).toFixed(2);
 
-
-  // BUILD TELEGRAM MESSAGE
   const message1 = `⚡ URGENT ${symbol}
 ✅ ${signal.direction} - ${signal.urgency} URGENCY
 LEVERAGE: 20x
@@ -1030,9 +691,9 @@ Entry: ${actualEntry.toFixed(decimals)}
 
 Position: ${positionSize}% (scaled by confidence)
 Risk: ${(slResult.percent * 100).toFixed(2)}%
-R:R → TP1: 1:${rrTP1} | TP2: 1:${rrTP2} | SL:  (${(slResult.percent * 100).toFixed(2)}%)
+R:R → TP1: 1:${rrTP1} | TP2: 1:${rrTP2}
 
-${slResult.wasAdjusted ? '⚠️ SL adjusted to max allowed\n' : ''}${signal.orderFlow ? `📊 Order Flow: ${signal.orderFlow.score.toFixed(1)} (${signal.orderFlow.strength})\n` : ''}${signal.liquiditySweep ? `🎣 Sweep: ${signal.liquiditySweep.type} (${signal.liquiditySweep.quality}%)\n` : ''}`;
+${slResult.wasAdjusted ? '⚠️ SL adjusted to max allowed\n' : ''}${signal.orderFlow ? `📊 Order Flow: ${signal.orderFlow.score.toFixed(1)} (${signal.orderFlow.strength})\n` : ''}${signal.sweepData ? `🎣 Sweep Quality: ${signal.sweepData.quality}% (${signal.sweepData.confidence || 'N/A'})\n` : ''}`;
 
   try {
     await sendTelegramNotification(message1, message2, symbol);

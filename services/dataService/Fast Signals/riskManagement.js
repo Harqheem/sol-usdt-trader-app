@@ -1,4 +1,4 @@
-// COMPLETE RISK MANAGEMENT MODULE
+// RISK MANAGEMENT MODULE - UPDATED FOR CLEAN SIGNALS
 // Handles stop loss calculation, position limits, confidence scaling, pause management
 
 const config = require('../../../config/fastSignalConfig');
@@ -7,46 +7,29 @@ const config = require('../../../config/fastSignalConfig');
 // TRACKING VARIABLES (FAST SIGNALS ONLY)
 // ========================================
 
-let openFastPositionsCount = 0;  // Only track FAST signal positions
-let lastFastLossTime = 0;        // Only track FAST signal losses
-
-// Track last check for daily limits (imported from detector)
-const dailySignalCounts = {
-  date: new Date().toDateString(),
-  total: 0,
-  bySymbol: new Map()
-};
+let openFastPositionsCount = 0;
+let lastFastLossTime = 0;
 
 // ========================================
 // STOP LOSS CALCULATION (CRITICAL)
 // ========================================
 
-/**
- * Calculate stop loss with ENFORCED maximum limits
- * This prevents 4% stop losses that kill your account
- */
 function calculateStopLoss(entry, theoreticalSL, direction, signalType, atr, currentPrice) {
   
   // Get signal-specific max stop loss
   let maxStopPercent;
   let atrMultiplier;
   
-  if (signalType.includes('BREAKOUT')) {
-    maxStopPercent = config.stopLoss.breakout.maxStopPercent || 0.008;
-    atrMultiplier = config.stopLoss.breakout.atrMultiplier || 0.35;
-  } else if (signalType.includes('BOUNCE') || signalType.includes('REJECTION') || signalType.includes('SUPPORT') || signalType.includes('RESISTANCE')) {
-    maxStopPercent = config.stopLoss.bounce.maxStopPercent || 0.008;
-    atrMultiplier = config.stopLoss.bounce.atrMultiplier || 0.35;
-  } else if (signalType.includes('CROSS') || signalType.includes('EMA')) {
-    maxStopPercent = config.stopLoss.crossover.maxStopPercent || 0.010;
-    atrMultiplier = config.stopLoss.crossover.atrMultiplier || 0.6;
+  if (signalType.includes('LIQUIDITY_SWEEP') || signalType.includes('SWEEP')) {
+    maxStopPercent = config.stopLoss.liquiditySweep?.maxStopPercent || 0.018;
+    atrMultiplier = config.stopLoss.liquiditySweep?.atrMultiplier || 0.8;
   } else if (signalType.includes('DIVERGENCE') || signalType.includes('RSI')) {
-    maxStopPercent = config.stopLoss.divergence?.maxStopPercent || 0.010;
-    atrMultiplier = config.stopLoss.divergence?.atrMultiplier || 0.5;
+    maxStopPercent = config.stopLoss.divergence?.maxStopPercent || 0.020;
+    atrMultiplier = config.stopLoss.divergence?.atrMultiplier || 1.0;
   } else {
-    // Default/acceleration
-    maxStopPercent = config.stopLoss.acceleration?.maxStopPercent || 0.012;
-    atrMultiplier = config.stopLoss.acceleration?.atrMultiplier || 0.8;
+    // Fallback
+    maxStopPercent = 0.020;
+    atrMultiplier = 1.0;
   }
   
   // Calculate ATR-based stop
@@ -57,9 +40,9 @@ function calculateStopLoss(entry, theoreticalSL, direction, signalType, atr, cur
   // Use the CLOSER stop (tighter = better)
   let proposedSL;
   if (direction === 'LONG') {
-    proposedSL = Math.max(theoreticalSL, atrBasedStop); // Higher of the two = closer to entry
+    proposedSL = Math.max(theoreticalSL, atrBasedStop);
   } else {
-    proposedSL = Math.min(theoreticalSL, atrBasedStop); // Lower of the two = closer to entry
+    proposedSL = Math.min(theoreticalSL, atrBasedStop);
   }
   
   // Calculate proposed stop as percentage
@@ -72,7 +55,6 @@ function calculateStopLoss(entry, theoreticalSL, direction, signalType, atr, cur
       console.log(`   ⚠️ Stop too wide: ${(proposedStopPercent * 100).toFixed(2)}% > ${(maxStopPercent * 100).toFixed(2)}% max`);
     }
     
-    // Calculate maximum allowed stop distance
     const maxStopDistance = entry * maxStopPercent;
     
     if (direction === 'LONG') {
@@ -84,14 +66,14 @@ function calculateStopLoss(entry, theoreticalSL, direction, signalType, atr, cur
     wasAdjusted = true;
     
     if (config.logging?.logRiskManagement) {
-      console.log(`   ✓ Adjusted to max: ${proposedSL.toFixed(6)} (${(maxStopPercent * 100).toFixed(2)}%)`);
+      console.log(`   ✔ Adjusted to max: ${proposedSL.toFixed(6)} (${(maxStopPercent * 100).toFixed(2)}%)`);
     }
   }
   
   const finalStopPercent = Math.abs(entry - proposedSL) / entry;
   
   // Final validation against absolute max
-  const absoluteMax = config.riskManagement.maxStopLossPercent || 0.01;
+  const absoluteMax = config.riskManagement.maxStopLossPercent || 0.020;
   if (finalStopPercent > absoluteMax) {
     console.log(`   ❌ Stop loss exceeds absolute max: ${(finalStopPercent * 100).toFixed(2)}% > ${(absoluteMax * 100).toFixed(2)}%`);
     return {
@@ -116,10 +98,6 @@ function calculateStopLoss(entry, theoreticalSL, direction, signalType, atr, cur
 // TAKE PROFIT CALCULATION
 // ========================================
 
-/**
- * Calculate take profit levels (1R, 2R, 3.5R)
- * Proper risk-reward ratios
- */
 function calculateTakeProfits(entry, sl, direction) {
   const risk = Math.abs(entry - sl);
   
@@ -138,9 +116,6 @@ function calculateTakeProfits(entry, sl, direction) {
 // CONFIDENCE VALIDATION & SCALING
 // ========================================
 
-/**
- * Check if confidence meets minimum and scale position size
- */
 function meetsConfidenceRequirement(confidence) {
   if (!config.riskManagement.confidenceScaling?.enabled) {
     return { valid: true, positionSize: 1.0 };
@@ -150,6 +125,7 @@ function meetsConfidenceRequirement(confidence) {
   
   if (confidence < minConfidence) {
     if (config.logging?.logRejections) {
+      console.log(`   ⛔ Confidence too low: ${confidence}% < ${minConfidence}% minimum`);
     }
     return { valid: false };
   }
@@ -173,10 +149,6 @@ function meetsConfidenceRequirement(confidence) {
 // SIGNAL LIMIT CHECKS
 // ========================================
 
-/**
- * Check if we can send signal (comprehensive checks)
- * ONLY FOR FAST SIGNALS
- */
 function canSendSignalWithLimits(symbol) {
   const now = Date.now();
   
@@ -187,7 +159,7 @@ function canSendSignalWithLimits(symbol) {
       const remainingMinutes = Math.ceil((config.riskManagement.pauseDuration - timeSinceLoss) / 60000);
       
       if (config.logging?.logRiskManagement) {
-        console.log(`⏸️ FAST SIGNALS PAUSED after loss - ${remainingMinutes} minutes remaining`);
+        console.log(`⸏ FAST SIGNALS PAUSED after loss - ${remainingMinutes} minutes remaining`);
       }
       
       return { canSend: false, reason: 'PAUSED_AFTER_LOSS', remainingMinutes };
@@ -217,9 +189,6 @@ function canSendSignalWithLimits(symbol) {
 // POSITION COUNT TRACKING
 // ========================================
 
-/**
- * Increment FAST position count when signal sent
- */
 function incrementPositionCount() {
   openFastPositionsCount++;
   
@@ -232,10 +201,6 @@ function incrementPositionCount() {
   return openFastPositionsCount;
 }
 
-/**
- * Decrement FAST position count when trade closes
- * Trigger pause if it was a FAST loss
- */
 function decrementPositionCount(wasLoss = false) {
   openFastPositionsCount = Math.max(0, openFastPositionsCount - 1);
   
@@ -247,7 +212,7 @@ function decrementPositionCount(wasLoss = false) {
     console.log(`   ℹ️  Default signals will continue normally`);
     
     if (config.logging?.logRiskManagement) {
-      console.log(`⏸️ FAST signals paused until ${new Date(Date.now() + config.riskManagement.pauseDuration).toLocaleTimeString()}`);
+      console.log(`⸏ FAST signals paused until ${new Date(Date.now() + config.riskManagement.pauseDuration).toLocaleTimeString()}`);
     }
   }
   
@@ -260,16 +225,10 @@ function decrementPositionCount(wasLoss = false) {
   return openFastPositionsCount;
 }
 
-/**
- * Get current FAST position count
- */
 function getOpenPositionsCount() {
   return openFastPositionsCount;
 }
 
-/**
- * Set FAST position count (for syncing with database on startup)
- */
 function setOpenPositionsCount(count) {
   openFastPositionsCount = Math.max(0, count);
   
@@ -280,9 +239,6 @@ function setOpenPositionsCount(count) {
   return openFastPositionsCount;
 }
 
-/**
- * Get pause status (FAST signals only)
- */
 function getPauseStatus() {
   if (!config.riskManagement.pauseAfterLoss || lastFastLossTime === 0) {
     return { isPaused: false };
@@ -308,9 +264,6 @@ function getPauseStatus() {
   return { isPaused: false };
 }
 
-/**
- * Clear pause (manual override) - FAST signals only
- */
 function clearPause() {
   lastFastLossTime = 0;
   console.log(`✅ FAST signals pause manually cleared - fast trading resumed`);
@@ -318,9 +271,6 @@ function clearPause() {
   return true;
 }
 
-/**
- * Force pause (manual trigger) - FAST signals only
- */
 function forcePause(durationMinutes = null) {
   const duration = durationMinutes 
     ? durationMinutes * 60000 
@@ -329,7 +279,7 @@ function forcePause(durationMinutes = null) {
   lastFastLossTime = Date.now();
   
   const resumeTime = new Date(Date.now() + duration);
-  console.log(`⏸️ FAST signals manually paused until ${resumeTime.toLocaleTimeString()}`);
+  console.log(`⸏ FAST signals manually paused until ${resumeTime.toLocaleTimeString()}`);
   console.log(`   ℹ️  Default signals will continue normally`);
   
   return { paused: true, resumeTime, affectsOnlyFastSignals: true };
@@ -339,9 +289,6 @@ function forcePause(durationMinutes = null) {
 // STATISTICS & REPORTING
 // ========================================
 
-/**
- * Get risk management statistics (FAST signals only)
- */
 function getRiskStats() {
   const pauseStatus = getPauseStatus();
   
@@ -355,7 +302,7 @@ function getRiskStats() {
       maxPerSymbol: config.riskManagement.maxPerSymbolPerDay,
       maxStopLoss: config.riskManagement.maxStopLossPercent,
       pauseAfterLoss: config.riskManagement.pauseAfterLoss,
-      pauseDuration: config.riskManagement.pauseDuration / 60000 // in minutes
+      pauseDuration: config.riskManagement.pauseDuration / 60000
     },
     confidenceScaling: config.riskManagement.confidenceScaling?.enabled ? {
       enabled: true,
