@@ -81,8 +81,14 @@ module.exports = {
       
       // Position sizing
       confidence: 88,             // High confidence - divergences are reliable
-      urgency: 'HIGH'
+      urgency: 'HIGH',
+      pivotLeftBars: 2,   // Bars that must be higher/lower on left side
+      pivotRightBars: 2,  // Bars that must be higher/lower on right side
+      maxPivotAge: 10,    // Max bars since recent pivot (ensures freshness)
+      idealPivotSpacing: [5, 12]  // Min/max bars between pivots
     },
+
+    
     
     // ========================================
     // 5. ACCELERATION (DISABLED - medium urgency not sent)

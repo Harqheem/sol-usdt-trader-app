@@ -151,7 +151,7 @@ async function startSymbolStream(symbol) {
       
       // Check fast signals on price updates (if enabled)
       if (fastSignalConfig.enabled) {
-        const { checkFastSignals } = require('./fastSignalDetector');
+        const { checkFastSignals } = require('./Fast Signals/fastSignalDetector');
         const fastSignalResult = await checkFastSignals(symbol, parseFloat(ticker.curDayClose));
         
         // Register fast signal to prevent duplicate candle-close signals

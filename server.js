@@ -6,7 +6,7 @@ const routes = require('./routes');
 const { initDataService, cleanup, getServiceStatus, forceRefresh } = require('./services/dataService');
 const config = require('./config');
 const pauseService = require('./services/pauseService');
-const { initializeRiskManagement } = require('./services/dataService/positionTracker');
+const { initializeRiskManagement } = require('./services/dataService/Fast Signals/positionTracker');
 
 require('./services/monitorService'); // Start trade monitoring
 

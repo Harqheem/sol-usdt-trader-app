@@ -571,6 +571,9 @@ function detectSRBounce(symbol, currentPrice, highs30m, lows30m, closes30m, atr,
 // 3. RSI DIVERGENCE DETECTION
 // ========================================
 
+// FIXED RSI DIVERGENCE DETECTION - PROPER PIVOT DETECTION
+// Replace your detectRSIDivergence function with this
+
 function detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice, candles1m) {
   
   if (!config.signals.rsiDivergence?.enabled) return null;
@@ -604,22 +607,133 @@ function detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice, can
   
   if (!hasVolumeConfirmation) return null;
   
-  // BULLISH DIVERGENCE
+  // ========================================
+  // IMPROVED PIVOT DETECTION
+  // ========================================
+  
+  /**
+   * Find proper swing lows (valleys with higher bars on both sides)
+   * @param {Array} data - Price array
+   * @param {number} leftBars - Bars that must be higher on left
+   * @param {number} rightBars - Bars that must be higher on right
+   * @returns {Array} Array of {index, value} objects
+   */
+  function findSwingLows(data, leftBars = 2, rightBars = 2) {
+    const swings = [];
+    
+    for (let i = leftBars; i < data.length - rightBars; i++) {
+      const currentLow = data[i];
+      let isSwingLow = true;
+      
+      // Check left side - all must be higher
+      for (let j = 1; j <= leftBars; j++) {
+        if (data[i - j] <= currentLow) {
+          isSwingLow = false;
+          break;
+        }
+      }
+      
+      if (!isSwingLow) continue;
+      
+      // Check right side - all must be higher
+      for (let j = 1; j <= rightBars; j++) {
+        if (data[i + j] <= currentLow) {
+          isSwingLow = false;
+          break;
+        }
+      }
+      
+      if (isSwingLow) {
+        swings.push({ index: i, value: currentLow });
+      }
+    }
+    
+    return swings;
+  }
+  
+  /**
+   * Find proper swing highs (peaks with lower bars on both sides)
+   */
+  function findSwingHighs(data, leftBars = 2, rightBars = 2) {
+    const swings = [];
+    
+    for (let i = leftBars; i < data.length - rightBars; i++) {
+      const currentHigh = data[i];
+      let isSwingHigh = true;
+      
+      // Check left side - all must be lower
+      for (let j = 1; j <= leftBars; j++) {
+        if (data[i - j] >= currentHigh) {
+          isSwingHigh = false;
+          break;
+        }
+      }
+      
+      if (!isSwingHigh) continue;
+      
+      // Check right side - all must be lower
+      for (let j = 1; j <= rightBars; j++) {
+        if (data[i + j] >= currentHigh) {
+          isSwingHigh = false;
+          break;
+        }
+      }
+      
+      if (isSwingHigh) {
+        swings.push({ index: i, value: currentHigh });
+      }
+    }
+    
+    return swings;
+  }
+  
+  // ========================================
+  // BULLISH DIVERGENCE (Price lower low, RSI higher low)
+  // ========================================
+  
   if (currentRSI < rsiConfig.oversoldLevel) {
     if (orderFlow && orderFlow.valid && !orderFlow.isBullish) return null;
     
-    const recentLowIdx = lowSlice.reduce((minIdx, val, idx, arr) => val < arr[minIdx] ? idx : minIdx, 0);
-    const priorLowIdx = lowSlice.slice(0, -(rsiConfig.minPivotGap + 1)).reduce((minIdx, val, idx, arr) => val < arr[minIdx] ? idx : minIdx, 0);
+    // Find proper swing lows (require 2 bars higher on each side)
     
-    if (recentLowIdx <= priorLowIdx + rsiConfig.minPivotGap) return null;
+    const swingLows = findSwingLows(lowSlice, rsiConfig.pivotLeftBars || 2, rsiConfig.pivotRightBars || 2);
+
+    if (swingLows.length < 2) {
+      // Need at least 2 swing lows to compare
+      return null;
+    }
     
-    const priceLowerLow = lowSlice[recentLowIdx] < lowSlice[priorLowIdx];
-    const rsiHigherLow = rsi[recentLowIdx] > rsi[priorLowIdx] + rsiConfig.minRSIDifference;
-    const rsiConfirming = currentRSI > rsi[recentLowIdx] - 3;
+    // Get the two most recent swing lows
+    const recentSwing = swingLows[swingLows.length - 1];
     
-    if (priceLowerLow && rsiHigherLow && rsiConfirming) {
+    // Find prior swing that's far enough back
+    let priorSwing = null;
+    for (let i = swingLows.length - 2; i >= 0; i--) {
+      if (recentSwing.index - swingLows[i].index >= rsiConfig.minPivotGap) {
+        priorSwing = swingLows[i];
+        break;
+      }
+    }
+    
+    if (!priorSwing) return null;
+    
+    // Check divergence conditions
+    const priceLowerLow = recentSwing.value < priorSwing.value;
+    const rsiAtRecent = rsi[recentSwing.index];
+    const rsiAtPrior = rsi[priorSwing.index];
+    const rsiHigherLow = rsiAtRecent > rsiAtPrior + rsiConfig.minRSIDifference;
+    
+    // Current RSI should be recovering from the recent low
+    const rsiConfirming = currentRSI > rsiAtRecent - 3;
+    
+    // Additional validation: Recent swing should be relatively recent (within last 10 bars)
+    const recentEnough = (lowSlice.length - 1 - recentSwing.index) <= 10;
+    
+    if (priceLowerLow && rsiHigherLow && rsiConfirming && recentEnough) {
+      
+      // Use the actual swing low for stop loss
       let sl = config.stopLoss.divergence.useSwingPoint 
-        ? lowSlice[recentLowIdx] - (atr * config.stopLoss.divergence.atrMultiplier)
+        ? recentSwing.value - (atr * config.stopLoss.divergence.atrMultiplier)
         : currentPrice - (atr * config.stopLoss.divergence.atrMultiplier);
       
       const maxStopDistance = currentPrice * config.stopLoss.divergence.maxStopPercent;
@@ -628,16 +742,22 @@ function detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice, can
       }
       
       if (candles1m) {
-        const trapCheck = isLikelyTrap(candles1m, 'LONG', lowSlice[recentLowIdx], atr);
+        const trapCheck = isLikelyTrap(candles1m, 'LONG', recentSwing.value, atr);
         if (trapCheck.isTrap) return null;
       }
       
       let confidence = rsiConfig.confidence;
       confidence += orderFlow && orderFlow.isStrong ? 10 : orderFlow && orderFlow.isBullish ? 5 : 0;
       confidence += currentRSI < 25 ? 5 : currentRSI < 20 ? 8 : 0;
-      const rsiDivStrength = rsi[recentLowIdx] - rsi[priorLowIdx];
+      
+      const rsiDivStrength = rsiAtRecent - rsiAtPrior;
       confidence += rsiDivStrength > 5 ? 4 : 0;
       confidence += rsiDivStrength > 10 ? 4 : 0;
+      
+      // Boost confidence if divergence is clean (swing points are clear)
+      const barsApart = recentSwing.index - priorSwing.index;
+      if (barsApart >= 5 && barsApart <= 12) confidence += 3; // Ideal spacing
+      
       confidence = Math.min(95, confidence);
       
       return {
@@ -645,30 +765,61 @@ function detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice, can
         direction: 'LONG',
         urgency: rsiConfig.urgency,
         confidence,
-        reason: `📈 BULLISH RSI DIVERGENCE\nPrice: Lower low | RSI: Higher low\nRSI: ${currentRSI.toFixed(1)}\n${orderFlow ? `📊 OF: ${orderFlow.score.toFixed(1)}` : ''}`,
+        reason: `📈 BULLISH RSI DIVERGENCE\nPrice: Lower low | RSI: Higher low\nRSI: ${currentRSI.toFixed(1)}\nSwing spacing: ${barsApart} bars\n${orderFlow ? `📊 OF: ${orderFlow.score.toFixed(1)}` : ''}`,
         entry: currentPrice,
         sl: sl,
-        orderFlow: orderFlow && orderFlow.valid ? { score: orderFlow.score, strength: orderFlow.isStrong ? 'STRONG' : 'NORMAL' } : null
+        orderFlow: orderFlow && orderFlow.valid ? { 
+          score: orderFlow.score, 
+          strength: orderFlow.isStrong ? 'STRONG' : 'NORMAL' 
+        } : null,
+        divergenceDetails: {
+          recentLow: recentSwing.value,
+          priorLow: priorSwing.value,
+          rsiAtRecent: rsiAtRecent.toFixed(1),
+          rsiAtPrior: rsiAtPrior.toFixed(1),
+          barsApart
+        }
       };
     }
   }
   
-  // BEARISH DIVERGENCE
+  // ========================================
+  // BEARISH DIVERGENCE (Price higher high, RSI lower high)
+  // ========================================
+  
   if (currentRSI > rsiConfig.overboughtLevel) {
     if (orderFlow && orderFlow.valid && !orderFlow.isBearish) return null;
     
-    const recentHighIdx = highSlice.reduce((maxIdx, val, idx, arr) => val > arr[maxIdx] ? idx : maxIdx, 0);
-    const priorHighIdx = highSlice.slice(0, -(rsiConfig.minPivotGap + 1)).reduce((maxIdx, val, idx, arr) => val > arr[maxIdx] ? idx : maxIdx, 0);
+    // Find proper swing highs (require 2 bars lower on each side)
+    const swingHighs = findSwingHighs(highSlice, 2, 2);
     
-    if (recentHighIdx <= priorHighIdx + rsiConfig.minPivotGap) return null;
+    if (swingHighs.length < 2) {
+      return null;
+    }
     
-    const priceHigherHigh = highSlice[recentHighIdx] > highSlice[priorHighIdx];
-    const rsiLowerHigh = rsi[recentHighIdx] < rsi[priorHighIdx] - rsiConfig.minRSIDifference;
-    const rsiConfirming = currentRSI < rsi[recentHighIdx] + 3;
+    const recentSwing = swingHighs[swingHighs.length - 1];
     
-    if (priceHigherHigh && rsiLowerHigh && rsiConfirming) {
+    let priorSwing = null;
+    for (let i = swingHighs.length - 2; i >= 0; i--) {
+      if (recentSwing.index - swingHighs[i].index >= rsiConfig.minPivotGap) {
+        priorSwing = swingHighs[i];
+        break;
+      }
+    }
+    
+    if (!priorSwing) return null;
+    
+    const priceHigherHigh = recentSwing.value > priorSwing.value;
+    const rsiAtRecent = rsi[recentSwing.index];
+    const rsiAtPrior = rsi[priorSwing.index];
+    const rsiLowerHigh = rsiAtRecent < rsiAtPrior - rsiConfig.minRSIDifference;
+    const rsiConfirming = currentRSI < rsiAtRecent + 3;
+    const recentEnough = (highSlice.length - 1 - recentSwing.index) <= 10;
+    
+    if (priceHigherHigh && rsiLowerHigh && rsiConfirming && recentEnough) {
+      
       let sl = config.stopLoss.divergence.useSwingPoint 
-        ? highSlice[recentHighIdx] + (atr * config.stopLoss.divergence.atrMultiplier)
+        ? recentSwing.value + (atr * config.stopLoss.divergence.atrMultiplier)
         : currentPrice + (atr * config.stopLoss.divergence.atrMultiplier);
       
       const maxStopDistance = currentPrice * config.stopLoss.divergence.maxStopPercent;
@@ -677,16 +828,21 @@ function detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice, can
       }
       
       if (candles1m) {
-        const trapCheck = isLikelyTrap(candles1m, 'SHORT', highSlice[recentHighIdx], atr);
+        const trapCheck = isLikelyTrap(candles1m, 'SHORT', recentSwing.value, atr);
         if (trapCheck.isTrap) return null;
       }
       
       let confidence = rsiConfig.confidence;
       confidence += orderFlow && orderFlow.isStrong ? 10 : orderFlow && orderFlow.isBearish ? 5 : 0;
       confidence += currentRSI > 75 ? 5 : currentRSI > 80 ? 8 : 0;
-      const rsiDivStrength = rsi[priorHighIdx] - rsi[recentHighIdx];
+      
+      const rsiDivStrength = rsiAtPrior - rsiAtRecent;
       confidence += rsiDivStrength > 5 ? 4 : 0;
       confidence += rsiDivStrength > 10 ? 4 : 0;
+      
+      const barsApart = recentSwing.index - priorSwing.index;
+      if (barsApart >= 5 && barsApart <= 12) confidence += 3;
+      
       confidence = Math.min(95, confidence);
       
       return {
@@ -694,16 +850,27 @@ function detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice, can
         direction: 'SHORT',
         urgency: rsiConfig.urgency,
         confidence,
-        reason: `📉 BEARISH RSI DIVERGENCE\nPrice: Higher high | RSI: Lower high\nRSI: ${currentRSI.toFixed(1)}\n${orderFlow ? `📊 OF: ${orderFlow.score.toFixed(1)}` : ''}`,
+        reason: `📉 BEARISH RSI DIVERGENCE\nPrice: Higher high | RSI: Lower high\nRSI: ${currentRSI.toFixed(1)}\nSwing spacing: ${barsApart} bars\n${orderFlow ? `📊 OF: ${orderFlow.score.toFixed(1)}` : ''}`,
         entry: currentPrice,
         sl: sl,
-        orderFlow: orderFlow && orderFlow.valid ? { score: orderFlow.score, strength: orderFlow.isStrong ? 'STRONG' : 'NORMAL' } : null
+        orderFlow: orderFlow && orderFlow.valid ? { 
+          score: orderFlow.score, 
+          strength: orderFlow.isStrong ? 'STRONG' : 'NORMAL' 
+        } : null,
+        divergenceDetails: {
+          recentHigh: recentSwing.value,
+          priorHigh: priorSwing.value,
+          rsiAtRecent: rsiAtRecent.toFixed(1),
+          rsiAtPrior: rsiAtPrior.toFixed(1),
+          barsApart
+        }
       };
     }
   }
   
   return null;
 }
+
 
 // ========================================
 // 4. EMA CROSSOVER DETECTION

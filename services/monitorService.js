@@ -4,7 +4,7 @@ const Binance = require('binance-api-node').default;
 const { supabase } = require('./logsService');
 const { sendTelegramNotification } = require('./notificationService');
 const { symbols } = require('../config');
-const { handleTradeClose } = require('./dataService/positionTracker');
+const { handleTradeClose } = require('./dataService/Fast Signals/positionTracker');
 
 const client = Binance();
 
