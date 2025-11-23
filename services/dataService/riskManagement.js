@@ -150,7 +150,6 @@ function meetsConfidenceRequirement(confidence) {
   
   if (confidence < minConfidence) {
     if (config.logging?.logRejections) {
-      console.log(`   ❌ Confidence too low: ${confidence}% < ${minConfidence}% minimum`);
     }
     return { valid: false };
   }
