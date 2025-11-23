@@ -95,7 +95,7 @@ async function syncOpenPositions() {
   console.log('🔄 Syncing open FAST positions with database...');
   
   try {
-    const logsService = require('../logsService');
+    const logsService = require('../../logsService');
     
     // Query database for open positions
     const allOpenTrades = await logsService.getOpenPositions();

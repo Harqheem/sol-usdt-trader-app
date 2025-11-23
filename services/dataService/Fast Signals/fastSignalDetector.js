@@ -1041,7 +1041,7 @@ ${slResult.wasAdjusted ? '⚠️ SL adjusted to max allowed\n' : ''}${signal.ord
     alertedSignals.set(key, now);
     lastSymbolAlert.set(symbol, now);
     
-    const logsService = require('../logsService');
+    const logsService = require('../../logsService');
     
     const logResult = await logsService.logSignal(symbol, {
       signal: signal.direction === 'LONG' ? 'Buy' : 'Sell',
