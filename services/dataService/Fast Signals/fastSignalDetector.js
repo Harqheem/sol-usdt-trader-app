@@ -5,7 +5,7 @@ const TI = require('technicalindicators');
 const { wsCache } = require('./cacheManager');
 const { sendTelegramNotification } = require('../notificationService');
 const { getAssetConfig } = require('../../config/assetConfig');
-const config = require('../../config/fastSignalConfig');
+const config = require('../../../config/fastSignalConfig');
 const { analyzeBuyingPressure, isLikelyTrap } = require('./orderFlowFilters');
 const { 
   calculateStopLoss, 

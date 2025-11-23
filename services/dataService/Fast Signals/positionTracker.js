@@ -49,7 +49,7 @@ async function handleTradeClose(tradeData) {
     // Send pause notification
     try {
       const { sendTelegramNotification } = require('../notificationService');
-      const config = require('../../config/fastSignalConfig');
+      const config = require('../../../config/fastSignalConfig');
       
       const pauseDurationMin = config.riskManagement.pauseDuration / 60000;
       const resumeTime = new Date(Date.now() + config.riskManagement.pauseDuration);

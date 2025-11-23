@@ -1,7 +1,7 @@
 // COMPLETE RISK MANAGEMENT MODULE
 // Handles stop loss calculation, position limits, confidence scaling, pause management
 
-const config = require('../../config/fastSignalConfig');
+const config = require('../../../config/fastSignalConfig');
 
 // ========================================
 // TRACKING VARIABLES (FAST SIGNALS ONLY)
