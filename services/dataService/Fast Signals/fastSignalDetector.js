@@ -2,9 +2,9 @@
 // Includes: Order flow filters, liquidity sweeps, proper risk management, RSI divergence
 
 const TI = require('technicalindicators');
-const { wsCache } = require('./cacheManager');
-const { sendTelegramNotification } = require('../notificationService');
-const { getAssetConfig } = require('../../config/assetConfig');
+const { wsCache } = require('../cacheManager');
+const { sendTelegramNotification } = require('../../notificationService');
+const { getAssetConfig } = require('../../../config/assetConfig');
 const config = require('../../../config/fastSignalConfig');
 const { analyzeBuyingPressure, isLikelyTrap } = require('./orderFlowFilters');
 const { 
