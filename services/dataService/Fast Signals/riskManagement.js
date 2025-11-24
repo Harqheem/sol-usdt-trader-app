@@ -23,6 +23,9 @@ function calculateStopLoss(entry, theoreticalSL, direction, signalType, atr, cur
   if (signalType.includes('LIQUIDITY_SWEEP') || signalType.includes('SWEEP')) {
     maxStopPercent = config.stopLoss.liquiditySweep?.maxStopPercent || 0.018;
     atrMultiplier = config.stopLoss.liquiditySweep?.atrMultiplier || 0.8;
+  } else if (signalType.includes('CVD') && signalType.includes('DIVERGENCE')) {
+    maxStopPercent = config.stopLoss.cvdDivergence?.maxStopPercent || 0.020;
+    atrMultiplier = config.stopLoss.cvdDivergence?.atrMultiplier || 1.0;
   } else if (signalType.includes('DIVERGENCE') || signalType.includes('RSI')) {
     maxStopPercent = config.stopLoss.divergence?.maxStopPercent || 0.020;
     atrMultiplier = config.stopLoss.divergence?.atrMultiplier || 1.0;

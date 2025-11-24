@@ -2,6 +2,7 @@
 // ORDER FLOW ANALYSIS FUNCTIONS
 // 1. Buying/Selling Pressure Detection
 // 2. Liquidity Sweep Protection
+// 3. Cumulative Volume Delta (CVD)
 // ========================================
 
 /**
@@ -22,9 +23,6 @@ function analyzeBuyingPressure(candles1m) {
   let sellingScore = 0;
 
   // === METHOD 1: CANDLE CLOSING STRENGTH ===
-  // Strong closes near high = buying pressure
-  // Weak closes near low = selling pressure
-  
   last10.forEach(candle => {
     const open = parseFloat(candle.open);
     const high = parseFloat(candle.high);
@@ -35,24 +33,17 @@ function analyzeBuyingPressure(candles1m) {
     const range = high - low;
     if (range === 0) return;
     
-    // Where did candle close in its range? (0 = low, 1 = high)
     const closePosition = (close - low) / range;
-    
-    // Weighted by volume (high volume = more significant)
     const volumeWeight = volume;
     
     if (closePosition > 0.7) {
-      // Closed in upper 30% = buying pressure
       buyingScore += closePosition * volumeWeight;
     } else if (closePosition < 0.3) {
-      // Closed in lower 30% = selling pressure
       sellingScore += (1 - closePosition) * volumeWeight;
     }
   });
 
   // === METHOD 2: BODY-TO-WICK RATIO ===
-  // Large bodies = conviction, Large wicks = rejection
-  
   last5.forEach(candle => {
     const open = parseFloat(candle.open);
     const high = parseFloat(candle.high);
@@ -66,30 +57,24 @@ function analyzeBuyingPressure(candles1m) {
     
     if (range === 0) return;
     
-    // Bullish candle with large body and small upper wick = buying
     if (close > open && bodySize > range * 0.5 && upperWick < bodySize * 0.3) {
       buyingScore += 3;
     }
     
-    // Bearish candle with large body and small lower wick = selling
     if (close < open && bodySize > range * 0.5 && lowerWick < bodySize * 0.3) {
       sellingScore += 3;
     }
     
-    // Large lower wick (buying rejection of lows)
     if (lowerWick > bodySize * 1.5) {
       buyingScore += 2;
     }
     
-    // Large upper wick (selling rejection of highs)
     if (upperWick > bodySize * 1.5) {
       sellingScore += 2;
     }
   });
 
   // === METHOD 3: MOMENTUM & VELOCITY ===
-  // How fast is price moving up vs down?
-  
   const closes = last20.map(c => parseFloat(c.close));
   const volumes = last20.map(c => parseFloat(c.volume));
   
@@ -111,14 +96,12 @@ function analyzeBuyingPressure(candles1m) {
     }
   }
   
-  // More up-moves with volume = buying
   if (upMoves > downMoves) {
     buyingScore += (upMoves - downMoves) * 2;
   } else {
     sellingScore += (downMoves - upMoves) * 2;
   }
   
-  // Volume-weighted momentum
   if (upVolume > downVolume * 1.2) {
     buyingScore += 5;
   } else if (downVolume > upVolume * 1.2) {
@@ -126,9 +109,6 @@ function analyzeBuyingPressure(candles1m) {
   }
 
   // === METHOD 4: SEQUENCE ANALYSIS ===
-  // Series of higher lows = accumulation (buying)
-  // Series of lower highs = distribution (selling)
-  
   const last5Lows = last5.map(c => parseFloat(c.low));
   const last5Highs = last5.map(c => parseFloat(c.high));
   
@@ -145,11 +125,11 @@ function analyzeBuyingPressure(candles1m) {
   }
   
   if (higherLows >= 3 && higherHighs >= 2) {
-    buyingScore += 8; // Strong uptrend structure
+    buyingScore += 8;
   }
   
   if (lowerHighs >= 3 && lowerLows >= 2) {
-    sellingScore += 8; // Strong downtrend structure
+    sellingScore += 8;
   }
 
   // === CALCULATE FINAL SCORE ===
@@ -163,10 +143,6 @@ function analyzeBuyingPressure(candles1m) {
     };
   }
   
-  // Normalize to -100 to +100
-  // +100 = pure buying pressure
-  // -100 = pure selling pressure
-  // 0 = neutral
   const normalizedScore = ((buyingScore - sellingScore) / totalScore) * 100;
   
   return {
@@ -174,16 +150,15 @@ function analyzeBuyingPressure(candles1m) {
     valid: true,
     buying: buyingScore,
     selling: sellingScore,
-    isBullish: normalizedScore > 30,  // Clear buying pressure
-    isBearish: normalizedScore < -30, // Clear selling pressure
-    isStrong: Math.abs(normalizedScore) > 50 // Very strong directional pressure
+    isBullish: normalizedScore > 30,
+    isBearish: normalizedScore < -30,
+    isStrong: Math.abs(normalizedScore) > 50
   };
 }
 
 /**
  * LIQUIDITY SWEEP DETECTION
  * Detects when price "sweeps" obvious stop levels then reverses
- * This is a manipulation tactic that traps traders
  */
 function detectLiquiditySweep(candles1m, direction, keyLevel, atr) {
   if (!candles1m || candles1m.length < 30 || !keyLevel) {
@@ -194,25 +169,13 @@ function detectLiquiditySweep(candles1m, direction, keyLevel, atr) {
   const last10 = candles1m.slice(-10);
   const last5 = candles1m.slice(-5);
   
-  // === LIQUIDITY SWEEP CHARACTERISTICS ===
-  // 1. Quick spike past obvious level (where stops are)
-  // 2. Immediate reversal back inside range
-  // 3. Often on relatively low volume (fake-out)
-  // 4. Creates long wicks (wick = rejection)
-  
   if (direction === 'LONG') {
-    // Check for BEARISH sweep (downside liquidity grab before going up)
-    // This would be a bear trap before bullish move
-    
     const recentLows = last30.map(c => parseFloat(c.low));
     const supportLevel = keyLevel;
     
-    // Find if we recently spiked below support
     const sweepCandles = last10.filter(candle => {
       const low = parseFloat(candle.low);
       const close = parseFloat(candle.close);
-      
-      // Spiked below support but closed back above
       return low < supportLevel * 0.997 && close > supportLevel * 1.001;
     });
     
@@ -220,7 +183,6 @@ function detectLiquiditySweep(candles1m, direction, keyLevel, atr) {
       return { isSweep: false };
     }
     
-    // Get the sweep candle
     const sweepCandle = sweepCandles[sweepCandles.length - 1];
     const sweepLow = parseFloat(sweepCandle.low);
     const sweepClose = parseFloat(sweepCandle.close);
@@ -228,55 +190,42 @@ function detectLiquiditySweep(candles1m, direction, keyLevel, atr) {
     const sweepHigh = parseFloat(sweepCandle.high);
     const sweepVolume = parseFloat(sweepCandle.volume);
     
-    // Calculate wick size
     const lowerWick = Math.min(sweepOpen, sweepClose) - sweepLow;
     const body = Math.abs(sweepClose - sweepOpen);
     const range = sweepHigh - sweepLow;
     
-    // === SWEEP CONFIRMATION CRITERIA ===
-    
-    // 1. Large lower wick (swept down then rejected)
     const hasRejectionWick = lowerWick > body * 1.3 && lowerWick > atr * 0.3;
-    
-    // 2. Spike was beyond obvious support level
     const penetrationDepth = (supportLevel - sweepLow) / supportLevel;
     const wasSignificantPenetration = penetrationDepth > 0.002 && penetrationDepth < 0.015;
-    
-    // 3. Quick recovery (closed back above level)
     const recoveredAbove = sweepClose > supportLevel * 1.001;
     
-    // 4. Check volume wasn't excessive (real breakdowns have huge volume)
     const avgVolume = last30.map(c => parseFloat(c.volume))
       .slice(0, -10)
       .reduce((a, b) => a + b, 0) / 20;
     const volumeRatio = sweepVolume / avgVolume;
-    const wasLowVolumeSweep = volumeRatio < 2.5; // Not a real breakdown
+    const wasLowVolumeSweep = volumeRatio < 2.5;
     
-    // 5. Price stayed above level after sweep
     const barsAfterSweep = last5.length;
     const stayedAbove = last5.filter(c => {
       const low = parseFloat(c.low);
       return low > supportLevel * 0.998;
-    }).length >= Math.floor(barsAfterSweep * 0.6); // 60%+ stayed above
+    }).length >= Math.floor(barsAfterSweep * 0.6);
     
-    // === SWEEP DETECTED ===
     if (hasRejectionWick && wasSignificantPenetration && recoveredAbove) {
-      
-      // Calculate sweep quality score
-      let sweepQuality = 60; // Base score
+      let sweepQuality = 60;
       
       if (wasLowVolumeSweep) sweepQuality += 15;
       if (stayedAbove) sweepQuality += 15;
-      if (lowerWick > body * 2.0) sweepQuality += 10; // Very large wick
+      if (lowerWick > body * 2.0) sweepQuality += 10;
       
       return {
         isSweep: true,
-        direction: 'BULLISH', // Swept lows, expect upside
+        direction: 'BULLISH',
         sweepType: 'BEAR_TRAP',
         level: supportLevel,
         sweepLow: sweepLow,
-        penetrationDepth: penetrationDepth * 100, // As percentage
-        wickSize: lowerWick / atr, // In ATR terms
+        penetrationDepth: penetrationDepth * 100,
+        wickSize: lowerWick / atr,
         quality: Math.min(100, sweepQuality),
         recovered: recoveredAbove,
         lowVolume: wasLowVolumeSweep,
@@ -285,17 +234,12 @@ function detectLiquiditySweep(candles1m, direction, keyLevel, atr) {
     }
     
   } else if (direction === 'SHORT') {
-    // Check for BULLISH sweep (upside liquidity grab before going down)
-    // This would be a bull trap before bearish move
-    
     const recentHighs = last30.map(c => parseFloat(c.high));
     const resistanceLevel = keyLevel;
     
     const sweepCandles = last10.filter(candle => {
       const high = parseFloat(candle.high);
       const close = parseFloat(candle.close);
-      
-      // Spiked above resistance but closed back below
       return high > resistanceLevel * 1.003 && close < resistanceLevel * 0.999;
     });
     
@@ -315,10 +259,8 @@ function detectLiquiditySweep(candles1m, direction, keyLevel, atr) {
     const range = sweepHigh - sweepLow;
     
     const hasRejectionWick = upperWick > body * 1.3 && upperWick > atr * 0.3;
-    
     const penetrationDepth = (sweepHigh - resistanceLevel) / resistanceLevel;
     const wasSignificantPenetration = penetrationDepth > 0.002 && penetrationDepth < 0.015;
-    
     const recoveredBelow = sweepClose < resistanceLevel * 0.999;
     
     const avgVolume = last30.map(c => parseFloat(c.volume))
@@ -334,7 +276,6 @@ function detectLiquiditySweep(candles1m, direction, keyLevel, atr) {
     }).length >= Math.floor(barsAfterSweep * 0.6);
     
     if (hasRejectionWick && wasSignificantPenetration && recoveredBelow) {
-      
       let sweepQuality = 60;
       
       if (wasLowVolumeSweep) sweepQuality += 15;
@@ -343,7 +284,7 @@ function detectLiquiditySweep(candles1m, direction, keyLevel, atr) {
       
       return {
         isSweep: true,
-        direction: 'BEARISH', // Swept highs, expect downside
+        direction: 'BEARISH',
         sweepType: 'BULL_TRAP',
         level: resistanceLevel,
         sweepHigh: sweepHigh,
@@ -362,7 +303,6 @@ function detectLiquiditySweep(candles1m, direction, keyLevel, atr) {
 
 /**
  * CHECK IF WE SHOULD SKIP SIGNAL DUE TO LIQUIDITY SWEEP
- * Returns true if this looks like a trap
  */
 function isLikelyTrap(candles1m, direction, keyLevel, atr) {
   const sweep = detectLiquiditySweep(candles1m, direction, keyLevel, atr);
@@ -371,11 +311,7 @@ function isLikelyTrap(candles1m, direction, keyLevel, atr) {
     return { isTrap: false };
   }
   
-  // If sweep direction MATCHES our trade direction = good (swept stops, now real move)
-  // If sweep direction OPPOSES our trade direction = bad (we're taking the trap side)
-  
   if (direction === 'LONG' && sweep.direction === 'BULLISH') {
-    // Swept bearish (bear trap), now going bullish = GOOD
     return { 
       isTrap: false, 
       isOpportunity: true,
@@ -385,7 +321,6 @@ function isLikelyTrap(candles1m, direction, keyLevel, atr) {
   }
   
   if (direction === 'SHORT' && sweep.direction === 'BEARISH') {
-    // Swept bullish (bull trap), now going bearish = GOOD
     return { 
       isTrap: false, 
       isOpportunity: true,
@@ -394,7 +329,6 @@ function isLikelyTrap(candles1m, direction, keyLevel, atr) {
     };
   }
   
-  // Opposite direction = potential trap
   if (direction === 'LONG' && sweep.direction === 'BEARISH') {
     return {
       isTrap: true,
@@ -415,11 +349,115 @@ function isLikelyTrap(candles1m, direction, keyLevel, atr) {
 }
 
 // ========================================
+// CUMULATIVE VOLUME DELTA (CVD)
+// ========================================
+
+/**
+ * Calculate CVD - tracks net buying vs selling pressure over time
+ * @param {Array} candles1m - 1-minute candles
+ * @param {number} lookback - How many candles to analyze (default 100)
+ * @returns {Object} CVD data with current value, array, and momentum
+ */
+function calculateCVD(candles1m, lookback = 100) {
+  if (!candles1m || candles1m.length < 10) {
+    return { 
+      valid: false,
+      current: 0,
+      values: [],
+      momentum: 0,
+      isRising: false
+    };
+  }
+  
+  const start = Math.max(0, candles1m.length - lookback);
+  let cvd = 0;
+  const cvdArray = [];
+  
+  // Calculate CVD for each candle
+  for (let i = start + 1; i < candles1m.length; i++) {
+    const current = candles1m[i];
+    const prev = candles1m[i - 1];
+    
+    const close = parseFloat(current.close);
+    const prevClose = parseFloat(prev.close);
+    const volume = parseFloat(current.volume);
+    
+    // If price went up, count as buy volume
+    // If price went down, count as sell volume
+    const delta = close >= prevClose ? volume : -volume;
+    cvd += delta;
+    
+    cvdArray.push({
+      index: i,
+      cvd: cvd,
+      delta: delta,
+      price: close
+    });
+  }
+  
+  if (cvdArray.length < 5) {
+    return {
+      valid: false,
+      current: 0,
+      values: [],
+      momentum: 0,
+      isRising: false
+    };
+  }
+  
+  // Calculate momentum (last 5 bars)
+  const last5 = cvdArray.slice(-5);
+  const momentum = last5.reduce((sum, d) => sum + d.delta, 0);
+  
+  // Check if CVD is rising
+  const cvd5BarsAgo = cvdArray.length >= 5 ? cvdArray[cvdArray.length - 5].cvd : 0;
+  const isRising = cvd > cvd5BarsAgo;
+  
+  return {
+    valid: true,
+    current: cvd,
+    values: cvdArray,
+    momentum: momentum,
+    isRising: isRising,
+    percentChange: cvdArray.length >= 10 ? 
+      ((cvd - cvdArray[cvdArray.length - 10].cvd) / Math.abs(cvdArray[cvdArray.length - 10].cvd || 1)) * 100 : 0
+  };
+}
+
+/**
+ * Get CVD at specific swing points
+ * Used for divergence detection
+ */
+function getCVDAtSwings(cvdData, swingIndices) {
+  if (!cvdData.valid || !swingIndices || swingIndices.length === 0) {
+    return null;
+  }
+  
+  const cvdValues = [];
+  
+  for (const swingIndex of swingIndices) {
+    // Find CVD value at this swing index
+    const cvdAtSwing = cvdData.values.find(d => d.index === swingIndex);
+    if (cvdAtSwing) {
+      cvdValues.push({
+        index: swingIndex,
+        cvd: cvdAtSwing.cvd,
+        delta: cvdAtSwing.delta
+      });
+    }
+  }
+  
+  return cvdValues;
+}
+
+// ========================================
 // EXPORT ALL FUNCTIONS
 // ========================================
 
 module.exports = {
   analyzeBuyingPressure,
   detectLiquiditySweep,
-  isLikelyTrap
+  isLikelyTrap,
+  calculateCVD,
+  getCVDAtSwings
 };

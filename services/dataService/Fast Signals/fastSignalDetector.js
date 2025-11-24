@@ -6,7 +6,7 @@ const { wsCache } = require('../cacheManager');
 const { sendTelegramNotification } = require('../../notificationService');
 const { getAssetConfig } = require('../../../config/assetConfig');
 const config = require('../../../config/fastSignalConfig');
-const { analyzeBuyingPressure, detectLiquiditySweep } = require('./orderFlowFilters');
+const { analyzeBuyingPressure, detectLiquiditySweep, calculateCVD, getCVDAtSwings } = require('./orderFlowFilters');
 const { 
   calculateStopLoss, 
   canSendSignalWithLimits, 
@@ -155,7 +155,18 @@ async function checkFastSignals(symbol, currentPrice) {
       }
     }
 
-    // 2. RSI DIVERGENCE (HIGH PRIORITY)
+    // 2. CVD DIVERGENCE (HIGH PRIORITY - NEW)
+    if (config.signals.cvdDivergence?.enabled) {
+      const cvdDivSignal = detectCVDDivergence(
+        symbol, closes, highs, lows, atr, currentPrice, candles1m
+      );
+      if (cvdDivSignal) {
+        const result = await sendFastAlert(symbol, cvdDivSignal, currentPrice, atr, assetConfig);
+        if (result && result.sent) return result;
+      }
+    }
+
+    // 3. RSI DIVERGENCE (HIGH PRIORITY)
     if (config.signals.rsiDivergence.enabled) {
       const divergenceSignal = detectRSIDivergence(
         symbol, closes, highs, lows, atr, currentPrice, candles1m
@@ -212,15 +223,36 @@ function detectLiquiditySweepReversal(symbol, currentPrice, highs30m, lows30m, c
         sweepCheck.direction === 'BULLISH' && 
         sweepCheck.quality >= config.signals.liquiditySweepReversal.minSweepQuality) {
       
-      // Confirm price is recovering
+      // Confirm price is recovering with STRONG or STEADY reversal
       const last5 = candles1m.slice(-5);
-      const bullishCandles = last5.filter(c => parseFloat(c.close) > parseFloat(c.open)).length;
       
-      if (bullishCandles < 3) return null; // Need strong recovery
+      // Check for STRONG bullish candles (body > 60% of range)
+      const strongBullishCandles = last5.filter(c => {
+        const close = parseFloat(c.close);
+        const open = parseFloat(c.open);
+        const high = parseFloat(c.high);
+        const low = parseFloat(c.low);
+        const body = Math.abs(close - open);
+        const range = high - low;
+        
+        return close > open && range > 0 && (body / range) > 0.6;
+      }).length;
       
-      // Check that we're not too far from the sweep
+      // Check for any bullish candles
+      const normalBullishCandles = last5.filter(c => 
+        parseFloat(c.close) > parseFloat(c.open)
+      ).length;
+      
+      // Accept if: 2+ strong bullish OR 3+ normal bullish
+      if (strongBullishCandles < 2 && normalBullishCandles < 3) {
+        return null; // Weak recovery
+      }
+      
+      // Check distance from sweep with graduated approach
       const distanceFromSweep = (currentPrice - sweepCheck.sweepLow) / atr;
-      if (distanceFromSweep > 1.5) return null; // Too late
+      
+      // Hard reject if move is completely over
+      if (distanceFromSweep > 2.5) return null; // Too late
       
       let confidence = config.signals.liquiditySweepReversal.baseConfidence;
       
@@ -229,9 +261,35 @@ function detectLiquiditySweepReversal(symbol, currentPrice, highs30m, lows30m, c
       confidence += orderFlow.isStrong ? 10 : 5;
       confidence += volumeRatio > 2.0 ? 8 : 4;
       confidence += sweepCheck.quality >= 90 ? 5 : 0;
-      confidence += distanceFromSweep < 0.5 ? 5 : 0; // Very early entry
+      
+      // Bonus for catching early with strong candles
+      if (strongBullishCandles >= 2) confidence += 5;
+      
+      // Graduated confidence adjustment based on distance
+      if (distanceFromSweep > 2.0) {
+        confidence -= 12; // Very late entry
+      } else if (distanceFromSweep > 1.5) {
+        confidence -= 8; // Late entry
+      } else if (distanceFromSweep > 1.0) {
+        confidence -= 4; // Decent entry
+      } else if (distanceFromSweep < 0.5) {
+        confidence += 6; // Very early entry (ideal)
+      }
       
       confidence = Math.min(95, confidence);
+      
+      // Ensure confidence doesn't drop below minimum
+      if (confidence < config.riskManagement.confidenceScaling.minConfidence) {
+        if (config.logging?.logRejections) {
+          console.log(`   ⛔ ${symbol}: Bullish sweep rejected - confidence ${confidence}% too low after distance penalty`);
+        }
+        return null; // Too low confidence after penalties
+      }
+      
+      // Log entry quality for monitoring
+      if (config.logging?.logDetections) {
+        console.log(`   ✅ ${symbol}: Bullish sweep detected - Distance: ${distanceFromSweep.toFixed(2)} ATR | Strong candles: ${strongBullishCandles}/5 | Confidence: ${confidence}%`);
+      }
       
       // Stop loss below the sweep low with buffer
       const bufferATR = config.stopLoss.liquiditySweep.bufferATR || 0.2;
@@ -274,23 +332,73 @@ function detectLiquiditySweepReversal(symbol, currentPrice, highs30m, lows30m, c
         sweepCheck.direction === 'BEARISH' && 
         sweepCheck.quality >= config.signals.liquiditySweepReversal.minSweepQuality) {
       
+      // Confirm price is rejecting with STRONG or STEADY reversal
       const last5 = candles1m.slice(-5);
-      const bearishCandles = last5.filter(c => parseFloat(c.close) < parseFloat(c.open)).length;
       
-      if (bearishCandles < 3) return null;
+      // Check for STRONG bearish candles (body > 60% of range)
+      const strongBearishCandles = last5.filter(c => {
+        const close = parseFloat(c.close);
+        const open = parseFloat(c.open);
+        const high = parseFloat(c.high);
+        const low = parseFloat(c.low);
+        const body = Math.abs(close - open);
+        const range = high - low;
+        
+        return close < open && range > 0 && (body / range) > 0.6;
+      }).length;
       
+      // Check for any bearish candles
+      const normalBearishCandles = last5.filter(c => 
+        parseFloat(c.close) < parseFloat(c.open)
+      ).length;
+      
+      // Accept if: 2+ strong bearish OR 3+ normal bearish
+      if (strongBearishCandles < 2 && normalBearishCandles < 3) {
+        return null; // Weak rejection
+      }
+      
+      // Check distance from sweep with graduated approach
       const distanceFromSweep = (sweepCheck.sweepHigh - currentPrice) / atr;
-      if (distanceFromSweep > 1.5) return null;
+      
+      // Hard reject if move is completely over
+      if (distanceFromSweep > 2.5) return null; // Too late
       
       let confidence = config.signals.liquiditySweepReversal.baseConfidence;
       
+      // Confidence boosts
       confidence += sweepCheck.confidence === 'HIGH' ? 12 : 6;
       confidence += orderFlow.isStrong ? 10 : 5;
       confidence += volumeRatio > 2.0 ? 8 : 4;
       confidence += sweepCheck.quality >= 90 ? 5 : 0;
-      confidence += distanceFromSweep < 0.5 ? 5 : 0;
+      
+      // Bonus for catching early with strong candles
+      if (strongBearishCandles >= 2) confidence += 5;
+      
+      // Graduated confidence adjustment based on distance
+      if (distanceFromSweep > 2.0) {
+        confidence -= 12; // Very late entry
+      } else if (distanceFromSweep > 1.5) {
+        confidence -= 8; // Late entry
+      } else if (distanceFromSweep > 1.0) {
+        confidence -= 4; // Decent entry
+      } else if (distanceFromSweep < 0.5) {
+        confidence += 6; // Very early entry (ideal)
+      }
       
       confidence = Math.min(95, confidence);
+      
+      // Ensure confidence doesn't drop below minimum
+      if (confidence < config.riskManagement.confidenceScaling.minConfidence) {
+        if (config.logging?.logRejections) {
+          console.log(`   ⛔ ${symbol}: Bearish sweep rejected - confidence ${confidence}% too low after distance penalty`);
+        }
+        return null; // Too low confidence after penalties
+      }
+      
+      // Log entry quality for monitoring
+      if (config.logging?.logDetections) {
+        console.log(`   ✅ ${symbol}: Bearish sweep detected - Distance: ${distanceFromSweep.toFixed(2)} ATR | Strong candles: ${strongBearishCandles}/5 | Confidence: ${confidence}%`);
+      }
       
       // Stop loss above the sweep high with buffer
       const bufferATR = config.stopLoss.liquiditySweep.bufferATR || 0.2;
@@ -327,7 +435,333 @@ function detectLiquiditySweepReversal(symbol, currentPrice, highs30m, lows30m, c
 }
 
 // ========================================
-// 2. RSI DIVERGENCE DETECTION
+// 2. CVD DIVERGENCE DETECTION (NEW)
+// ========================================
+
+function detectCVDDivergence(symbol, closes, highs, lows, atr, currentPrice, candles1m) {
+  
+  if (!config.signals.cvdDivergence?.enabled) return null;
+  
+  const cvdConfig = config.signals.cvdDivergence;
+  if (!candles1m || candles1m.length < cvdConfig.minCVDLookback) return null;
+  if (closes.length < cvdConfig.lookbackBars + 20) return null;
+  
+  // Calculate CVD
+  const cvdData = calculateCVD(candles1m, cvdConfig.minCVDLookback);
+  if (!cvdData.valid) return null;
+  
+  const lowSlice = lows.slice(-cvdConfig.lookbackBars);
+  const highSlice = highs.slice(-cvdConfig.lookbackBars);
+  
+  // Get CVD values aligned with price data
+  const cvdSlice = cvdData.values.slice(-cvdConfig.lookbackBars);
+  if (cvdSlice.length < cvdConfig.lookbackBars) return null;
+  
+  // Map CVD to same indices as price
+  const cvdValues = cvdSlice.map(d => d.cvd);
+  
+  // Order flow validation
+  let orderFlow = null;
+  if (cvdConfig.requireOrderFlowConfirmation) {
+    orderFlow = analyzeBuyingPressure(candles1m);
+    if (!orderFlow.valid) return null;
+  }
+  
+  // Volume confirmation
+  if (cvdConfig.requireVolumeConfirmation && candles1m.length >= 20) {
+    const vol1m = candles1m.slice(-20).map(c => parseFloat(c.volume));
+    const volLast5 = vol1m.slice(-5);
+    const volPrev10 = vol1m.slice(-15, -5);
+    const volumeRatio = (volLast5.reduce((a, b) => a + b) / 5) / (volPrev10.reduce((a, b) => a + b) / 10 || 1);
+    
+    if (volumeRatio < cvdConfig.minVolumeRatio) return null;
+  }
+  
+  // === PIVOT DETECTION FUNCTIONS ===
+  
+  function findSwingLows(data, leftBars = 2, rightBars = 2) {
+    const swings = [];
+    
+    for (let i = leftBars; i < data.length - rightBars; i++) {
+      const currentLow = data[i];
+      let isSwingLow = true;
+      
+      for (let j = 1; j <= leftBars; j++) {
+        if (data[i - j] <= currentLow) {
+          isSwingLow = false;
+          break;
+        }
+      }
+      
+      if (!isSwingLow) continue;
+      
+      for (let j = 1; j <= rightBars; j++) {
+        if (data[i + j] <= currentLow) {
+          isSwingLow = false;
+          break;
+        }
+      }
+      
+      if (isSwingLow) {
+        swings.push({ index: i, value: currentLow });
+      }
+    }
+    
+    return swings;
+  }
+  
+  function findSwingHighs(data, leftBars = 2, rightBars = 2) {
+    const swings = [];
+    
+    for (let i = leftBars; i < data.length - rightBars; i++) {
+      const currentHigh = data[i];
+      let isSwingHigh = true;
+      
+      for (let j = 1; j <= leftBars; j++) {
+        if (data[i - j] >= currentHigh) {
+          isSwingHigh = false;
+          break;
+        }
+      }
+      
+      if (!isSwingHigh) continue;
+      
+      for (let j = 1; j <= rightBars; j++) {
+        if (data[i + j] >= currentHigh) {
+          isSwingHigh = false;
+          break;
+        }
+      }
+      
+      if (isSwingHigh) {
+        swings.push({ index: i, value: currentHigh });
+      }
+    }
+    
+    return swings;
+  }
+  
+  // Determine if CVD is in extreme zone (top/bottom 30%)
+  const cvdMax = Math.max(...cvdValues);
+  const cvdMin = Math.min(...cvdValues);
+  const cvdRange = cvdMax - cvdMin;
+  const currentCVD = cvdValues[cvdValues.length - 1];
+  
+  const cvdPercentile = (currentCVD - cvdMin) / (cvdRange || 1);
+  
+  // === BULLISH CVD DIVERGENCE ===
+  // Price lower low, CVD higher low (CVD in bottom 30%)
+  
+  if (cvdPercentile < (1 - cvdConfig.extremeCVDThreshold)) {
+    if (orderFlow && !orderFlow.isBullish) return null;
+    if (orderFlow && orderFlow.score < cvdConfig.minOrderFlowScore) return null;
+    
+    const swingLows = findSwingLows(lowSlice, cvdConfig.pivotLeftBars, cvdConfig.pivotRightBars);
+    
+    if (swingLows.length < 2) return null;
+    
+    const recentSwing = swingLows[swingLows.length - 1];
+    
+    let priorSwing = null;
+    for (let i = swingLows.length - 2; i >= 0; i--) {
+      if (recentSwing.index - swingLows[i].index >= cvdConfig.minPivotGap) {
+        priorSwing = swingLows[i];
+        break;
+      }
+    }
+    
+    if (!priorSwing) return null;
+    
+    // Check price and CVD divergence
+    const priceLowerLow = recentSwing.value < priorSwing.value;
+    const cvdAtRecent = cvdValues[recentSwing.index];
+    const cvdAtPrior = cvdValues[priorSwing.index];
+    
+    // CVD must show higher low
+    const cvdDifference = (cvdAtRecent - cvdAtPrior) / Math.abs(cvdAtPrior || 1);
+    const cvdHigherLow = cvdDifference > cvdConfig.minCVDDifference;
+    
+    // Current CVD confirming (rising)
+    const cvdConfirming = currentCVD > cvdAtRecent * 0.95;
+    const recentEnough = (lowSlice.length - 1 - recentSwing.index) <= 10;
+    
+    if (priceLowerLow && cvdHigherLow && cvdConfirming && recentEnough) {
+      
+      // Optional: Check for RSI confirmation (triple divergence)
+      let rsiBoost = 0;
+      if (cvdConfig.requireRSIConfirmation) {
+        const rsiValues = TI.RSI.calculate({ period: 14, values: closes });
+        if (rsiValues.length >= cvdConfig.lookbackBars) {
+          const rsiSlice = rsiValues.slice(-cvdConfig.lookbackBars);
+          const rsiAtRecent = rsiSlice[recentSwing.index];
+          const rsiAtPrior = rsiSlice[priorSwing.index];
+          
+          if (rsiAtRecent <= rsiAtPrior) {
+            return null; // RSI must also show divergence
+          }
+          rsiBoost = 12; // Triple divergence bonus
+        }
+      }
+      
+      let sl = recentSwing.value - (atr * (config.stopLoss.cvdDivergence.atrMultiplier + config.stopLoss.cvdDivergence.bufferATR));
+      
+      const maxStopDistance = currentPrice * config.stopLoss.cvdDivergence.maxStopPercent;
+      if (currentPrice - sl > maxStopDistance) {
+        sl = currentPrice - maxStopDistance;
+      }
+      
+      let confidence = cvdConfig.baseConfidence;
+      confidence += orderFlow && orderFlow.isStrong ? 12 : 8;
+      confidence += cvdPercentile < 0.2 ? 8 : 5; // Very extreme CVD
+      confidence += rsiBoost;
+      
+      const cvdDivStrength = Math.abs(cvdDifference) * 100;
+      confidence += cvdDivStrength > 20 ? 8 : cvdDivStrength > 10 ? 4 : 0;
+      
+      const barsApart = recentSwing.index - priorSwing.index;
+      if (barsApart >= 5 && barsApart <= 12) confidence += 5;
+      
+      confidence = Math.min(95, confidence);
+      
+      return {
+        type: 'CVD_BULLISH_DIVERGENCE',
+        direction: 'LONG',
+        urgency: 'HIGH',
+        confidence,
+        reason: `📊 BULLISH CVD DIVERGENCE\n` +
+                `Price: Lower low | CVD: Higher low\n` +
+                `CVD Diff: ${cvdDivStrength.toFixed(1)}%\n` +
+                `Swing spacing: ${barsApart} bars\n` +
+                `${orderFlow ? `OF: ${orderFlow.score.toFixed(1)} (${orderFlow.isStrong ? 'STRONG' : 'NORMAL'})` : ''}`,
+        entry: currentPrice,
+        sl: sl,
+        orderFlow: orderFlow && orderFlow.valid ? { 
+          score: orderFlow.score, 
+          strength: orderFlow.isStrong ? 'STRONG' : 'NORMAL' 
+        } : null,
+        cvdData: {
+          current: currentCVD,
+          recentSwing: cvdAtRecent,
+          priorSwing: cvdAtPrior,
+          difference: cvdDivStrength,
+          percentile: cvdPercentile
+        },
+        divergenceDetails: {
+          recentLow: recentSwing.value,
+          priorLow: priorSwing.value,
+          barsApart
+        }
+      };
+    }
+  }
+  
+  // === BEARISH CVD DIVERGENCE ===
+  // Price higher high, CVD lower high (CVD in top 30%)
+  
+  if (cvdPercentile > cvdConfig.extremeCVDThreshold) {
+    if (orderFlow && !orderFlow.isBearish) return null;
+    if (orderFlow && Math.abs(orderFlow.score) < cvdConfig.minOrderFlowScore) return null;
+    
+    const swingHighs = findSwingHighs(highSlice, cvdConfig.pivotLeftBars, cvdConfig.pivotRightBars);
+    
+    if (swingHighs.length < 2) return null;
+    
+    const recentSwing = swingHighs[swingHighs.length - 1];
+    
+    let priorSwing = null;
+    for (let i = swingHighs.length - 2; i >= 0; i--) {
+      if (recentSwing.index - swingHighs[i].index >= cvdConfig.minPivotGap) {
+        priorSwing = swingHighs[i];
+        break;
+      }
+    }
+    
+    if (!priorSwing) return null;
+    
+    const priceHigherHigh = recentSwing.value > priorSwing.value;
+    const cvdAtRecent = cvdValues[recentSwing.index];
+    const cvdAtPrior = cvdValues[priorSwing.index];
+    
+    const cvdDifference = (cvdAtPrior - cvdAtRecent) / Math.abs(cvdAtPrior || 1);
+    const cvdLowerHigh = cvdDifference > cvdConfig.minCVDDifference;
+    
+    const cvdConfirming = currentCVD < cvdAtRecent * 1.05;
+    const recentEnough = (highSlice.length - 1 - recentSwing.index) <= 10;
+    
+    if (priceHigherHigh && cvdLowerHigh && cvdConfirming && recentEnough) {
+      
+      let rsiBoost = 0;
+      if (cvdConfig.requireRSIConfirmation) {
+        const rsiValues = TI.RSI.calculate({ period: 14, values: closes });
+        if (rsiValues.length >= cvdConfig.lookbackBars) {
+          const rsiSlice = rsiValues.slice(-cvdConfig.lookbackBars);
+          const rsiAtRecent = rsiSlice[recentSwing.index];
+          const rsiAtPrior = rsiSlice[priorSwing.index];
+          
+          if (rsiAtRecent >= rsiAtPrior) {
+            return null;
+          }
+          rsiBoost = 12;
+        }
+      }
+      
+      let sl = recentSwing.value + (atr * (config.stopLoss.cvdDivergence.atrMultiplier + config.stopLoss.cvdDivergence.bufferATR));
+      
+      const maxStopDistance = currentPrice * config.stopLoss.cvdDivergence.maxStopPercent;
+      if (sl - currentPrice > maxStopDistance) {
+        sl = currentPrice + maxStopDistance;
+      }
+      
+      let confidence = cvdConfig.baseConfidence;
+      confidence += orderFlow && orderFlow.isStrong ? 12 : 8;
+      confidence += cvdPercentile > 0.8 ? 8 : 5;
+      confidence += rsiBoost;
+      
+      const cvdDivStrength = Math.abs(cvdDifference) * 100;
+      confidence += cvdDivStrength > 20 ? 8 : cvdDivStrength > 10 ? 4 : 0;
+      
+      const barsApart = recentSwing.index - priorSwing.index;
+      if (barsApart >= 5 && barsApart <= 12) confidence += 5;
+      
+      confidence = Math.min(95, confidence);
+      
+      return {
+        type: 'CVD_BEARISH_DIVERGENCE',
+        direction: 'SHORT',
+        urgency: 'HIGH',
+        confidence,
+        reason: `📊 BEARISH CVD DIVERGENCE\n` +
+                `Price: Higher high | CVD: Lower high\n` +
+                `CVD Diff: ${cvdDivStrength.toFixed(1)}%\n` +
+                `Swing spacing: ${barsApart} bars\n` +
+                `${orderFlow ? `OF: ${orderFlow.score.toFixed(1)} (${orderFlow.isStrong ? 'STRONG' : 'NORMAL'})` : ''}`,
+        entry: currentPrice,
+        sl: sl,
+        orderFlow: orderFlow && orderFlow.valid ? { 
+          score: orderFlow.score, 
+          strength: orderFlow.isStrong ? 'STRONG' : 'NORMAL' 
+        } : null,
+        cvdData: {
+          current: currentCVD,
+          recentSwing: cvdAtRecent,
+          priorSwing: cvdAtPrior,
+          difference: cvdDivStrength,
+          percentile: cvdPercentile
+        },
+        divergenceDetails: {
+          recentHigh: recentSwing.value,
+          priorHigh: priorSwing.value,
+          barsApart
+        }
+      };
+    }
+  }
+  
+  return null;
+}
+
+// ========================================
+// 3. RSI DIVERGENCE DETECTION
 // ========================================
 
 function detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice, candles1m) {

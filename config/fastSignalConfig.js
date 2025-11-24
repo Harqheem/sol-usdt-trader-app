@@ -24,6 +24,10 @@ module.exports = {
       minOrderFlowScore: 50,        // Min order flow score (50 = strong pressure)
       minVolumeRatio: 1.6,          // Min volume spike on reversal
       
+      // CVD confirmation
+      requireCVDConfirmation: true, // Require CVD rising during reversal
+      minCVDMomentum: 0,            // CVD momentum must be positive
+      
       // Position sizing
       baseConfidence: 85,           // Base confidence for sweeps
       urgency: 'CRITICAL'
@@ -59,8 +63,44 @@ module.exports = {
       requireLiquiditySweep: false, // Set to true for stricter filtering
       minOrderFlowScore: 40,        // Min order flow score (40 = decent pressure)
       
+      // CVD confirmation
+      requireCVDConfirmation: true, // Require CVD also shows higher/lower low
+      
       // Position sizing
       confidence: 85,               // Base confidence
+      urgency: 'HIGH'
+    },
+    
+    // ========================================
+    // 3. CVD DIVERGENCE (NEW - TERTIARY)
+    // ========================================
+    cvdDivergence: {
+      enabled: true,                // Enable CVD divergence detection
+      
+      // CVD parameters
+      lookbackBars: 20,             // Bars to look back for divergence
+      minCVDLookback: 50,           // Min candles needed for CVD calculation
+      
+      // Divergence detection thresholds
+      extremeCVDThreshold: 0.7,     // CVD percentile threshold (top/bottom 30%)
+      minCVDDifference: 0.1,        // Min 10% CVD difference between pivots
+      
+      // Pivot detection (same as RSI)
+      pivotLeftBars: 2,             // Bars that must be higher/lower on left
+      pivotRightBars: 2,            // Bars that must be higher/lower on right
+      minPivotGap: 3,               // Min bars between swing pivots
+      
+      // Confirmation requirements
+      requireOrderFlowConfirmation: true,  // Need order flow to agree
+      minOrderFlowScore: 45,        // Min order flow score
+      requireVolumeConfirmation: true,     // Need volume surge
+      minVolumeRatio: 1.5,          // Min 1.5x volume on divergence
+      
+      // Optional: Require RSI also shows divergence (triple confluence)
+      requireRSIConfirmation: false, // Set to true for stricter filtering
+      
+      // Position sizing
+      baseConfidence: 83,           // Base confidence (slightly lower than RSI)
       urgency: 'HIGH'
     }
   },
@@ -80,6 +120,12 @@ module.exports = {
       maxStopPercent: 0.020,        // Max 2.0% stop for divergences (was 1.2%)
       useSwingPoint: true,          // Use swing high/low
       bufferATR: 0.3                // Additional buffer below swing
+    },
+    cvdDivergence: {
+      atrMultiplier: 1.0,           // Stop below/above swing point (same as RSI)
+      maxStopPercent: 0.020,        // Max 2.0% stop
+      useSwingPoint: true,          // Use swing high/low that created divergence
+      bufferATR: 0.3                // Additional buffer
     }
   },
   
