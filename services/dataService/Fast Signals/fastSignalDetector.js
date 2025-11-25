@@ -1111,8 +1111,7 @@ Entry: ${actualEntry.toFixed(decimals)}
 TP1: ${tp1.toFixed(decimals)}
 TP2: ${tp2.toFixed(decimals)}
 SL: ${finalSL.toFixed(decimals)}
-
-${signal.reason}`;
+`;
 
   const message2 = `${symbol} - FAST SIGNAL DETAILS
 
@@ -1122,7 +1121,7 @@ Type: ${signal.type}
 
 ⚡ MARKET ORDER - EXECUTE NOW
 Entry: ${actualEntry.toFixed(decimals)}
-
+Reason: ${signal.reason}
 Position: ${positionSize}% (scaled by confidence)
 Risk: ${(slResult.percent * 100).toFixed(2)}%
 R:R → TP1: 1:${rrTP1} | TP2: 1:${rrTP2}

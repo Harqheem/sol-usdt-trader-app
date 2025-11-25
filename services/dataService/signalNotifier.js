@@ -1,15 +1,13 @@
-// HANDLES SIGNAL NOTIFICATIONS AND TRACKING
+// services/dataService/signalNotifier.js - UPDATED WITH RISK MANAGER
+
 const { sendTelegramNotification } = require('../notificationService');
 const { logSignal } = require('../logsService');
-const { isPaused: getTradingPaused } = require('../pauseService');
+const { canTakeNewTrade, recordNewTrade } = require('../riskManager');
 const { wsCache } = require('./cacheManager');
 
 // Tracking state
 const previousSignal = {};
 const lastNotificationTime = {};
-const sendCounts = {};
-const lastSignalTime = {};
-const pausedQueue = [];
 
 /**
  * Check if this candle-close signal duplicates a recent fast signal
@@ -34,7 +32,7 @@ function isDuplicateFastSignal(symbol, signals) {
         const entryDiff = Math.abs(currentEntry - fastSignal.entry) / fastSignal.entry;
         
         if (entryDiff < 0.01) {
-          console.log(`⏭️ ${symbol}: Skipping candle-close signal - fast signal already sent ${(timeSinceFast / 60000).toFixed(1)}m ago`);
+          console.log(`⭐️ ${symbol}: Skipping candle-close signal - fast signal already sent ${(timeSinceFast / 60000).toFixed(1)}m ago`);
           return true;
         }
       }
@@ -45,7 +43,7 @@ function isDuplicateFastSignal(symbol, signals) {
 }
 
 /**
- * Check and send signal notification
+ * Check and send signal notification - WITH RISK MANAGER INTEGRATION
  */
 async function checkAndSendSignal(symbol, analysis) {
   const { signals, regime, earlySignals, assetInfo } = analysis;
@@ -67,30 +65,35 @@ async function checkAndSendSignal(symbol, analysis) {
 
   const now = Date.now();
   
-  // Reset send counts after 18 hours
-  if (lastSignalTime[symbol] && now - lastSignalTime[symbol] > 18 * 3600 * 1000) {
-    console.log(`   🔄 ${symbol}: Resetting send count (18h elapsed)`);
-    sendCounts[symbol] = 0;
-    const queueIndex = pausedQueue.indexOf(symbol);
-    if (queueIndex > -1) pausedQueue.splice(queueIndex, 1);
+  // ============================================
+  // RISK MANAGER CHECK
+  // ============================================
+  const riskCheck = canTakeNewTrade(symbol);
+  
+  if (!riskCheck.allowed) {
+    console.log(`\n🚫 ${symbol}: BLOCKED by risk manager`);
+    riskCheck.checks.failed.forEach(msg => console.log(`   ❌ ${msg}`));
+    return;  // Don't send notification if risk limits prevent trading
   }
+  
+  console.log(`\n✅ ${symbol}: Risk checks passed`);
+  riskCheck.checks.passed.forEach(msg => console.log(`   ✅ ${msg}`));
 
-  // Log current state
+  // ============================================
+  // NOTIFICATION CHECKS
+  // ============================================
+  
   console.log(`   Previous signal: ${previousSignal[symbol] || 'none'}`);
   console.log(`   Current signal: ${signals.signal}`);
   console.log(`   Signal changed: ${signals.signal !== previousSignal[symbol]}`);
   
   const timeSinceLastNotif = lastNotificationTime[symbol] ? now - lastNotificationTime[symbol] : Infinity;
   console.log(`   Time since last notification: ${timeSinceLastNotif === Infinity ? 'never' : (timeSinceLastNotif / 1000).toFixed(0) + 's'}`);
-  console.log(`   Send count: ${sendCounts[symbol] || 0}/6`);
-  console.log(`   Trading paused: ${getTradingPaused()}`);
 
   // Check if should send notification
   const shouldSend = signals.signal.startsWith('Enter') && 
       signals.signal !== previousSignal[symbol] &&
-      (!lastNotificationTime[symbol] || timeSinceLastNotif > 300000) &&
-      (sendCounts[symbol] || 0) < 6 && 
-      !getTradingPaused();
+      (!lastNotificationTime[symbol] || timeSinceLastNotif > 300000);  // 5 min cooldown
 
   console.log(`   Should send: ${shouldSend}`);
 
@@ -107,34 +110,30 @@ async function checkAndSendSignal(symbol, analysis) {
       console.log(`   TP1: ${signals.tp1} (${rrTP1}R), TP2: ${signals.tp2} (${rrTP2}R)`);
 
       // Build notification messages
-      const earlySignalInfo = earlySignals.recommendation !== 'neutral' ? `
-📡 EARLY SIGNAL: ${earlySignals.recommendation.toUpperCase().replace(/_/g, ' ')}
-   Confidence: ${earlySignals.confidence}/100
-   Key Factors:
-${earlySignals.recommendation.includes('bullish') 
-  ? earlySignals.bullishFactors.map(s => `   • ${s.reason}${s.urgency === 'high' ? ' ⚡' : ''}`).join('\n')
-  : earlySignals.bearishFactors.map(s => `   • ${s.reason}${s.urgency === 'high' ? ' ⚡' : ''}`).join('\n')
-}
+      const earlySignalInfo = earlySignals.pass ? `
+🔍 EARLY SIGNALS: ${earlySignals.signalType.toUpperCase()}
+${earlySignals.reasons.slice(0, 3).map(r => `   • ${r}`).join('\n')}
 ` : '';
 
       const regimeInfo = `
-🎯 MARKET REGIME: ${regime.regime.toUpperCase().replace(/_/g, ' ')}
-   Confidence: ${regime.confidence}%
-   Risk Level: ${regime.riskLevel.level} (${regime.riskLevel.score}/100)
+🎯 MARKET REGIME: ${regime.regime.replace(/_/g, ' ').toUpperCase()}
    ${regime.description}
-${regime.recommendations.warnings.length > 0 ? '\n⚠️ WARNINGS:\n' + regime.recommendations.warnings.join('\n') : ''}
+   Confidence: ${regime.confidence}%
+${regime.tradingAdvice ? '\n' + regime.tradingAdvice.slice(0, 3).map(a => `   • ${a}`).join('\n') : ''}
 
-📊 ASSET TYPE: ${assetInfo.name} (${assetInfo.category})
+📊 ASSET: ${assetInfo.name} (${assetInfo.category})
 `;
 
-      const firstMessage = `${symbol}\n${signals.signal}\nLEVERAGE: 20x\nEntry: ${signals.entry}\nTP1: ${signals.tp1}\nTP2: ${signals.tp2}\nSL: ${signals.sl}`;
+      const firstMessage = `${symbol}\n${signals.signal}\nLEVERAGE: 20x\nEntry: ${signals.entry}\nTP1: ${signals.tp1} (${rrTP1}R)\nTP2: ${signals.tp2} (${rrTP2}R)\nSL: ${signals.sl}`;
       
       const secondMessage = `
 ${symbol} - DETAILED ANALYSIS
 ${earlySignalInfo}${regimeInfo}
-SIGNAL STRENGTH: ${signals.notes.split('\n')[0]}
-
 ${signals.notes}
+
+📊 RISK SUMMARY:
+${riskCheck.checks.passed.map(p => `✅ ${p}`).join('\n')}
+${riskCheck.checks.warnings.length > 0 ? '\n⚠️  WARNINGS:\n' + riskCheck.checks.warnings.map(w => `   • ${w}`).join('\n') : ''}
 `;
 
       console.log(`\n📤 Sending to Telegram...`);
@@ -144,15 +143,19 @@ ${signals.notes}
       await sendTelegramNotification(firstMessage, secondMessage, symbol);
       console.log(`✅ ${symbol}: Telegram notification sent successfully`);
 
+      // ============================================
+      // RECORD TRADE IN RISK MANAGER
+      // ============================================
+      recordNewTrade(symbol);
+      console.log(`📊 ${symbol}: Trade recorded in risk manager`);
+
       // Update tracking
       previousSignal[symbol] = signals.signal;
       lastNotificationTime[symbol] = now;
-      lastSignalTime[symbol] = now;
-      sendCounts[symbol] = (sendCounts[symbol] || 0) + 1;
 
-      console.log(`   Updated send count: ${sendCounts[symbol]}/6`);
-
-      // Log to database
+      // ============================================
+      // LOG TO DATABASE
+      // ============================================
       console.log(`   💾 Logging to database...`);
       await logSignal(symbol, {
         signal: signals.signal,
@@ -162,25 +165,15 @@ ${signals.notes}
         tp2: parseFloat(signals.tp2),
         sl: parseFloat(signals.sl),
         positionSize: parseFloat(signals.positionSize)
-      });
+      }, 'pending', null, 'default');  // Status: pending, source: default
       console.log(`   ✅ Signal logged to database`);
 
-      // Queue management
-      if (sendCounts[symbol] === 6) {
-        if (pausedQueue.length > 0) {
-          let resetSym = pausedQueue.shift();
-          sendCounts[resetSym] = 0;
-          console.log(`   🔄 ${resetSym}: Reset by ${symbol}`);
-        }
-        pausedQueue.push(symbol);
-        console.log(`   ⏸️ ${symbol}: Reached limit, queued`);
-      }
     } catch (err) {
       console.error(`\n❌ ${symbol}: Notification failed:`, err.message);
       console.error(`   Stack trace:`, err.stack);
     }
   } else {
-    console.log(`   ⏭️ Skipping notification (conditions not met)`);
+    console.log(`   ⭐️ Skipping notification (conditions not met)`);
   }
 }
 
@@ -188,8 +181,5 @@ module.exports = {
   checkAndSendSignal,
   isDuplicateFastSignal,
   previousSignal,
-  lastNotificationTime,
-  sendCounts,
-  lastSignalTime,
-  pausedQueue
+  lastNotificationTime
 };

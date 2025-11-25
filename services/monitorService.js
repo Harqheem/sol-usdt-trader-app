@@ -1,10 +1,15 @@
-// services/monitorService.js - COMPLETE REWRITE WITH FAST-ONLY LIMITS
+// services/monitorService.js - SAFE UPDATE THAT PRESERVES FAST SIGNALS
 
 const Binance = require('binance-api-node').default;
 const { supabase } = require('./logsService');
 const { sendTelegramNotification } = require('./notificationService');
 const { symbols } = require('../config');
+
+// KEEP FAST SIGNALS IMPORT (don't remove!)
 const { handleTradeClose } = require('./dataService/Fast Signals/positionTracker');
+
+// ADD DEFAULT SYSTEM RISK MANAGER (new!)
+const { recordTradeClose: recordDefaultTradeClose } = require('./riskManager');
 
 const client = Binance();
 
@@ -22,7 +27,7 @@ let openTradesCache = [];
 const recentlyTransitioned = new Set();
 
 // ========================================
-// PNL CALCULATION
+// PNL CALCULATION (unchanged)
 // ========================================
 
 function calculatePnL(entryPrice, exitPrice, isBuy, positionSize, leverage, fraction = 1.0) {
@@ -48,7 +53,7 @@ function calculatePnL(entryPrice, exitPrice, isBuy, positionSize, leverage, frac
 }
 
 // ========================================
-// TRADE REFRESH & SUBSCRIPTIONS
+// TRADE REFRESH & SUBSCRIPTIONS (unchanged)
 // ========================================
 
 async function refreshOpenTrades() {
@@ -103,7 +108,7 @@ function subscribeToSymbol(symbol) {
 }
 
 // ========================================
-// MAIN PRICE UPDATE PROCESSOR
+// MAIN PRICE UPDATE PROCESSOR (unchanged)
 // ========================================
 
 async function processPriceUpdate(trade, currentPrice) {
@@ -117,19 +122,15 @@ async function processPriceUpdate(trade, currentPrice) {
     const currentSl = trade.updated_sl || trade.sl;
     const isFastSignal = trade.signal_source === 'fast';
 
-    // ========================================
     // PENDING TRADES
-    // ========================================
     if (trade.status === 'pending') {
       const timeSincePlaced = Date.now() - new Date(trade.timestamp).getTime();
       
-      // Check expiry
       if (timeSincePlaced > PENDING_EXPIRY) {
         await handleExpiredTrade(trade, timeSincePlaced, isBuy, isFastSignal);
         return;
       }
       
-      // Check entry hit
       const entryTolerance = isFastSignal ? 0.003 : 0.0005;
       const entryHit = isBuy 
         ? currentPrice <= trade.entry * (1 + entryTolerance)
@@ -141,9 +142,7 @@ async function processPriceUpdate(trade, currentPrice) {
       return;
     }
 
-    // ========================================
     // OPENED TRADES
-    // ========================================
     if (trade.status === 'opened') {
       let updates = {};
 
@@ -205,7 +204,7 @@ async function processPriceUpdate(trade, currentPrice) {
 }
 
 // ========================================
-// TRADE EVENT HANDLERS
+// TRADE EVENT HANDLERS - UPDATED FOR DUAL SYSTEM
 // ========================================
 
 async function handleExpiredTrade(trade, timeSincePlaced, isBuy, isFastSignal) {
@@ -223,17 +222,19 @@ async function handleExpiredTrade(trade, timeSincePlaced, isBuy, isFastSignal) {
   
   console.log(`⏰ Trade expired: ${trade.symbol} [${signalTag}] (pending for ${hours} hours)`);
   
-  // Notify position tracker (won't pause for expired - no loss)
-  await handleTradeClose({
-    symbol: trade.symbol,
-    pnl: 0,
-    closeReason: 'EXPIRED',
-    direction: isBuy ? 'LONG' : 'SHORT',
-    tradeId: trade.id,
-    signalSource: trade.signal_source
-  });
+  // ⭐ FAST SIGNALS: Call their handler (keeps pause logic working)
+  if (isFastSignal) {
+    await handleTradeClose({
+      symbol: trade.symbol,
+      pnl: 0,
+      closeReason: 'EXPIRED',
+      direction: isBuy ? 'LONG' : 'SHORT',
+      tradeId: trade.id,
+      signalSource: trade.signal_source
+    });
+  }
+  // ⭐ DEFAULT SIGNALS: No action needed (expired = no P&L impact)
   
-  // Send Telegram notification
   const openTimeFormatted = new Date(trade.timestamp).toLocaleString();
   
   await sendTelegramNotification(
@@ -263,7 +264,7 @@ async function handleEntryHit(trade, currentPrice, isBuy, isFastSignal) {
   
   setTimeout(() => {
     recentlyTransitioned.delete(trade.id);
-    console.log(`🔓 ${trade.symbol}: Trade cooldown ended, now monitoring for exits`);
+    console.log(`🔔 ${trade.symbol}: Trade cooldown ended, now monitoring for exits`);
   }, 3000);
 }
 
@@ -295,15 +296,21 @@ async function handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, 
   const signalTag = isFastSignal ? '⚡FAST' : '📊DEFAULT';
   console.log(`✅ Closed remaining at TP2 for ${trade.symbol} [${signalTag}] at ${currentPrice.toFixed(4)} (PnL: ${totalNetPnlPct.toFixed(2)}%)`);
   
-  // Notify position tracker (only FAST signals are tracked)
-  await handleTradeClose({
-    symbol: trade.symbol,
-    pnl: totalCustomPnl,
-    closeReason: 'TP2',
-    direction: isBuy ? 'LONG' : 'SHORT',
-    tradeId: trade.id,
-    signalSource: trade.signal_source
-  });
+  // ⭐ ROUTE TO CORRECT SYSTEM
+  if (isFastSignal) {
+    // FAST SIGNALS: Use their handler (triggers pause logic)
+    await handleTradeClose({
+      symbol: trade.symbol,
+      pnl: totalCustomPnl,
+      closeReason: 'TP2',
+      direction: isBuy ? 'LONG' : 'SHORT',
+      tradeId: trade.id,
+      signalSource: trade.signal_source
+    });
+  } else {
+    // DEFAULT SIGNALS: Use new risk manager
+    recordDefaultTradeClose(trade.symbol, totalCustomPnl);
+  }
   
   return { 
     status: 'closed', 
@@ -325,15 +332,21 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
     
     console.log(`❌ Closed full at SL for ${trade.symbol} [${signalTag}] at ${exitPrice.toFixed(4)} (Loss: ${fullLoss.netPnlPct.toFixed(2)}%)`);
     
-    // Notify position tracker - will trigger pause ONLY for FAST signals
-    await handleTradeClose({
-      symbol: trade.symbol,
-      pnl: fullLoss.customPnl,
-      closeReason: 'SL',
-      direction: isBuy ? 'LONG' : 'SHORT',
-      tradeId: trade.id,
-      signalSource: trade.signal_source
-    });
+    // ⭐ ROUTE TO CORRECT SYSTEM
+    if (isFastSignal) {
+      // FAST SIGNALS: Use their handler (triggers pause on FAST signals)
+      await handleTradeClose({
+        symbol: trade.symbol,
+        pnl: fullLoss.customPnl,
+        closeReason: 'SL',
+        direction: isBuy ? 'LONG' : 'SHORT',
+        tradeId: trade.id,
+        signalSource: trade.signal_source
+      });
+    } else {
+      // DEFAULT SIGNALS: Use new risk manager
+      recordDefaultTradeClose(trade.symbol, fullLoss.customPnl);
+    }
     
     return { 
       status: 'closed', 
@@ -355,15 +368,21 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
     const isWin = totalCustomPnl >= 0;
     console.log(`${isWin ? '✅' : '❌'} Closed remaining at BE SL for ${trade.symbol} [${signalTag}] at ${exitPrice.toFixed(4)} (PnL: ${totalNetPnlPct.toFixed(2)}%)`);
     
-    // Notify position tracker
-    await handleTradeClose({
-      symbol: trade.symbol,
-      pnl: totalCustomPnl,
-      closeReason: 'BE_SL',
-      direction: isBuy ? 'LONG' : 'SHORT',
-      tradeId: trade.id,
-      signalSource: trade.signal_source
-    });
+    // ⭐ ROUTE TO CORRECT SYSTEM
+    if (isFastSignal) {
+      // FAST SIGNALS: Use their handler
+      await handleTradeClose({
+        symbol: trade.symbol,
+        pnl: totalCustomPnl,
+        closeReason: 'BE_SL',
+        direction: isBuy ? 'LONG' : 'SHORT',
+        tradeId: trade.id,
+        signalSource: trade.signal_source
+      });
+    } else {
+      // DEFAULT SIGNALS: Use new risk manager
+      recordDefaultTradeClose(trade.symbol, totalCustomPnl);
+    }
     
     return { 
       status: 'closed', 
@@ -378,7 +397,7 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
 }
 
 // ========================================
-// DATABASE UPDATE
+// DATABASE UPDATE (unchanged)
 // ========================================
 
 async function updateTrade(id, updates) {
@@ -391,7 +410,7 @@ async function updateTrade(id, updates) {
 }
 
 // ========================================
-// INITIALIZATION
+// INITIALIZATION (unchanged)
 // ========================================
 
 // Refresh every 5 minutes

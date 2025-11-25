@@ -1,4 +1,4 @@
-// server.js - UPDATED FOR WEBSOCKET SERVICE
+// server.js - SAFE UPDATE FOR DUAL SYSTEM
 
 require('dotenv').config();
 const express = require('express');
@@ -6,7 +6,12 @@ const routes = require('./routes');
 const { initDataService, cleanup, getServiceStatus, forceRefresh } = require('./services/dataService');
 const config = require('./config');
 const pauseService = require('./services/pauseService');
+
+// ⭐ KEEP FAST SIGNALS IMPORT (don't remove!)
 const { initializeRiskManagement } = require('./services/dataService/Fast Signals/positionTracker');
+
+// ⭐ ADD DEFAULT SYSTEM RISK MANAGER (new!)
+const { initializeRiskManager, getRiskStatus } = require('./services/riskManager');
 
 require('./services/monitorService'); // Start trade monitoring
 
@@ -30,7 +35,6 @@ async function gracefulShutdown() {
   isShuttingDown = true;
   console.log('\n🛑 Shutting down gracefully...');
   
-  // Cleanup WebSocket connections
   cleanup();
   
   if (server) {
@@ -67,6 +71,17 @@ app.get('/service-status', (req, res) => {
     res.json(status);
   } catch (err) {
     console.error('❌ Service status error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ⭐ NEW: Risk status endpoint (DEFAULT SYSTEM ONLY)
+app.get('/risk-status', (req, res) => {
+  try {
+    const status = getRiskStatus();
+    res.json(status);
+  } catch (err) {
+    console.error('❌ Risk status error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -138,7 +153,6 @@ app.post('/terminate-trade/:id', async (req, res) => {
     const tradeId = req.params.id;
     const { supabase } = require('./services/logsService');
     
-    // Get the trade first
     const { data: trade, error: fetchError } = await supabase
       .from('signals')
       .select('*')
@@ -148,7 +162,6 @@ app.post('/terminate-trade/:id', async (req, res) => {
     if (fetchError) throw fetchError;
     if (!trade) throw new Error('Trade not found');
     
-    // ONLY allow terminating PENDING trades
     if (trade.status !== 'pending') {
       return res.status(400).json({ 
         success: false, 
@@ -156,7 +169,6 @@ app.post('/terminate-trade/:id', async (req, res) => {
       });
     }
     
-    // Update to terminated status
     const { error: updateError } = await supabase
       .from('signals')
       .update({
@@ -192,7 +204,6 @@ app.post('/terminate-trades-bulk', async (req, res) => {
     
     const { supabase } = require('./services/logsService');
     
-    // Get all trades first to check status
     const { data: trades, error: fetchError } = await supabase
       .from('signals')
       .select('*')
@@ -200,7 +211,6 @@ app.post('/terminate-trades-bulk', async (req, res) => {
     
     if (fetchError) throw fetchError;
     
-    // Filter to only pending trades
     const pendingTrades = trades.filter(t => t.status === 'pending');
     const pendingIds = pendingTrades.map(t => t.id);
     
@@ -211,7 +221,6 @@ app.post('/terminate-trades-bulk', async (req, res) => {
       });
     }
     
-    // Terminate only pending trades
     const { error: updateError } = await supabase
       .from('signals')
       .update({
@@ -273,49 +282,83 @@ app.post('/force-refresh/:symbol', async (req, res) => {
   }
 });
 
-// Start the server
+// ========================================
+// START THE SERVER
+// ========================================
+
 (async () => {
   try {
     console.log('🚀 Starting Crypto Trading Bot...');
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     
     // Initialize WebSocket data service
     console.log('\n📡 Initializing WebSocket data service...');
     await initDataService();
     
-    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     
-    const riskInit = await initializeRiskManagement();
-  
-  if (!riskInit.success) {
-    console.error('⚠️ Risk management initialization had issues');
-    console.error('   Bot will continue but position tracking may be inaccurate');
-  }
+    // ⭐ FAST SIGNALS: Initialize their risk management (KEEP THIS!)
+    console.log('\n⚡ Initializing Fast Signals risk management...');
+    const fastRiskInit = await initializeRiskManagement();
+    
+    if (!fastRiskInit.success) {
+      console.error('⚠️  Fast Signals risk management initialization had issues');
+      console.error('   Fast signals will continue but position tracking may be inaccurate');
+    } else {
+      console.log('✅ Fast Signals risk management initialized');
+    }
+    
+    // ⭐ DEFAULT SYSTEM: Initialize our new risk manager (NEW!)
+    console.log('\n🛡️  Initializing Default System risk manager...');
+    const defaultRiskInit = await initializeRiskManager();
+    
+    if (!defaultRiskInit.success) {
+      console.error('⚠️  Default System risk manager initialization had issues:', defaultRiskInit.error);
+      console.error('   Default signals will continue but risk limits may not work properly');
+    } else {
+      console.log('✅ Default System risk manager initialized');
+      
+      // Show current risk status for default system
+      const riskStatus = getRiskStatus();
+      console.log('\n📊 DEFAULT SYSTEM RISK STATUS:');
+      console.log(`   Daily trades: ${riskStatus.daily.trades}/${riskStatus.daily.maxTrades}`);
+      console.log(`   Daily P&L: $${riskStatus.daily.pnl.toFixed(2)}`);
+      console.log(`   Consecutive losses: ${riskStatus.daily.consecutiveLosses}/${riskStatus.daily.maxConsecutiveLosses}`);
+      console.log(`   Trading paused: ${riskStatus.pause.isPaused ? 'YES' : 'NO'}`);
+    }
+    
+    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    
     const port = process.env.PORT || 3000;
     server = app.listen(port, () => {
       console.log('\n✅ SERVER RUNNING');
-      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
       console.log(`🌐 Server URL: http://localhost:${port}`);
       console.log(`📊 Monitoring: ${symbols.length} symbols`);
-      console.log(`🔌 Data Source: WebSocket (real-time)`);
-      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-      console.log('\n📍 ENDPOINTS:');
+      console.log(`📌 Data Source: WebSocket (real-time)`);
+      console.log(`⚡ Fast Signals: ACTIVE`);
+      console.log(`🛡️  Default Signals: ACTIVE (with risk management)`);
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      console.log('\n🔍 ENDPOINTS:');
       console.log(`   Health: http://localhost:${port}/health`);
       console.log(`   Status: http://localhost:${port}/service-status`);
       console.log(`   Trading: http://localhost:${port}/trading-status`);
+      console.log(`   Risk Status (Default): http://localhost:${port}/risk-status`);
       console.log(`   Toggle: POST http://localhost:${port}/toggle-trading`);
       console.log(`   Refresh: POST http://localhost:${port}/force-refresh/:symbol`);
-      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
       
       console.log('✨ Bot is now monitoring markets in real-time');
+      console.log('⚡ Fast Signals: No limits (original behavior)');
+      console.log('🛡️  Default Signals: Risk limits enforced');
       console.log('⏰ Signals will be analyzed when 30m candles close\n');
     });
   } catch (error) {
-    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.error('❌ FAILED TO START SERVER');
-    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.error(error);
-    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
     process.exit(1);
   }
 })();
