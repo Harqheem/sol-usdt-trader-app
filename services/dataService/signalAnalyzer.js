@@ -1,4 +1,4 @@
-// services/dataService/signalAnalyzer.js - SIMPLIFIED VERSION
+// services/dataService/signalAnalyzer.js - REDUCED CONSOLE SPAM
 
 const utils = require('../../utils');
 const { getAssetConfig } = require('../../config/assetConfig');
@@ -11,16 +11,7 @@ const { calculateSimplifiedEntry } = require('./simplifiedEntryCalculator');
 const { canTakeNewTrade } = require('../riskManager');
 
 /**
- * SIMPLIFIED SIGNAL ANALYSIS
- * 
- * Flow:
- * 1. Check risk limits (can we trade this symbol?)
- * 2. Calculate indicators
- * 3. Detect regime (trending bull/bear/choppy)
- * 4. Run early signal filter (pass/fail)
- * 5. If pass, calculate score
- * 6. If score >= threshold, generate signal
- * 7. Calculate entry/exit levels
+ * SIMPLIFIED SIGNAL ANALYSIS - QUIET VERSION
  */
 async function analyzeSymbol(symbol) {
   try {
@@ -67,8 +58,8 @@ async function analyzeSymbol(symbol) {
     const riskCheck = canTakeNewTrade(symbol);
     
     if (!riskCheck.allowed) {
-      
-      riskCheck.checks.failed.forEach(msg => console.log(`   ❌ ${msg}`));
+      // ⭐ ONLY LOG FIRST FAILURE REASON (not all checks)
+      console.log(`🚫 ${symbol}: ${riskCheck.checks.failed[0]}`);
       
       return {
         decimals,
@@ -99,15 +90,21 @@ async function analyzeSymbol(symbol) {
     // STEP 3: DETECT REGIME
     // ============================================
     const regime = detectSimplifiedRegime(currentPrice, indicators);
-  
+    
+    // ⭐ ONLY LOG REGIME (concise)
+    console.log(`${symbol} | ${regime.regime} (${regime.confidence}%)`);
+
     // ============================================
     // STEP 4: EARLY SIGNAL FILTER
     // ============================================
     const earlySignals = detectSimplifiedEarlySignals(closes, highs, lows, volumes, indicators);
     
-    earlySignals.reasons.forEach(r => console.log(`   ${r}`));
+    // ⭐ ONLY LOG IF PASS (don't spam failures)
+    if (earlySignals.pass) {
+      console.log(`   ✅ Early: ${earlySignals.signalType} | ${earlySignals.reasons[0]}`);
+    }
 
-    // If early signals don't pass, stop here
+    // If early signals don't pass, stop here (NO SPAM LOG)
     if (!earlySignals.pass) {
       return buildNoTradeResponse(
         symbol, decimals, currentPrice, ohlc, timestamp,
@@ -120,26 +117,30 @@ async function analyzeSymbol(symbol) {
     // STEP 5: REGIME VETO CHECK (for choppy)
     // ============================================
     if (regime.regime === 'CHOPPY') {
-      // In choppy, ONLY allow volume surge signals
       const hasVolumeSurge = earlySignals.allDetections.some(
         s => s.type === 'volume_surge' && s.urgency === 'high'
       );
       
       if (!hasVolumeSurge) {
-     
+        console.log(`   🚫 Choppy - need volume surge`);
         return buildNoTradeResponse(
           symbol, decimals, currentPrice, ohlc, timestamp,
           indicators, htf, regime, earlySignals,
           candles30m, 'Choppy market - need volume surge signal'
         );
       }
-        }
+      
+      console.log(`   ✅ Choppy OK - volume surge detected (50% size)`);
+    }
 
     // ============================================
     // STEP 6: CALCULATE SCORE
     // ============================================
     const scoring = calculateSimplifiedScore(currentPrice, indicators, htf);
-   
+    
+    // ⭐ CONCISE SCORE LOG
+    console.log(`   Score: B${scoring.bullishScore} | R${scoring.bearishScore} (need ${scoring.threshold})`);
+
     // ============================================
     // STEP 7: DETERMINE SIGNAL DIRECTION
     // ============================================
@@ -150,7 +151,6 @@ async function analyzeSymbol(symbol) {
 
     // Check if either score meets threshold
     if (scoring.bullishScore >= scoring.threshold && scoring.bearishScore >= scoring.threshold) {
-      // Both meet threshold - pick stronger one
       if (scoring.bullishScore > scoring.bearishScore) {
         isBullish = true;
       } else {
@@ -164,11 +164,11 @@ async function analyzeSymbol(symbol) {
 
     // Apply regime vetoes
     if (isBullish && regime.regime === 'TRENDING_BEAR') {
- 
+      console.log(`   🚫 Bearish trend blocks longs`);
       isBullish = false;
     }
     if (isBearish && regime.regime === 'TRENDING_BULL') {
-
+      console.log(`   🚫 Bullish trend blocks shorts`);
       isBearish = false;
     }
 
@@ -198,7 +198,9 @@ async function analyzeSymbol(symbol) {
       notes = `Score: ${finalScore}/${scoring.maxScore} (threshold: ${scoring.threshold})\n\n`;
       notes += `REJECTED: ${entryCalc.rejectionReason}\n\n`;
       notes += `Top Reasons:\n${reasons.slice(0, 5).map(r => `• ${r}`).join('\n')}`;
-            
+      
+      console.log(`   ⭐ Wait: ${entryCalc.rejectionReason}`);
+      
     } else if (isBullish || isBearish) {
       signal = isBullish ? 'Enter Long' : 'Enter Short';
       
@@ -214,7 +216,12 @@ async function analyzeSymbol(symbol) {
       if (scoring.warnings.length > 0) {
         notes += `\n\n⚠️  Warnings:\n${scoring.warnings.map(w => `• ${w}`).join('\n')}`;
       }
-     }
+      
+      // ⭐ CLEAR SIGNAL LOG
+      console.log(`   🎯 ${signal.toUpperCase()}`);
+      console.log(`   Entry: ${entryCalc.entry} | SL: ${entryCalc.sl}`);
+      console.log(`   TP1: ${entryCalc.tp1} | TP2: ${entryCalc.tp2}`);
+    }
 
     // ============================================
     // BUILD RESPONSE
@@ -232,7 +239,7 @@ async function analyzeSymbol(symbol) {
 }
 
 // ============================================
-// RESPONSE BUILDERS
+// RESPONSE BUILDERS (unchanged)
 // ============================================
 
 function buildNoTradeResponse(
@@ -326,7 +333,7 @@ function buildFullResponse(
   };
 }
 
-// Helper formatters
+// Helper formatters (unchanged)
 function formatMovingAverages(indicators, decimals) {
   return {
     ema7: indicators.ema7.toFixed(decimals),

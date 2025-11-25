@@ -744,7 +744,7 @@ function showRiskDetailsModal() {
                 <div style="font-size: 13px; opacity: 0.85;">Trades Executed</div>
               </div>
               <div>
-                <div style="font-size: 32px; font-weight: 700; margin-bottom: 4px; ${status.daily.pnl >= 0 ? 'color: #86efac;' : 'color: #fca5a5;'}">$${status.daily.pnl.toFixed(2)}</div>
+                <div style="font-size: 32px; font-weight: 700; margin-bottom: 4px; ${status.daily.pnlPct >= 0 ? 'color: #86efac;' : 'color: #fca5a5;'}">${status.daily.pnlPct >= 0 ? '+' : ''}${status.daily.pnlPct.toFixed(2)}%</div>
                 <div style="font-size: 13px; opacity: 0.85;">Daily P&L</div>
               </div>
             </div>

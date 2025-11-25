@@ -1,10 +1,9 @@
-// services/riskManager.js - CENTRALIZED RISK MANAGEMENT
+// services/riskManager.js - INDEPENDENT DEFAULT SYSTEM RISK MANAGEMENT
 
 const { supabase } = require('./logsService');
-const pauseService = require('./pauseService');
 
 // ============================================
-// RISK PARAMETERS
+// RISK PARAMETERS - DEFAULT SYSTEM ONLY
 // ============================================
 
 const RISK_PARAMS = {
@@ -13,10 +12,10 @@ const RISK_PARAMS = {
   riskPercentPerTrade: 0.02,  // 2% = $2
   leverage: 20,
   
-  // Daily Limits
+  // Daily Limits (DEFAULT SYSTEM ONLY)
   maxDailyTrades: 8,
   maxConsecutiveLosses: 2,
-  catastrophicLossLimit: -30,  // -$30 = emergency brake
+  catastrophicLossPct: -30,  // -30% of account
   
   // Per-Symbol Limits
   maxSymbolTradesPerDay: 2,
@@ -25,17 +24,17 @@ const RISK_PARAMS = {
   cooldownAfterWinHours: 1,
   
   // Pause Duration
-  pauseDurationHours: 6
+  pauseDurationHours: 12
 };
 
 // ============================================
-// STATE TRACKING
+// STATE TRACKING - DEFAULT SYSTEM ONLY
 // ============================================
 
 const riskState = {
   dailyStats: {
     tradesCount: 0,
-    pnl: 0,
+    pnlPct: 0,  // Changed from $ to %
     consecutiveLosses: 0,
     lastResetDate: new Date().toDateString()
   },
@@ -57,21 +56,21 @@ const riskState = {
 // ============================================
 
 async function initializeRiskManager() {
-  console.log('🛡️  Initializing Risk Manager...');
+  console.log('🛡️  Initializing Default System Risk Manager...');
   
   try {
     // Reset daily stats if new day
     await checkAndResetDaily();
     
-    // Load today's trades from database
+    // Load today's trades from database (DEFAULT ONLY)
     await loadTodayStats();
     
     // Check if we should still be paused
     await checkPauseStatus();
     
-    console.log('✅ Risk Manager initialized');
-    console.log('📊 Daily Stats:', riskState.dailyStats);
-    console.log('📊 Symbol Stats:', riskState.symbolStats);
+    console.log('✅ Default System Risk Manager initialized');
+    console.log('📊 Daily Stats (Default):', riskState.dailyStats);
+    console.log('📊 Symbol Stats (Default):', riskState.symbolStats);
     
     return { success: true };
   } catch (error) {
@@ -88,11 +87,11 @@ async function checkAndResetDaily() {
   const today = new Date().toDateString();
   
   if (riskState.dailyStats.lastResetDate !== today) {
-    console.log('📅 New day detected - resetting daily stats');
+    console.log('📅 New day detected - resetting DEFAULT system stats');
     
     riskState.dailyStats = {
       tradesCount: 0,
-      pnl: 0,
+      pnlPct: 0,
       consecutiveLosses: 0,
       lastResetDate: today
     };
@@ -100,7 +99,7 @@ async function checkAndResetDaily() {
     // Reset symbol stats for new day
     riskState.symbolStats = {};
     
-    // Check if pause should be lifted (if it was pause from previous day)
+    // Check if pause should be lifted
     if (riskState.pauseInfo.isPaused && riskState.pauseInfo.autoResumeAt) {
       const now = Date.now();
       if (now >= riskState.pauseInfo.autoResumeAt) {
@@ -111,16 +110,18 @@ async function checkAndResetDaily() {
 }
 
 // ============================================
-// LOAD TODAY'S STATS FROM DATABASE
+// LOAD TODAY'S STATS FROM DATABASE (DEFAULT ONLY)
 // ============================================
 
 async function loadTodayStats() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   
+  // ⭐ CRITICAL: Only load DEFAULT system trades
   const { data: trades, error } = await supabase
     .from('signals')
     .select('*')
+    .eq('signal_source', 'default')  // ⭐ FILTER: Only default trades
     .gte('timestamp', today.toISOString())
     .order('timestamp', { ascending: true });
   
@@ -130,11 +131,11 @@ async function loadTodayStats() {
   }
   
   if (!trades || trades.length === 0) {
-    console.log('No trades today yet');
+    console.log('No DEFAULT trades today yet');
     return;
   }
   
-  console.log(`📊 Loading ${trades.length} trades from today...`);
+  console.log(`📊 Loading ${trades.length} DEFAULT trades from today...`);
   
   // Process each trade
   for (const trade of trades) {
@@ -157,15 +158,13 @@ async function loadTodayStats() {
     
     // Count closed trades for P&L and consecutive losses
     if (trade.status === 'closed') {
-      const pnl = trade.custom_pnl || 0;
-      riskState.dailyStats.pnl += pnl;
+      // ⭐ USE PERCENTAGE P&L (already in database as pnl_percentage)
+      const pnlPct = trade.pnl_percentage || 0;
+      riskState.dailyStats.pnlPct += pnlPct;
       
-      if (pnl < 0) {
+      if (pnlPct < 0) {
         riskState.symbolStats[symbol].losses++;
         riskState.symbolStats[symbol].lastLossTime = new Date(trade.close_time).getTime();
-        
-        // Count consecutive losses (only if this is the most recent trade)
-        // We'll recalculate this properly
       }
     }
   }
@@ -177,8 +176,8 @@ async function loadTodayStats() {
   
   let consecutive = 0;
   for (const trade of closedTrades) {
-    const pnl = trade.custom_pnl || 0;
-    if (pnl < 0) {
+    const pnlPct = trade.pnl_percentage || 0;
+    if (pnlPct < 0) {
       consecutive++;
     } else {
       break;  // Stop at first win
@@ -187,9 +186,9 @@ async function loadTodayStats() {
   
   riskState.dailyStats.consecutiveLosses = consecutive;
   
-  console.log('📊 Stats loaded:', {
+  console.log('📊 Default System Stats loaded:', {
     dailyTrades: riskState.dailyStats.tradesCount,
-    dailyPnL: riskState.dailyStats.pnl.toFixed(2),
+    dailyPnL: riskState.dailyStats.pnlPct.toFixed(2) + '%',
     consecutiveLosses: riskState.dailyStats.consecutiveLosses,
     symbols: Object.keys(riskState.symbolStats).length
   });
@@ -200,15 +199,6 @@ async function loadTodayStats() {
 // ============================================
 
 async function checkPauseStatus() {
-  const currentPauseStatus = pauseService.getStatus();
-  
-  if (currentPauseStatus.isPaused) {
-    riskState.pauseInfo.isPaused = true;
-    riskState.pauseInfo.pausedAt = currentPauseStatus.pauseStartTime;
-    riskState.pauseInfo.autoResumeAt = Date.now() + currentPauseStatus.timeUntilAutoResume;
-    riskState.pauseInfo.reason = 'Trading paused via pause service';
-  }
-  
   // Check if pause should be lifted
   if (riskState.pauseInfo.isPaused && riskState.pauseInfo.autoResumeAt) {
     const now = Date.now();
@@ -232,62 +222,62 @@ function canTakeNewTrade(symbol) {
   // Check 0: Daily reset
   checkAndResetDaily();
   
-  // Check 1: Is trading paused?
+  // Check 1: Is DEFAULT system paused?
   if (riskState.pauseInfo.isPaused) {
-    checks.failed.push(`Trading is paused: ${riskState.pauseInfo.reason}`);
+    checks.failed.push(`Default system paused: ${riskState.pauseInfo.reason}`);
     const resumeIn = Math.ceil((riskState.pauseInfo.autoResumeAt - Date.now()) / 60000);
     checks.failed.push(`Auto-resume in ${resumeIn} minutes`);
     return { allowed: false, checks };
   }
-  checks.passed.push('Trading not paused');
+  checks.passed.push('Default system not paused');
   
-  // Check 2: Max daily trades
+  // Check 2: Max daily trades (DEFAULT ONLY)
   if (riskState.dailyStats.tradesCount >= RISK_PARAMS.maxDailyTrades) {
-    checks.failed.push(`Max daily trades reached (${RISK_PARAMS.maxDailyTrades})`);
+    checks.failed.push(`Max daily DEFAULT trades reached (${RISK_PARAMS.maxDailyTrades})`);
     return { allowed: false, checks };
   }
-  checks.passed.push(`Daily trades: ${riskState.dailyStats.tradesCount}/${RISK_PARAMS.maxDailyTrades}`);
+  checks.passed.push(`Daily DEFAULT trades: ${riskState.dailyStats.tradesCount}/${RISK_PARAMS.maxDailyTrades}`);
   
-  // Check 3: Consecutive losses limit
+  // Check 3: Consecutive losses limit (DEFAULT ONLY)
   if (riskState.dailyStats.consecutiveLosses >= RISK_PARAMS.maxConsecutiveLosses) {
-    checks.failed.push(`Max consecutive losses reached (${RISK_PARAMS.maxConsecutiveLosses})`);
-    checks.failed.push('Trading automatically paused for 12 hours');
+    checks.failed.push(`Max consecutive DEFAULT losses reached (${RISK_PARAMS.maxConsecutiveLosses})`);
+    checks.failed.push('Default system auto-paused for 12 hours');
     
-    // Auto-pause
-    pauseTrading(`${RISK_PARAMS.maxConsecutiveLosses} consecutive losses - auto-pause`);
+    // Auto-pause DEFAULT ONLY
+    pauseTrading(`${RISK_PARAMS.maxConsecutiveLosses} consecutive DEFAULT losses - auto-pause`);
     
     return { allowed: false, checks };
   }
-  checks.passed.push(`Consecutive losses: ${riskState.dailyStats.consecutiveLosses}/${RISK_PARAMS.maxConsecutiveLosses}`);
+  checks.passed.push(`Consecutive DEFAULT losses: ${riskState.dailyStats.consecutiveLosses}/${RISK_PARAMS.maxConsecutiveLosses}`);
   
-  // Check 4: Catastrophic loss limit
-  if (riskState.dailyStats.pnl <= RISK_PARAMS.catastrophicLossLimit) {
-    checks.failed.push(`Catastrophic loss limit hit: $${riskState.dailyStats.pnl.toFixed(2)}`);
-    checks.failed.push('Trading automatically paused for 12 hours');
+  // Check 4: Catastrophic loss limit (% based)
+  if (riskState.dailyStats.pnlPct <= RISK_PARAMS.catastrophicLossPct) {
+    checks.failed.push(`Catastrophic DEFAULT loss: ${riskState.dailyStats.pnlPct.toFixed(2)}%`);
+    checks.failed.push('Default system auto-paused for 12 hours');
     
-    // Auto-pause
-    pauseTrading('Catastrophic loss limit - auto-pause');
+    // Auto-pause DEFAULT ONLY
+    pauseTrading('Catastrophic DEFAULT loss limit - auto-pause');
     
     return { allowed: false, checks };
   }
-  checks.passed.push(`Daily P&L: $${riskState.dailyStats.pnl.toFixed(2)} (limit: $${RISK_PARAMS.catastrophicLossLimit})`);
+  checks.passed.push(`Daily DEFAULT P&L: ${riskState.dailyStats.pnlPct.toFixed(2)}% (limit: ${RISK_PARAMS.catastrophicLossPct}%)`);
   
   // Check 5: Symbol-specific limits
   const symbolStats = riskState.symbolStats[symbol] || { trades: 0, losses: 0, lastTradeTime: null, lastLossTime: null };
   
   // 5a: Max symbol trades per day
   if (symbolStats.trades >= RISK_PARAMS.maxSymbolTradesPerDay) {
-    checks.failed.push(`Max trades for ${symbol} today (${RISK_PARAMS.maxSymbolTradesPerDay})`);
+    checks.failed.push(`Max DEFAULT trades for ${symbol} today (${RISK_PARAMS.maxSymbolTradesPerDay})`);
     return { allowed: false, checks };
   }
-  checks.passed.push(`${symbol} trades: ${symbolStats.trades}/${RISK_PARAMS.maxSymbolTradesPerDay}`);
+  checks.passed.push(`${symbol} DEFAULT trades: ${symbolStats.trades}/${RISK_PARAMS.maxSymbolTradesPerDay}`);
   
   // 5b: Max symbol losses per day
   if (symbolStats.losses >= RISK_PARAMS.maxSymbolLossesPerDay) {
-    checks.failed.push(`Max losses for ${symbol} today (${RISK_PARAMS.maxSymbolLossesPerDay})`);
+    checks.failed.push(`Max DEFAULT losses for ${symbol} today (${RISK_PARAMS.maxSymbolLossesPerDay})`);
     return { allowed: false, checks };
   }
-  checks.passed.push(`${symbol} losses: ${symbolStats.losses}/${RISK_PARAMS.maxSymbolLossesPerDay}`);
+  checks.passed.push(`${symbol} DEFAULT losses: ${symbolStats.losses}/${RISK_PARAMS.maxSymbolLossesPerDay}`);
   
   // 5c: Cooldown after loss
   if (symbolStats.lastLossTime) {
@@ -296,28 +286,17 @@ function canTakeNewTrade(symbol) {
     
     if (timeSinceLoss < cooldownMs) {
       const remainingMin = Math.ceil((cooldownMs - timeSinceLoss) / 60000);
-      checks.failed.push(`${symbol} in cooldown after loss (${remainingMin}m remaining)`);
+      checks.failed.push(`${symbol} in DEFAULT cooldown after loss (${remainingMin}m remaining)`);
       return { allowed: false, checks };
     }
   }
-  checks.passed.push(`${symbol} not in cooldown`);
-  
-  // 5d: Cooldown after win (lighter check - just warning)
-  if (symbolStats.lastTradeTime) {
-    const timeSinceTrade = Date.now() - symbolStats.lastTradeTime;
-    const cooldownMs = RISK_PARAMS.cooldownAfterWinHours * 3600000;
-    
-    if (timeSinceTrade < cooldownMs) {
-      const remainingMin = Math.ceil((cooldownMs - timeSinceTrade) / 60000);
-      checks.warnings.push(`${symbol} last trade was ${Math.floor(timeSinceTrade / 60000)}m ago (recommended: ${RISK_PARAMS.cooldownAfterWinHours}h between trades)`);
-    }
-  }
+  checks.passed.push(`${symbol} not in DEFAULT cooldown`);
   
   return { allowed: true, checks };
 }
 
 // ============================================
-// RECORD NEW TRADE
+// RECORD NEW TRADE (DEFAULT ONLY)
 // ============================================
 
 function recordNewTrade(symbol) {
@@ -338,21 +317,21 @@ function recordNewTrade(symbol) {
   riskState.symbolStats[symbol].trades++;
   riskState.symbolStats[symbol].lastTradeTime = Date.now();
   
-  console.log(`📊 Trade recorded for ${symbol}`);
+  console.log(`📊 DEFAULT trade recorded for ${symbol}`);
   console.log(`   Daily: ${riskState.dailyStats.tradesCount}/${RISK_PARAMS.maxDailyTrades}`);
   console.log(`   ${symbol}: ${riskState.symbolStats[symbol].trades}/${RISK_PARAMS.maxSymbolTradesPerDay}`);
 }
 
 // ============================================
-// RECORD TRADE CLOSE
+// RECORD TRADE CLOSE (% based P&L)
 // ============================================
 
-function recordTradeClose(symbol, pnl) {
-  // Update daily P&L
-  riskState.dailyStats.pnl += pnl;
+function recordTradeClose(symbol, pnlPct) {
+  // Update daily P&L (percentage)
+  riskState.dailyStats.pnlPct += pnlPct;
   
   // Update consecutive losses
-  if (pnl < 0) {
+  if (pnlPct < 0) {
     riskState.dailyStats.consecutiveLosses++;
     
     // Update symbol loss stats
@@ -361,36 +340,36 @@ function recordTradeClose(symbol, pnl) {
       riskState.symbolStats[symbol].lastLossTime = Date.now();
     }
     
-    console.log(`📉 Loss recorded: $${pnl.toFixed(2)}`);
+    console.log(`📉 DEFAULT Loss recorded: ${pnlPct.toFixed(2)}%`);
     console.log(`   Consecutive losses: ${riskState.dailyStats.consecutiveLosses}/${RISK_PARAMS.maxConsecutiveLosses}`);
-    console.log(`   Daily P&L: $${riskState.dailyStats.pnl.toFixed(2)}`);
+    console.log(`   Daily P&L: ${riskState.dailyStats.pnlPct.toFixed(2)}%`);
     
     // Check if we hit consecutive loss limit
     if (riskState.dailyStats.consecutiveLosses >= RISK_PARAMS.maxConsecutiveLosses) {
-      pauseTrading(`${RISK_PARAMS.maxConsecutiveLosses} consecutive losses - auto-pause for ${RISK_PARAMS.pauseDurationHours}h`);
+      pauseTrading(`${RISK_PARAMS.maxConsecutiveLosses} consecutive DEFAULT losses - auto-pause for ${RISK_PARAMS.pauseDurationHours}h`);
     }
     
     // Check catastrophic loss limit
-    if (riskState.dailyStats.pnl <= RISK_PARAMS.catastrophicLossLimit) {
-      pauseTrading(`Catastrophic loss: $${riskState.dailyStats.pnl.toFixed(2)} - auto-pause for ${RISK_PARAMS.pauseDurationHours}h`);
+    if (riskState.dailyStats.pnlPct <= RISK_PARAMS.catastrophicLossPct) {
+      pauseTrading(`Catastrophic DEFAULT loss: ${riskState.dailyStats.pnlPct.toFixed(2)}% - auto-pause for ${RISK_PARAMS.pauseDurationHours}h`);
     }
     
   } else {
     // Win - reset consecutive losses
     riskState.dailyStats.consecutiveLosses = 0;
     
-    console.log(`📈 Win recorded: $${pnl.toFixed(2)}`);
+    console.log(`📈 DEFAULT Win recorded: ${pnlPct.toFixed(2)}%`);
     console.log(`   Consecutive losses reset to 0`);
-    console.log(`   Daily P&L: $${riskState.dailyStats.pnl.toFixed(2)}`);
+    console.log(`   Daily P&L: ${riskState.dailyStats.pnlPct.toFixed(2)}%`);
   }
 }
 
 // ============================================
-// PAUSE/RESUME TRADING
+// PAUSE/RESUME TRADING (DEFAULT ONLY)
 // ============================================
 
 function pauseTrading(reason) {
-  console.log(`🛑 PAUSING TRADING: ${reason}`);
+  console.log(`🛑 PAUSING DEFAULT SYSTEM: ${reason}`);
   
   const pauseDurationMs = RISK_PARAMS.pauseDurationHours * 3600000;
   
@@ -401,14 +380,11 @@ function pauseTrading(reason) {
     autoResumeAt: Date.now() + pauseDurationMs
   };
   
-  // Also pause via pauseService
-  pauseService.pauseTrading();
-  
-  console.log(`⏰ Auto-resume scheduled for ${new Date(riskState.pauseInfo.autoResumeAt).toLocaleString()}`);
+  console.log(`⏰ DEFAULT system auto-resume at ${new Date(riskState.pauseInfo.autoResumeAt).toLocaleString()}`);
 }
 
 async function resumeTrading(reason) {
-  console.log(`▶️  RESUMING TRADING: ${reason}`);
+  console.log(`▶️  RESUMING DEFAULT SYSTEM: ${reason}`);
   
   riskState.pauseInfo = {
     isPaused: false,
@@ -416,9 +392,6 @@ async function resumeTrading(reason) {
     pausedAt: null,
     autoResumeAt: null
   };
-  
-  // Also resume via pauseService
-  pauseService.resumeTrading();
 }
 
 // ============================================
@@ -427,10 +400,11 @@ async function resumeTrading(reason) {
 
 function getRiskStatus() {
   return {
+    system: 'default',
     daily: {
       trades: riskState.dailyStats.tradesCount,
       maxTrades: RISK_PARAMS.maxDailyTrades,
-      pnl: riskState.dailyStats.pnl,
+      pnlPct: riskState.dailyStats.pnlPct,
       consecutiveLosses: riskState.dailyStats.consecutiveLosses,
       maxConsecutiveLosses: RISK_PARAMS.maxConsecutiveLosses
     },

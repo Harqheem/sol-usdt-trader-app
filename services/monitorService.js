@@ -309,7 +309,7 @@ async function handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, 
     });
   } else {
     // DEFAULT SIGNALS: Use new risk manager
-    recordDefaultTradeClose(trade.symbol, totalCustomPnl);
+    recordDefaultTradeClose(trade.symbol, totalNetPnlPct);
   }
   
   return { 
@@ -345,7 +345,7 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
       });
     } else {
       // DEFAULT SIGNALS: Use new risk manager
-      recordDefaultTradeClose(trade.symbol, fullLoss.customPnl);
+      recordDefaultTradeClose(trade.symbol, fullLoss.netPnlPct);
     }
     
     return { 
@@ -381,7 +381,7 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
       });
     } else {
       // DEFAULT SIGNALS: Use new risk manager
-      recordDefaultTradeClose(trade.symbol, totalCustomPnl);
+      recordDefaultTradeClose(trade.symbol, totalNetPnlPct);
     }
     
     return { 

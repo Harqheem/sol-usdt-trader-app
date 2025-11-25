@@ -322,7 +322,7 @@ app.post('/force-refresh/:symbol', async (req, res) => {
       const riskStatus = getRiskStatus();
       console.log('\n📊 DEFAULT SYSTEM RISK STATUS:');
       console.log(`   Daily trades: ${riskStatus.daily.trades}/${riskStatus.daily.maxTrades}`);
-      console.log(`   Daily P&L: $${riskStatus.daily.pnl.toFixed(2)}`);
+      console.log(`   ✅ Daily P&L: ${riskStatus.daily.pnlPct >= 0 ? '+' : ''}${riskStatus.daily.pnlPct.toFixed(2)}%`);
       console.log(`   Consecutive losses: ${riskStatus.daily.consecutiveLosses}/${riskStatus.daily.maxConsecutiveLosses}`);
       console.log(`   Trading paused: ${riskStatus.pause.isPaused ? 'YES' : 'NO'}`);
     }
