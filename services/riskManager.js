@@ -19,9 +19,9 @@ const RISK_PARAMS = {
   
   // Per-Symbol Limits
   maxSymbolTradesPerDay: 2,
-  maxSymbolLossesPerDay: 1,
+  maxSymbolLossesPerDay: 2,
   cooldownAfterLossHours: 4,
-  cooldownAfterWinHours: 1,
+  cooldownAfterWinHours: 4,
   
   // Pause Duration
   pauseDurationHours: 12

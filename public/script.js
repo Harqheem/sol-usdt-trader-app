@@ -776,14 +776,18 @@ function showRiskDetailsModal() {
                     <div style="font-weight: 600; color: #1a1a1a; font-size: 15px;">${symbol}</div>
                     <div style="display: flex; gap: 12px; margin-left: auto;">
                       <span style="font-size: 13px; color: #6b7280;">Trades: <strong>${stats.trades}/${status.parameters.maxSymbolTradesPerDay}</strong></span>
-                      <span style="font-size: 13px; color: ${stats.losses >= status.parameters.maxSymbolLossesPerDay ? '#dc2626' : '#6b7280'};">Losses: <strong>${stats.losses}/${status.parameters.maxSymbolLossesPerDay}</strong></span>
-                    </div>
-                  </div>
-                  ${stats.lastLossTime ? `
-                    <div style="font-size: 12px; color: #ef4444; display: flex; align-items: center; gap: 6px;">
-                      <span>⏰</span> Cooldown: ${Math.max(0, Math.ceil((stats.lastLossTime + (status.parameters.cooldownAfterLossHours * 3600000) - Date.now()) / 60000))} min remaining
-                    </div>
-                  ` : ''}
+                      <span style="font-size: 13px; color:${stats.losses >= status.parameters.maxSymbolLossesPerDay ? 
+  `<div style="font-size: 12px; color: #ef4444; display: flex; align-items: center; gap: 6px;">
+    <span>🚫</span> Max losses reached - blocked until tomorrow
+  </div>` : 
+  stats.lastLossTime ? `
+    <div style="font-size: 12px; color: ${cooldownRemaining > 0 ? '#ef4444' : '#15803d'}; display: flex; align-items: center; gap: 6px;">
+      ${cooldownRemaining > 0 ? 
+        `<span>⏰</span> Cooldown: ${cooldownRemaining} min remaining` :
+        `<span>✅</span> Cooldown expired - can trade again`
+      }
+    </div>
+  ` : ''}
                 </div>
               `).join('')
             }
