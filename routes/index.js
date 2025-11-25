@@ -58,8 +58,7 @@ router.get('/data', async (req, res) => {
       return res.status(400).json({ error: 'Invalid symbol' });
     }
     
-    console.log(`📊 Data request for ${symbol}`);
-    
+       
     // Use getData which calls analyzeSymbol - returns full analysis with proper structure
     const data = await getData(symbol);
     

@@ -122,7 +122,7 @@ async function analyzeSymbol(symbol) {
       );
       
       if (!hasVolumeSurge) {
-        console.log(`   🚫 Choppy - need volume surge`);
+        
         return buildNoTradeResponse(
           symbol, decimals, currentPrice, ohlc, timestamp,
           indicators, htf, regime, earlySignals,
