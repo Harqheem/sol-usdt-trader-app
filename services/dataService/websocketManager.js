@@ -109,7 +109,14 @@ async function loadInitialData(symbol) {
 function generateCandleSummary(symbol, analysis) {
   const parts = [];
   
-  const { core, signals, earlySignals, regime } = analysis;
+  // Add safety checks for all nested properties
+  const { core, signals, earlySignals, regime } = analysis || {};
+  
+  // Safety check: ensure all required properties exist
+  if (!core || !signals || !regime) {
+    return `❌ ${symbol}: Incomplete analysis data`;
+  }
+  
   const priceChange = ((core.ohlc.close - core.ohlc.open) / core.ohlc.open * 100).toFixed(2);
   const priceDirection = priceChange > 0 ? '📈' : priceChange < 0 ? '📉' : '➡️';
   
@@ -126,7 +133,8 @@ function generateCandleSummary(symbol, analysis) {
     parts.push(`⚪ No trade signal`);
   }
   
-  if (earlySignals.recommendation !== 'neutral') {
+  // FIXED: Add safety check for earlySignals
+  if (earlySignals && earlySignals.recommendation && earlySignals.recommendation !== 'neutral') {
     const emoji = earlySignals.recommendation.includes('bullish') ? '🟢' : '🔴';
     parts.push(`${emoji} Early: ${earlySignals.recommendation.toUpperCase()} (${earlySignals.confidence})`);
   }

@@ -48,11 +48,7 @@ function isDuplicateFastSignal(symbol, signals) {
 async function checkAndSendSignal(symbol, analysis) {
   const { signals, regime, earlySignals, assetInfo } = analysis;
   
-  console.log(`\n📢 ${symbol}: Checking notification conditions...`);
-  console.log(`   Signal: ${signals?.signal || 'N/A'}`);
-  console.log(`   Entry: ${signals?.entry || 'N/A'}`);
-  console.log(`   SL: ${signals?.sl || 'N/A'}`);
-  
+
   if (!signals || !signals.signal) {
     console.log(`   ❌ No signals object found`);
     return;
@@ -82,10 +78,6 @@ async function checkAndSendSignal(symbol, analysis) {
   // ============================================
   // NOTIFICATION CHECKS
   // ============================================
-  
-  console.log(`   Previous signal: ${previousSignal[symbol] || 'none'}`);
-  console.log(`   Current signal: ${signals.signal}`);
-  console.log(`   Signal changed: ${signals.signal !== previousSignal[symbol]}`);
   
   const timeSinceLastNotif = lastNotificationTime[symbol] ? now - lastNotificationTime[symbol] : Infinity;
   console.log(`   Time since last notification: ${timeSinceLastNotif === Infinity ? 'never' : (timeSinceLastNotif / 1000).toFixed(0) + 's'}`);

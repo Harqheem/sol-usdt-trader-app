@@ -25,7 +25,7 @@ const RISK_PARAMS = {
   cooldownAfterWinHours: 1,
   
   // Pause Duration
-  pauseDurationHours: 12
+  pauseDurationHours: 6
 };
 
 // ============================================
