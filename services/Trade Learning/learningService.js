@@ -1,7 +1,7 @@
 // services/learningService.js
 // CAPTURES LEARNING DATA FROM TRADES AND NEAR-MISSES
 
-const { supabase } = require('./logsService');
+const { supabase } = require('../logsService');
 
 /**
  * Log a failed trade for learning purposes
