@@ -10,6 +10,7 @@ const { handleTradeClose } = require('./dataService/Fast Signals/positionTracker
 
 // ADD DEFAULT SYSTEM RISK MANAGER (new!)
 const { recordTradeClose: recordDefaultTradeClose } = require('./riskManager');
+const learningService = require('./Trade Learning/learningService')
 
 const client = Binance();
 
@@ -321,6 +322,26 @@ async function handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, 
     custom_pnl: totalCustomPnl,
     remaining_position: 0.0 
   };
+    // NEW: Log successful trade for learning
+  if (trade.custom_pnl > 0) {
+    await learningService.logSuccessfulTrade({
+      symbol: trade.symbol,
+      direction: isBuy ? 'LONG' : 'SHORT',
+      signalType: trade.signal_type,
+      signalSource: trade.signal_source,
+      entry: trade.entry,
+      sl: trade.sl,
+      tp1: trade.tp1,
+      tp2: trade.tp2,
+      exitPrice: trade.tp2,
+      pnl: trade.pnl_percentage,
+      closeReason: 'TP2',
+      marketConditions: {
+        // Get from cache if available
+      },
+      indicators: null
+    });
+  }
 }
 
 async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, remainingFraction, isFastSignal) {
@@ -393,6 +414,29 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
       custom_pnl: totalCustomPnl,
       remaining_position: 0.0 
     };
+  }
+  // NEW: Log failed trade for learning
+  if (trade.status === 'closed' && trade.custom_pnl < 0) {
+    await learningService.logFailedTrade({
+      symbol: trade.symbol,
+      direction: isBuy ? 'LONG' : 'SHORT',
+      signalType: trade.signal_type,
+      signalSource: trade.signal_source,
+      entry: trade.entry,
+      sl: trade.sl,
+      tp1: trade.tp1,
+      tp2: trade.tp2,
+      exitPrice: exitPrice,
+      pnl: trade.pnl_percentage,
+      closeReason: 'SL',
+      marketConditions: {
+        // Add current market conditions if available
+        regime: 'TRENDING_BULL', // Get from cache if available
+        adx: null,
+        rsi: null
+      },
+      indicators: null // Could store entry indicators if we save them
+    });
   }
 }
 

@@ -14,6 +14,7 @@ const {
   calculateTakeProfits,
   meetsConfidenceRequirement 
 } = require('./riskManagement');
+const learningService = require('../../Trade Learning/learningService')
 
 // ========================================
 // HELPER FUNCTIONS
@@ -1049,11 +1050,37 @@ function detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice, can
 
 async function sendFastAlert(symbol, signal, currentPrice, atr, assetConfig) {
   const limitCheck = canSendSignalWithLimits(symbol);
+  
   if (!limitCheck.canSend) {
     console.log(`⛔ ${symbol}: Signal blocked - ${limitCheck.reason}`);
+    
+    // NEW: Log near-miss if it was a good signal but limits blocked it
+    if (signal.confidence >= 85) { // Was a high-confidence signal
+      await learningService.logNearMiss({
+        symbol,
+        direction: signal.direction,
+        signalType: signal.type,
+        signalSource: 'fast',
+        conditionsMet: 4, // Had all conditions except limits
+        totalConditions: 5,
+        blockingReasons: [limitCheck.reason],
+        currentPrice,
+        marketConditions: null,
+        indicators: null,
+        conditionDetails: [
+          { name: 'Signal Detected', met: true, description: signal.reason },
+          { name: 'Confidence Met', met: true, description: `${signal.confidence}%` },
+          { name: 'Order Flow', met: true, description: signal.orderFlow?.score || 'N/A' },
+          { name: 'Stop Loss Valid', met: true, description: 'SL calculated' },
+          { name: 'Risk Limits', met: false, description: limitCheck.reason }
+        ]
+      });
+    }
+    
     return { sent: false, reason: limitCheck.reason };
-  }
   
+  }
+
   const confidenceCheck = meetsConfidenceRequirement(signal.confidence);
   if (!confidenceCheck.valid) {
     return { sent: false, reason: 'CONFIDENCE_TOO_LOW' };

@@ -1,0 +1,377 @@
+import React, { useState, useEffect } from 'react';
+import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle, XCircle, Clock, Filter, Search, ChevronDown, ChevronUp } from 'lucide-react';
+
+const TradeLearningDashboard = () => {
+  const [activeTab, setActiveTab] = useState('all');
+  const [expandedTrade, setExpandedTrade] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterType, setFilterType] = useState('all');
+  const [learningData, setLearningData] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch learning data
+  useEffect(() => {
+    fetchLearningData();
+    const interval = setInterval(fetchLearningData, 30000); // Refresh every 30s
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchLearningData = async () => {
+    try {
+      const response = await fetch('/api/learning-data');
+      const data = await response.json();
+      setLearningData(data);
+      setLoading(false);
+    } catch (error) {
+      console.error('Failed to fetch learning data:', error);
+      setLoading(false);
+    }
+  };
+
+  const getStatusIcon = (type) => {
+    switch(type) {
+      case 'failed_trade':
+        return <XCircle className="text-red-500" size={20} />;
+      case 'near_miss':
+        return <AlertTriangle className="text-yellow-500" size={20} />;
+      case 'successful_trade':
+        return <CheckCircle className="text-green-500" size={20} />;
+      default:
+        return <Clock className="text-gray-500" size={20} />;
+    }
+  };
+
+  const getStatusColor = (type) => {
+    switch(type) {
+      case 'failed_trade':
+        return 'bg-red-50 border-red-200';
+      case 'near_miss':
+        return 'bg-yellow-50 border-yellow-200';
+      case 'successful_trade':
+        return 'bg-green-50 border-green-200';
+      default:
+        return 'bg-gray-50 border-gray-200';
+    }
+  };
+
+  const filteredData = learningData.filter(item => {
+    const matchesSearch = item.symbol.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesFilter = filterType === 'all' || item.type === filterType;
+    const matchesTab = activeTab === 'all' || 
+      (activeTab === 'trades' && (item.type === 'failed_trade' || item.type === 'successful_trade')) ||
+      (activeTab === 'near_misses' && item.type === 'near_miss');
+    return matchesSearch && matchesFilter && matchesTab;
+  });
+
+  const stats = {
+    total: learningData.length,
+    failed: learningData.filter(d => d.type === 'failed_trade').length,
+    nearMisses: learningData.filter(d => d.type === 'near_miss').length,
+    successful: learningData.filter(d => d.type === 'successful_trade').length
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-8 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading learning data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-8">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+            📚 Trade Learning Center
+          </h1>
+          <p className="text-gray-400">Learn from every trade, near-miss, and market condition</p>
+        </div>
+
+        {/* Stats Overview */}
+        <div className="grid grid-cols-4 gap-4 mb-8">
+          <div className="bg-slate-800/50 backdrop-blur border border-slate-700 rounded-xl p-4">
+            <div className="text-gray-400 text-sm mb-1">Total Entries</div>
+            <div className="text-3xl font-bold text-blue-400">{stats.total}</div>
+          </div>
+          <div className="bg-slate-800/50 backdrop-blur border border-slate-700 rounded-xl p-4">
+            <div className="text-gray-400 text-sm mb-1">Failed Trades</div>
+            <div className="text-3xl font-bold text-red-400">{stats.failed}</div>
+          </div>
+          <div className="bg-slate-800/50 backdrop-blur border border-slate-700 rounded-xl p-4">
+            <div className="text-gray-400 text-sm mb-1">Near Misses</div>
+            <div className="text-3xl font-bold text-yellow-400">{stats.nearMisses}</div>
+          </div>
+          <div className="bg-slate-800/50 backdrop-blur border border-slate-700 rounded-xl p-4">
+            <div className="text-gray-400 text-sm mb-1">Successful</div>
+            <div className="text-3xl font-bold text-green-400">{stats.successful}</div>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-4 mb-6 border-b border-slate-700">
+          <button
+            onClick={() => setActiveTab('all')}
+            className={`pb-3 px-4 font-medium transition-colors ${
+              activeTab === 'all' 
+                ? 'text-blue-400 border-b-2 border-blue-400' 
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            All ({learningData.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('trades')}
+            className={`pb-3 px-4 font-medium transition-colors ${
+              activeTab === 'trades' 
+                ? 'text-blue-400 border-b-2 border-blue-400' 
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            Trades ({stats.failed + stats.successful})
+          </button>
+          <button
+            onClick={() => setActiveTab('near_misses')}
+            className={`pb-3 px-4 font-medium transition-colors ${
+              activeTab === 'near_misses' 
+                ? 'text-blue-400 border-b-2 border-blue-400' 
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            Near Misses ({stats.nearMisses})
+          </button>
+        </div>
+
+        {/* Filters */}
+        <div className="flex gap-4 mb-6">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+            <input
+              type="text"
+              placeholder="Search by symbol..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-slate-800/50 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <select
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value)}
+            className="bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="all">All Types</option>
+            <option value="failed_trade">Failed Trades</option>
+            <option value="near_miss">Near Misses</option>
+            <option value="successful_trade">Successful Trades</option>
+          </select>
+        </div>
+
+        {/* Learning Entries */}
+        <div className="space-y-4">
+          {filteredData.length === 0 ? (
+            <div className="text-center py-12 bg-slate-800/30 rounded-xl border border-slate-700">
+              <p className="text-gray-400">No entries found matching your filters</p>
+            </div>
+          ) : (
+            filteredData.map((entry) => (
+              <div
+                key={entry.id}
+                className={`border rounded-xl overflow-hidden transition-all ${getStatusColor(entry.type)}`}
+              >
+                {/* Header */}
+                <div
+                  className="p-4 cursor-pointer hover:bg-white/5 transition-colors"
+                  onClick={() => setExpandedTrade(expandedTrade === entry.id ? null : entry.id)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      {getStatusIcon(entry.type)}
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-lg">{entry.symbol}</span>
+                          {entry.direction === 'LONG' ? (
+                            <TrendingUp className="text-green-400" size={18} />
+                          ) : (
+                            <TrendingDown className="text-red-400" size={18} />
+                          )}
+                          <span className="text-sm font-medium px-2 py-1 rounded bg-slate-800/50">
+                            {entry.signalType}
+                          </span>
+                        </div>
+                        <div className="text-sm text-gray-600 mt-1">
+                          {new Date(entry.timestamp).toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      {entry.type === 'failed_trade' && (
+                        <div className="text-right">
+                          <div className="text-red-600 font-bold">
+                            {entry.pnl > 0 ? '+' : ''}{entry.pnl?.toFixed(2)}%
+                          </div>
+                          <div className="text-sm text-gray-600">Loss</div>
+                        </div>
+                      )}
+                      {entry.type === 'successful_trade' && (
+                        <div className="text-right">
+                          <div className="text-green-600 font-bold">
+                            +{entry.pnl?.toFixed(2)}%
+                          </div>
+                          <div className="text-sm text-gray-600">Profit</div>
+                        </div>
+                      )}
+                      {entry.type === 'near_miss' && (
+                        <div className="text-right">
+                          <div className="text-yellow-600 font-bold">
+                            {entry.conditionsMet}/{entry.totalConditions}
+                          </div>
+                          <div className="text-sm text-gray-600">Conditions Met</div>
+                        </div>
+                      )}
+                      {expandedTrade === entry.id ? (
+                        <ChevronUp className="text-gray-600" />
+                      ) : (
+                        <ChevronDown className="text-gray-600" />
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Expanded Content */}
+                {expandedTrade === entry.id && (
+                  <div className="border-t border-gray-200 bg-white/5 p-6">
+                    <div className="grid grid-cols-2 gap-6">
+                      {/* Left Column - Trade Details */}
+                      <div className="space-y-4">
+                        <h3 className="font-bold text-lg mb-3 flex items-center gap-2">
+                          📊 Trade Details
+                        </h3>
+                        
+                        {entry.entry && (
+                          <div className="bg-slate-800/30 rounded-lg p-3">
+                            <div className="text-sm text-gray-400 mb-1">Entry Price</div>
+                            <div className="font-mono text-lg">${entry.entry.toFixed(4)}</div>
+                          </div>
+                        )}
+
+                        {entry.sl && (
+                          <div className="bg-slate-800/30 rounded-lg p-3">
+                            <div className="text-sm text-gray-400 mb-1">Stop Loss</div>
+                            <div className="font-mono text-lg">${entry.sl.toFixed(4)}</div>
+                          </div>
+                        )}
+
+                        {entry.tp1 && (
+                          <div className="bg-slate-800/30 rounded-lg p-3">
+                            <div className="text-sm text-gray-400 mb-1">Take Profits</div>
+                            <div className="font-mono">
+                              TP1: ${entry.tp1.toFixed(4)}
+                              {entry.tp2 && <> • TP2: ${entry.tp2.toFixed(4)}</>}
+                            </div>
+                          </div>
+                        )}
+
+                        {entry.exitPrice && (
+                          <div className="bg-slate-800/30 rounded-lg p-3">
+                            <div className="text-sm text-gray-400 mb-1">Exit Price</div>
+                            <div className="font-mono text-lg">${entry.exitPrice.toFixed(4)}</div>
+                          </div>
+                        )}
+
+                        {entry.marketConditions && (
+                          <div className="bg-slate-800/30 rounded-lg p-3">
+                            <div className="text-sm text-gray-400 mb-2">Market Conditions</div>
+                            <div className="space-y-1 text-sm">
+                              <div>ADX: {entry.marketConditions.adx?.toFixed(1)}</div>
+                              <div>RSI: {entry.marketConditions.rsi?.toFixed(1)}</div>
+                              <div>Trend: {entry.marketConditions.trend}</div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Right Column - Learning Content */}
+                      <div className="space-y-4">
+                        <h3 className="font-bold text-lg mb-3 flex items-center gap-2">
+                          🎓 Learning Points
+                        </h3>
+
+                        {/* Main Reason */}
+                        <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
+                          <div className="font-semibold mb-2 text-blue-300">Primary Reason</div>
+                          <div className="text-sm leading-relaxed">{entry.reason}</div>
+                        </div>
+
+                        {/* Conditions Analysis */}
+                        {entry.conditions && entry.conditions.length > 0 && (
+                          <div className="bg-slate-800/30 rounded-lg p-4">
+                            <div className="font-semibold mb-3">Condition Analysis</div>
+                            <div className="space-y-2">
+                              {entry.conditions.map((condition, idx) => (
+                                <div key={idx} className="flex items-start gap-2">
+                                  {condition.met ? (
+                                    <CheckCircle className="text-green-400 flex-shrink-0 mt-0.5" size={16} />
+                                  ) : (
+                                    <XCircle className="text-red-400 flex-shrink-0 mt-0.5" size={16} />
+                                  )}
+                                  <div className="text-sm">
+                                    <div className={condition.met ? 'text-green-300' : 'text-red-300'}>
+                                      {condition.name}
+                                    </div>
+                                    <div className="text-gray-400 text-xs mt-1">
+                                      {condition.description}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Key Lessons */}
+                        {entry.lessons && entry.lessons.length > 0 && (
+                          <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-4">
+                            <div className="font-semibold mb-3 text-purple-300">💡 Key Lessons</div>
+                            <ul className="space-y-2">
+                              {entry.lessons.map((lesson, idx) => (
+                                <li key={idx} className="text-sm flex items-start gap-2">
+                                  <span className="text-purple-400 flex-shrink-0">•</span>
+                                  <span>{lesson}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {/* What Could Have Been Different */}
+                        {entry.improvements && entry.improvements.length > 0 && (
+                          <div className="bg-orange-900/20 border border-orange-500/30 rounded-lg p-4">
+                            <div className="font-semibold mb-3 text-orange-300">🔧 Improvements</div>
+                            <ul className="space-y-2">
+                              {entry.improvements.map((improvement, idx) => (
+                                <li key={idx} className="text-sm flex items-start gap-2">
+                                  <span className="text-orange-400 flex-shrink-0">•</span>
+                                  <span>{improvement}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default TradeLearningDashboard;

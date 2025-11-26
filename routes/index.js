@@ -159,6 +159,46 @@ router.get('/price', async (req, res) => {
   }
 });
 
+app.get('/api/learning-data', async (req, res) => {
+  try {
+    const { type, symbol, signalSource, limit } = req.query;
+    
+    const filters = {};
+    if (type) filters.type = type;
+    if (symbol) filters.symbol = symbol;
+    if (signalSource) filters.signalSource = signalSource;
+    if (limit) filters.limit = parseInt(limit) || 100;
+    else filters.limit = 100; // Default limit
+    
+    const learningService = require('../services/Trade Learning/learningService');
+    const data = await learningService.getLearningData(filters);
+    
+    res.json(data);
+  } catch (error) {
+    console.error('❌ Learning data API error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/learning-data/:id/outcome', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { wasCorrectDecision, actualOutcome } = req.body;
+    
+    const learningService = require('../services/Trade Learning/learningService');
+    const updated = await learningService.updateNearMissOutcome(
+      id, 
+      wasCorrectDecision, 
+      actualOutcome
+    );
+    
+    res.json(updated);
+  } catch (error) {
+    console.error('❌ Update outcome error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.get('/signals', async (req, res) => {
   try {
     const { symbol, limit, fromDate, toDate, status, signalSource } = req.query;

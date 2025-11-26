@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trade Learning Center</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+      background: #f8f9fa;
+      min-height: 100vh;
+      padding: 32px;
+      color: #1a1a1a;
+      line-height: 1.5;
+    }
+
+    .dashboard {
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    .header {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 24px 32px;
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 32px;
+      flex-wrap: wrap;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+
+    .header-brand {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #1a1a1a;
+      letter-spacing: -0.01em;
+    }
+
+    .header-subtitle {
+      font-size: 13px;
+      color: #6b7280;
+      font-weight: 400;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: 6px;
+      border: none;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-family: inherit;
+    }
+
+    .btn-primary {
+      background: #667eea;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #5568d3;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    }
+
+    a {
+      color: #667eea;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      transition: color 0.2s ease;
+    }
+
+    a:hover {
+      color: #5568d3;
+      text-decoration: underline;
+    }
+
+    /* Stats Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+
+    .stat-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+
+    .stat-value {
+      font-size: 32px;
+      font-weight: 700;
+      color: #1a1a1a;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .stat-value.blue { color: #3b82f6; }
+    .stat-value.red { color: #ef4444; }
+    .stat-value.yellow { color: #f59e0b; }
+    .stat-value.green { color: #22c55e; }
+
+    /* Tabs */
+    .tabs {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 16px 24px;
+      margin-bottom: 24px;
+      display: flex;
+      gap: 24px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      border-bottom: 2px solid #f3f4f6;
+    }
+
+    .tab {
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      color: #6b7280;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s ease;
+      user-select: none;
+      position: relative;
+      bottom: -18px;
+    }
+
+    .tab:hover {
+      color: #667eea;
+    }
+
+    .tab.active {
+      color: #667eea;
+      border-bottom-color: #667eea;
+    }
+
+    /* Filters */
+    .filters {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-bottom: 24px;
+      display: flex;
+      gap: 16px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+
+    .filter-group {
+      flex: 1;
+      position: relative;
+    }
+
+    .filter-input {
+      width: 100%;
+      padding: 10px 36px 10px 12px;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+      transition: all 0.2s ease;
+    }
+
+    .filter-input:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .filter-select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+      background: white;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .filter-select:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .search-icon {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #9ca3af;
+      font-size: 16px;
+    }
+
+    /* Entry Cards */
+    .entries-container {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .entry-card {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      overflow: hidden;
+      transition: all 0.2s ease;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+
+    .entry-card:hover {
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      transform: translateY(-2px);
+    }
+
+    .entry-card.failed {
+      border-left: 4px solid #ef4444;
+      background: #fef2f2;
+    }
+
+    .entry-card.near-miss {
+      border-left: 4px solid #f59e0b;
+      background: #fffbeb;
+    }
+
+    .entry-card.success {
+      border-left: 4px solid #22c55e;
+      background: #f0fdf4;
+    }
+
+    .entry-header {
+      padding: 20px 24px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .entry-header:hover {
+      background: rgba(0, 0, 0, 0.02);
+    }
+
+    .entry-info {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex: 1;
+    }
+
+    .entry-icon {
+      font-size: 20px;
+    }
+
+    .entry-main {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .entry-symbol {
+      font-size: 16px;
+      font-weight: 700;
+      color: #1a1a1a;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .entry-badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 8px;
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.1);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .entry-time {
+      font-size: 12px;
+      color: #6b7280;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .entry-stats {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+
+    .entry-stat {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+    }
+
+    .entry-stat-value {
+      font-size: 18px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .entry-stat-label {
+      font-size: 11px;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .expand-icon {
+      font-size: 20px;
+      color: #9ca3af;
+      transition: transform 0.2s ease;
+    }
+
+    .entry-card.expanded .expand-icon {
+      transform: rotate(180deg);
+    }
+
+    /* Entry Details */
+    .entry-details {
+      display: none;
+      border-top: 1px solid rgba(0, 0, 0, 0.1);
+      background: white;
+    }
+
+    .entry-card.expanded .entry-details {
+      display: block;
+    }
+
+    .details-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+      padding: 24px;
+    }
+
+    .details-section {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .details-heading {
+      font-size: 13px;
+      font-weight: 700;
+      color: #1a1a1a;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .detail-box {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 16px;
+    }
+
+    .detail-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 8px 0;
+    }
+
+    .detail-row:not(:last-child) {
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    .detail-label {
+      font-size: 12px;
+      color: #6b7280;
+      font-weight: 500;
+    }
+
+    .detail-value {
+      font-size: 14px;
+      font-weight: 600;
+      color: #1a1a1a;
+      font-family: 'Courier New', monospace;
+    }
+
+    .lesson-box {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 6px;
+      padding: 16px;
+    }
+
+    .lesson-box.warning {
+      background: #fef3c7;
+      border-color: #fde68a;
+    }
+
+    .lesson-box.success {
+      background: #d1fae5;
+      border-color: #a7f3d0;
+    }
+
+    .lesson-box.error {
+      background: #fee2e2;
+      border-color: #fecaca;
+    }
+
+    .lesson-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #1e40af;
+      margin-bottom: 12px;
+    }
+
+    .lesson-box.warning .lesson-title { color: #92400e; }
+    .lesson-box.success .lesson-title { color: #065f46; }
+    .lesson-box.error .lesson-title { color: #991b1b; }
+
+    .lesson-text {
+      font-size: 13px;
+      line-height: 1.6;
+      color: #374151;
+    }
+
+    .condition-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .condition-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      font-size: 13px;
+    }
+
+    .condition-icon {
+      flex-shrink: 0;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      margin-top: 2px;
+    }
+
+    .condition-icon.success {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .condition-icon.failed {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .condition-text {
+      flex: 1;
+    }
+
+    .condition-name {
+      font-weight: 600;
+      color: #1a1a1a;
+    }
+
+    .condition-desc {
+      font-size: 12px;
+      color: #6b7280;
+      margin-top: 4px;
+    }
+
+    .bullet-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .bullet-list li {
+      font-size: 13px;
+      line-height: 1.6;
+      padding-left: 20px;
+      position: relative;
+    }
+
+    .bullet-list li:before {
+      content: "•";
+      position: absolute;
+      left: 0;
+      color: #667eea;
+      font-weight: bold;
+    }
+
+    /* Loading & Empty States */
+    .loading-state {
+      text-align: center;
+      padding: 64px 32px;
+      color: #9ca3af;
+    }
+
+    .loading-spinner {
+      width: 48px;
+      height: 48px;
+      border: 4px solid #f3f4f6;
+      border-top-color: #667eea;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 64px 32px;
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      color: #9ca3af;
+    }
+
+    /* Responsive */
+    @media (max-width: 1200px) {
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .details-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 768px) {
+      body {
+        padding: 16px;
+      }
+
+      .header {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .header-actions {
+        flex-direction: column;
+        width: 100%;
+      }
+
+      .header-actions a,
+      .header-actions .btn {
+        width: 100%;
+        text-align: center;
+      }
+
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .tabs {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+      }
+
+      .filters {
+        flex-direction: column;
+      }
+
+      .entry-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 16px;
+      }
+
+      .entry-stats {
+        width: 100%;
+        justify-content: space-between;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="dashboard">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-brand">
+        <h1>📚 Trade Learning Center</h1>
+        <div class="header-subtitle">Learn from every trade, near-miss, and market condition</div>
+      </div>
+      
+      <div class="header-actions">
+        <button id="refresh-btn" class="btn btn-primary">🔄 Refresh</button>
+        <a href="/">← Back to Dashboard</a>
+        <a href="/logs.html">View Logs</a>
+      </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total Entries</div>
+        <div class="stat-value blue" id="stat-total">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Failed Trades</div>
+        <div class="stat-value red" id="stat-failed">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Near Misses</div>
+        <div class="stat-value yellow" id="stat-near">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Successful</div>
+        <div class="stat-value green" id="stat-success">0</div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <div class="tab active" data-tab="all">All (<span id="count-all">0</span>)</div>
+      <div class="tab" data-tab="trades">Trades (<span id="count-trades">0</span>)</div>
+      <div class="tab" data-tab="near-misses">Near Misses (<span id="count-near">0</span>)</div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filters">
+      <div class="filter-group">
+        <input 
+          type="text" 
+          id="search-input" 
+          class="filter-input" 
+          placeholder="Search by symbol..."
+        >
+        <span class="search-icon">🔍</span>
+      </div>
+      <select id="type-filter" class="filter-select">
+        <option value="all">All Types</option>
+        <option value="failed_trade">Failed Trades</option>
+        <option value="near_miss">Near Misses</option>
+        <option value="successful_trade">Successful Trades</option>
+      </select>
+    </div>
+
+    <!-- Entries Container -->
+    <div id="entries-container" class="entries-container">
+      <div class="loading-state">
+        <div class="loading-spinner"></div>
+        <p>Loading learning data...</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="learning.js"></script>
+</body>
+</html>

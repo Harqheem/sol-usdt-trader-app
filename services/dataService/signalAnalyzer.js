@@ -9,6 +9,7 @@ const { detectSimplifiedRegime } = require('../simplifiedRegime');
 const { detectSimplifiedEarlySignals } = require('../simplifiedEarlySignals');
 const { calculateSimplifiedEntry } = require('./simplifiedEntryCalculator');
 const { canTakeNewTrade } = require('../riskManager');
+const learningService = require('../Trade Learning/learningService');
 
 /**
  * SIMPLIFIED SIGNAL ANALYSIS - QUIET VERSION
@@ -60,6 +61,28 @@ async function analyzeSymbol(symbol) {
     if (!riskCheck.allowed) {
       // ⭐ ONLY LOG FIRST FAILURE REASON (not all checks)
       console.log(`🚫 ${symbol}: ${riskCheck.checks.failed[0]}`);
+
+      // NEW: Don't log every block, only when it was CLOSE
+    // If 4+ checks passed but 1-2 failed, log as near-miss
+    if (riskCheck.checks.passed.length >= 4) {
+      // This was a near-miss! Log it
+      await learningService.logNearMiss({
+        symbol,
+        direction: 'N/A', // Don't know yet
+        signalType: 'Risk Blocked',
+        signalSource: 'default',
+        conditionsMet: riskCheck.checks.passed.length,
+        totalConditions: riskCheck.checks.passed.length + riskCheck.checks.failed.length,
+        blockingReasons: riskCheck.checks.failed,
+        currentPrice: parseFloat(currentPrice),
+        marketConditions: null,
+        indicators: null,
+        conditionDetails: [
+          ...riskCheck.checks.passed.map(p => ({ name: p, met: true, description: p })),
+          ...riskCheck.checks.failed.map(f => ({ name: f, met: false, description: f }))
+        ]
+      });
+    }
       
       return {
         decimals,
@@ -194,6 +217,28 @@ async function analyzeSymbol(symbol) {
     // STEP 9: FINAL SIGNAL
     // ============================================
     if (entryCalc.rejectionReason) {
+      if (finalScore >= scoring.threshold * 0.85) { // Within 85% of threshold
+      await learningService.logNearMiss({
+        symbol,
+        direction: isBullish ? 'LONG' : 'SHORT',
+        signalType: earlySignals.signalType,
+        signalSource: 'default',
+        conditionsMet: Math.floor(finalScore / scoring.maxScore * 10), // Approximate
+        totalConditions: 10,
+        blockingReasons: [entryCalc.rejectionReason],
+        currentPrice: parseFloat(currentPrice),
+        marketConditions: {
+          regime: regime.regime,
+          adx: indicators.adx,
+          rsi: indicators.rsi
+        },
+        indicators: indicators,
+        conditionDetails: [
+          ...reasons.slice(0, 5).map(r => ({ name: r, met: true, description: r })),
+          { name: 'Entry Validation', met: false, description: entryCalc.rejectionReason }
+        ]
+      });
+    }
       signal = 'Wait';
       notes = `Score: ${finalScore}/${scoring.maxScore} (threshold: ${scoring.threshold})\n\n`;
       notes += `REJECTED: ${entryCalc.rejectionReason}\n\n`;

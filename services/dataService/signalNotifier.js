@@ -116,7 +116,7 @@ ${regime.tradingAdvice ? '\n' + regime.tradingAdvice.slice(0, 3).map(a => `   â€
 ðŸ“Š ASSET: ${assetInfo.name} (${assetInfo.category})
 `;
 
-      const firstMessage = `${symbol}\n${signals.signal}\nLEVERAGE: 20x\nEntry: ${signals.entry}\nTP1: ${signals.tp1} (${rrTP1}R)\nTP2: ${signals.tp2} (${rrTP2}R)\nSL: ${signals.sl}`;
+      const firstMessage = `${symbol}\n${signals.signal}\nLEVERAGE: 20x\nEntry: ${signals.entry}\nTP1: ${signals.tp1}\nTP2: ${signals.tp2}\nSL: ${signals.sl}`;
       
       const secondMessage = `
 ${symbol} - DETAILED ANALYSIS
