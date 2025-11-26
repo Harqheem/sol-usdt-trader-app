@@ -287,6 +287,7 @@ async function handleTP1Hit(trade, currentPrice, isBuy, positionSize, leverage) 
   };
 }
 
+// FIXED handleTP2Hit function - Learning BEFORE return
 async function handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, isFastSignal) {
   const remainingPnl = calculatePnL(trade.entry, trade.tp2, isBuy, positionSize, leverage, 0.5);
   
@@ -299,7 +300,6 @@ async function handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, 
   
   // ⭐ ROUTE TO CORRECT SYSTEM
   if (isFastSignal) {
-    // FAST SIGNALS: Use their handler (triggers pause logic)
     await handleTradeClose({
       symbol: trade.symbol,
       pnl: totalCustomPnl,
@@ -309,10 +309,32 @@ async function handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, 
       signalSource: trade.signal_source
     });
   } else {
-    // DEFAULT SIGNALS: Use new risk manager
     recordDefaultTradeClose(trade.symbol, totalNetPnlPct);
   }
   
+  // ✨ NEW: Log successful trade for learning - BEFORE RETURN!
+  try {
+    await learningService.logSuccessfulTrade({
+      symbol: trade.symbol,
+      direction: isBuy ? 'LONG' : 'SHORT',
+      signalType: trade.signal_type || 'Unknown',
+      signalSource: trade.signal_source || 'unknown',
+      entry: trade.entry,
+      sl: trade.sl,
+      tp1: trade.tp1,
+      tp2: trade.tp2,
+      exitPrice: trade.tp2,
+      pnl: totalNetPnlPct,
+      closeReason: 'TP2',
+      marketConditions: null,
+      indicators: null
+    });
+    console.log(`📚 Logged successful trade to learning system`);
+  } catch (error) {
+    console.error('⚠️ Failed to log to learning system:', error.message);
+  }
+  
+  // NOW return
   return { 
     status: 'closed', 
     close_time: new Date().toISOString(), 
@@ -322,28 +344,9 @@ async function handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, 
     custom_pnl: totalCustomPnl,
     remaining_position: 0.0 
   };
-    // NEW: Log successful trade for learning
-  if (trade.custom_pnl > 0) {
-    await learningService.logSuccessfulTrade({
-      symbol: trade.symbol,
-      direction: isBuy ? 'LONG' : 'SHORT',
-      signalType: trade.signal_type,
-      signalSource: trade.signal_source,
-      entry: trade.entry,
-      sl: trade.sl,
-      tp1: trade.tp1,
-      tp2: trade.tp2,
-      exitPrice: trade.tp2,
-      pnl: trade.pnl_percentage,
-      closeReason: 'TP2',
-      marketConditions: {
-        // Get from cache if available
-      },
-      indicators: null
-    });
-  }
 }
 
+// FIXED handleSLHit function - Learning BEFORE return
 async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, remainingFraction, isFastSignal) {
   const signalTag = isFastSignal ? '⚡FAST' : '📊DEFAULT';
   
@@ -355,7 +358,6 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
     
     // ⭐ ROUTE TO CORRECT SYSTEM
     if (isFastSignal) {
-      // FAST SIGNALS: Use their handler (triggers pause on FAST signals)
       await handleTradeClose({
         symbol: trade.symbol,
         pnl: fullLoss.customPnl,
@@ -365,10 +367,32 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
         signalSource: trade.signal_source
       });
     } else {
-      // DEFAULT SIGNALS: Use new risk manager
       recordDefaultTradeClose(trade.symbol, fullLoss.netPnlPct);
     }
     
+    // ✨ NEW: Log failed trade for learning - BEFORE RETURN!
+    try {
+      await learningService.logFailedTrade({
+        symbol: trade.symbol,
+        direction: isBuy ? 'LONG' : 'SHORT',
+        signalType: trade.signal_type || 'Unknown',
+        signalSource: trade.signal_source || 'unknown',
+        entry: trade.entry,
+        sl: trade.sl,
+        tp1: trade.tp1,
+        tp2: trade.tp2,
+        exitPrice: exitPrice,
+        pnl: fullLoss.netPnlPct,
+        closeReason: 'SL',
+        marketConditions: null,
+        indicators: null
+      });
+      console.log(`📚 Logged failed trade to learning system`);
+    } catch (error) {
+      console.error('⚠️ Failed to log to learning system:', error.message);
+    }
+    
+    // NOW return
     return { 
       status: 'closed', 
       close_time: new Date().toISOString(), 
@@ -391,7 +415,6 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
     
     // ⭐ ROUTE TO CORRECT SYSTEM
     if (isFastSignal) {
-      // FAST SIGNALS: Use their handler
       await handleTradeClose({
         symbol: trade.symbol,
         pnl: totalCustomPnl,
@@ -401,10 +424,50 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
         signalSource: trade.signal_source
       });
     } else {
-      // DEFAULT SIGNALS: Use new risk manager
       recordDefaultTradeClose(trade.symbol, totalNetPnlPct);
     }
     
+    // ✨ NEW: Log to learning system - BEFORE RETURN!
+    try {
+      if (isWin) {
+        await learningService.logSuccessfulTrade({
+          symbol: trade.symbol,
+          direction: isBuy ? 'LONG' : 'SHORT',
+          signalType: trade.signal_type || 'Unknown',
+          signalSource: trade.signal_source || 'unknown',
+          entry: trade.entry,
+          sl: trade.sl,
+          tp1: trade.tp1,
+          tp2: trade.tp2,
+          exitPrice: exitPrice,
+          pnl: totalNetPnlPct,
+          closeReason: 'BE_SL',
+          marketConditions: null,
+          indicators: null
+        });
+      } else {
+        await learningService.logFailedTrade({
+          symbol: trade.symbol,
+          direction: isBuy ? 'LONG' : 'SHORT',
+          signalType: trade.signal_type || 'Unknown',
+          signalSource: trade.signal_source || 'unknown',
+          entry: trade.entry,
+          sl: trade.sl,
+          tp1: trade.tp1,
+          tp2: trade.tp2,
+          exitPrice: exitPrice,
+          pnl: totalNetPnlPct,
+          closeReason: 'BE_SL',
+          marketConditions: null,
+          indicators: null
+        });
+      }
+      console.log(`📚 Logged to learning system`);
+    } catch (error) {
+      console.error('⚠️ Failed to log to learning system:', error.message);
+    }
+    
+    // NOW return
     return { 
       status: 'closed', 
       close_time: new Date().toISOString(), 
@@ -415,6 +478,7 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
       remaining_position: 0.0 
     };
   }
+}
   // NEW: Log failed trade for learning
   if (trade.status === 'closed' && trade.custom_pnl < 0) {
     await learningService.logFailedTrade({
