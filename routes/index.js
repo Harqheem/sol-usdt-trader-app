@@ -159,7 +159,7 @@ router.get('/price', async (req, res) => {
   }
 });
 
-app.get('/api/learning-data', async (req, res) => {
+router.get('/api/learning-data', async (req, res) => {
   try {
     const { type, symbol, signalSource, limit } = req.query;
     
@@ -180,7 +180,7 @@ app.get('/api/learning-data', async (req, res) => {
   }
 });
 
-app.post('/api/learning-data/:id/outcome', async (req, res) => {
+router.post('/api/learning-data/:id/outcome', async (req, res) => {
   try {
     const { id } = req.params;
     const { wasCorrectDecision, actualOutcome } = req.body;
