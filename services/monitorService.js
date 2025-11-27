@@ -1,4 +1,4 @@
-// services/monitorService.js - SAFE UPDATE THAT PRESERVES FAST SIGNALS
+// services/monitorService.js - FIXED: Removed top-level await
 
 const Binance = require('binance-api-node').default;
 const { supabase } = require('./logsService');
@@ -10,7 +10,7 @@ const { handleTradeClose } = require('./dataService/Fast Signals/positionTracker
 
 // ADD DEFAULT SYSTEM RISK MANAGER (new!)
 const { recordTradeClose: recordDefaultTradeClose } = require('./riskManager');
-const learningService = require('./Trade Learning/learningService')
+const learningService = require('./Trade Learning/learningService');
 
 const client = Binance();
 
@@ -26,6 +26,8 @@ process.on('unhandledRejection', (reason, promise) => {
 const subscriptions = {};
 let openTradesCache = [];
 const recentlyTransitioned = new Set();
+let refreshInterval = null;
+let isInitialized = false;
 
 // ========================================
 // PNL CALCULATION (unchanged)
@@ -265,7 +267,7 @@ async function handleEntryHit(trade, currentPrice, isBuy, isFastSignal) {
   
   setTimeout(() => {
     recentlyTransitioned.delete(trade.id);
-    console.log(`🔔 ${trade.symbol}: Trade cooldown ended, now monitoring for exits`);
+    console.log(`🔓 ${trade.symbol}: Trade cooldown ended, now monitoring for exits`);
   }, 3000);
 }
 
@@ -287,7 +289,6 @@ async function handleTP1Hit(trade, currentPrice, isBuy, positionSize, leverage) 
   };
 }
 
-// FIXED handleTP2Hit function - Learning BEFORE return
 async function handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, isFastSignal) {
   const remainingPnl = calculatePnL(trade.entry, trade.tp2, isBuy, positionSize, leverage, 0.5);
   
@@ -334,7 +335,6 @@ async function handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, 
     console.error('⚠️ Failed to log to learning system:', error.message);
   }
   
-  // Return AFTER logging
   return { 
     status: 'closed', 
     close_time: new Date().toISOString(), 
@@ -346,8 +346,6 @@ async function handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, 
   };
 }
 
-
-// FIXED handleSLHit function - Learning BEFORE return
 async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, remainingFraction, isFastSignal) {
   const signalTag = isFastSignal ? '⚡FAST' : '📊DEFAULT';
   
@@ -393,7 +391,6 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
       console.error('⚠️ Failed to log to learning system:', error.message);
     }
     
-    // Return AFTER logging
     return { 
       status: 'closed', 
       close_time: new Date().toISOString(), 
@@ -468,7 +465,6 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
       console.error('⚠️ Failed to log to learning system:', error.message);
     }
     
-    // Return AFTER logging
     return { 
       status: 'closed', 
       close_time: new Date().toISOString(), 
@@ -480,29 +476,6 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
     };
   }
 }
-  // NEW: Log failed trade for learning
-  if (trade.status === 'closed' && trade.custom_pnl < 0) {
-    await learningService.logFailedTrade({
-      symbol: trade.symbol,
-      direction: isBuy ? 'LONG' : 'SHORT',
-      signalType: trade.signal_type,
-      signalSource: trade.signal_source,
-      entry: trade.entry,
-      sl: trade.sl,
-      tp1: trade.tp1,
-      tp2: trade.tp2,
-      exitPrice: exitPrice,
-      pnl: trade.pnl_percentage,
-      closeReason: 'SL',
-      marketConditions: {
-        // Add current market conditions if available
-        regime: 'TRENDING_BULL', // Get from cache if available
-        adx: null,
-        rsi: null
-      },
-      indicators: null // Could store entry indicators if we save them
-    });
-  }
 
 // ========================================
 // DATABASE UPDATE (unchanged)
@@ -518,24 +491,55 @@ async function updateTrade(id, updates) {
 }
 
 // ========================================
-// INITIALIZATION (unchanged)
+// INITIALIZATION & CLEANUP - FIXED
 // ========================================
 
-// Refresh every 5 minutes
-setInterval(refreshOpenTrades, 300000);
-
-// Initial refresh
-(async function initializeMonitorService() {
+async function initializeMonitorService() {
+  if (isInitialized) {
+    console.log('⚠️ Monitor service already initialized');
+    return;
+  }
+  
+  console.log('🔄 Initializing monitor service...');
+  
   try {
     await refreshOpenTrades();
+    
+    // Start periodic refresh (every 5 minutes)
+    refreshInterval = setInterval(() => {
+      refreshOpenTrades().catch(err => console.error('Refresh failed:', err));
+    }, 300000);
+    
+    isInitialized = true;
+    console.log('✅ Monitor service initialized');
   } catch (err) {
-    console.error('Initial refresh failed:', err);
+    console.error('❌ Monitor service initialization failed:', err);
+    throw err;
   }
-})();
+}
 
-// Refresh every 5 minutes
-setInterval(() => {
-  refreshOpenTrades().catch(err => console.error('Refresh failed:', err));
-}, 300000);
+function cleanup() {
+  console.log('🧹 Cleaning up monitor service...');
+  
+  if (refreshInterval) {
+    clearInterval(refreshInterval);
+    refreshInterval = null;
+  }
+  
+  Object.keys(subscriptions).forEach(sym => {
+    try {
+      subscriptions[sym]();
+    } catch (err) {
+      console.error(`Error unsubscribing ${sym}:`, err);
+    }
+  });
+  
+  isInitialized = false;
+  console.log('✅ Monitor service cleaned up');
+}
 
-module.exports = {};
+module.exports = {
+  initializeMonitorService,
+  cleanup,
+  refreshOpenTrades
+};
