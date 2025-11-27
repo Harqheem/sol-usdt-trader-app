@@ -524,6 +524,17 @@ async function updateTrade(id, updates) {
 setInterval(refreshOpenTrades, 300000);
 
 // Initial refresh
-refreshOpenTrades().catch(err => console.error('Initial refresh failed:', err));
+(async function initializeMonitorService() {
+  try {
+    await refreshOpenTrades();
+  } catch (err) {
+    console.error('Initial refresh failed:', err);
+  }
+})();
+
+// Refresh every 5 minutes
+setInterval(() => {
+  refreshOpenTrades().catch(err => console.error('Refresh failed:', err));
+}, 300000);
 
 module.exports = {};
