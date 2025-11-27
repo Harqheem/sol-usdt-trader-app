@@ -1,11 +1,10 @@
-// services/learningService.js
-// CAPTURES LEARNING DATA FROM TRADES AND NEAR-MISSES
+// services/Trade Learning/learningService.js
+// FIXED - Added null safety checks
 
 const { supabase } = require('../logsService');
 
 /**
  * Log a failed trade for learning purposes
- * Called when a trade closes at a loss
  */
 async function logFailedTrade(tradeData) {
   try {
@@ -34,7 +33,7 @@ async function logFailedTrade(tradeData) {
       symbol,
       direction,
       signal_type: signalType,
-      signal_source: signalSource,
+      signal_source: signalSource || 'unknown',
       entry,
       sl,
       tp1,
@@ -43,19 +42,16 @@ async function logFailedTrade(tradeData) {
       pnl_percentage: pnl,
       close_reason: closeReason,
       
-      // Learning content
       reason: analysis.primaryReason,
       conditions: analysis.conditions,
       lessons: analysis.lessons,
       improvements: analysis.improvements,
       
-      // Context
       market_conditions: marketConditions,
       indicators_at_entry: indicators,
       
-      // Metadata
-      severity: analysis.severity, // 'minor', 'moderate', 'severe'
-      category: analysis.category   // 'stop_too_tight', 'wrong_direction', 'bad_timing', etc.
+      severity: analysis.severity,
+      category: analysis.category
     };
 
     const { data, error } = await supabase
@@ -69,14 +65,13 @@ async function logFailedTrade(tradeData) {
     return data[0];
 
   } catch (error) {
-    console.error('❌ Failed to log learning entry:', error.message);
+    console.error('❌ Failed to log failed trade:', error.message);
     return null;
   }
 }
 
 /**
  * Log a successful trade for learning purposes
- * Understand what went RIGHT
  */
 async function logSuccessfulTrade(tradeData) {
   try {
@@ -104,7 +99,7 @@ async function logSuccessfulTrade(tradeData) {
       symbol,
       direction,
       signal_type: signalType,
-      signal_source: signalSource,
+      signal_source: signalSource || 'unknown',
       entry,
       sl,
       tp1,
@@ -121,7 +116,7 @@ async function logSuccessfulTrade(tradeData) {
       market_conditions: marketConditions,
       indicators_at_entry: indicators,
       
-      quality: analysis.quality // 'excellent', 'good', 'lucky'
+      quality: analysis.quality
     };
 
     const { data, error } = await supabase
@@ -136,13 +131,13 @@ async function logSuccessfulTrade(tradeData) {
 
   } catch (error) {
     console.error('❌ Failed to log success entry:', error.message);
+    console.error('Stack:', error.stack);
     return null;
   }
 }
 
 /**
  * Log a near-miss signal
- * When 4 out of 5 conditions met but signal was blocked
  */
 async function logNearMiss(nearMissData) {
   try {
@@ -156,7 +151,8 @@ async function logNearMiss(nearMissData) {
       blockingReasons,
       currentPrice,
       marketConditions,
-      indicators
+      indicators,
+      conditionDetails
     } = nearMissData;
 
     const analysis = analyzeNearMiss(nearMissData);
@@ -167,12 +163,12 @@ async function logNearMiss(nearMissData) {
       symbol,
       direction,
       signal_type: signalType,
-      signal_source: signalSource,
+      signal_source: signalSource || 'unknown',
       conditions_met: conditionsMet,
       total_conditions: totalConditions,
       
       reason: analysis.primaryReason,
-      conditions: analysis.conditions,
+      conditions: conditionDetails || analysis.conditions,
       lessons: analysis.lessons,
       improvements: analysis.improvements,
       
@@ -181,7 +177,7 @@ async function logNearMiss(nearMissData) {
       market_conditions: marketConditions,
       indicators_at_miss: indicators,
       
-      was_correct_decision: null // Can be updated later when we see what happened
+      was_correct_decision: null
     };
 
     const { data, error } = await supabase
@@ -201,7 +197,7 @@ async function logNearMiss(nearMissData) {
 }
 
 /**
- * Analyze why a trade failed
+ * Analyze why a trade failed - WITH NULL SAFETY
  */
 function analyzeFailure(tradeData) {
   const { closeReason, pnl, sl, entry, marketConditions } = tradeData;
@@ -215,10 +211,11 @@ function analyzeFailure(tradeData) {
     improvements: []
   };
 
-  // Determine severity
-  if (pnl < -3) {
+  // Determine severity - NULL SAFE
+  const pnlValue = pnl || 0;
+  if (pnlValue < -3) {
     analysis.severity = 'severe';
-  } else if (pnl < -1.5) {
+  } else if (pnlValue < -1.5) {
     analysis.severity = 'moderate';
   } else {
     analysis.severity = 'minor';
@@ -226,7 +223,9 @@ function analyzeFailure(tradeData) {
 
   // Analyze based on close reason
   if (closeReason === 'SL' || closeReason === 'STOP_LOSS') {
-    const slDistance = Math.abs(entry - sl) / entry * 100;
+    const slValue = sl || entry;
+    const entryValue = entry || 1;
+    const slDistance = Math.abs(entryValue - slValue) / entryValue * 100;
     
     if (slDistance < 0.5) {
       analysis.category = 'stop_too_tight';
@@ -245,14 +244,14 @@ function analyzeFailure(tradeData) {
       analysis.improvements.push('Review entry timing and signal quality filters');
     }
 
-    // Check market conditions
+    // Check market conditions - NULL SAFE
     if (marketConditions) {
       if (marketConditions.regime === 'CHOPPY') {
         analysis.lessons.push('⚠️ Trade taken in CHOPPY market - higher failure rate expected');
         analysis.improvements.push('Avoid or reduce size significantly in choppy conditions');
       }
       
-      if (marketConditions.adx < 20) {
+      if (marketConditions.adx && marketConditions.adx < 20) {
         analysis.lessons.push(`⚠️ Low ADX (${marketConditions.adx.toFixed(1)}) = weak trend`);
         analysis.improvements.push('Require ADX > 25 for higher confidence trades');
       }
@@ -263,6 +262,10 @@ function analyzeFailure(tradeData) {
     analysis.primaryReason = 'Entry level never reached within 4-hour window - price moved away';
     analysis.lessons.push('Market momentum was against the intended entry direction');
     analysis.improvements.push('Consider tighter entry levels or market orders for urgent signals');
+  } else {
+    analysis.category = 'unknown';
+    analysis.primaryReason = `Trade closed: ${closeReason || 'Unknown reason'}`;
+    analysis.lessons.push('Review trade details for insights');
   }
 
   // Add general conditions
@@ -283,7 +286,7 @@ function analyzeFailure(tradeData) {
 }
 
 /**
- * Analyze why a trade succeeded
+ * Analyze why a trade succeeded - WITH NULL SAFETY
  */
 function analyzeSuccess(tradeData) {
   const { closeReason, pnl, tp1, tp2, entry, marketConditions } = tradeData;
@@ -296,17 +299,18 @@ function analyzeSuccess(tradeData) {
     improvements: []
   };
 
-  // Determine quality
-  if (pnl > 3) {
+  // Determine quality - NULL SAFE
+  const pnlValue = pnl || 0;
+  if (pnlValue > 3) {
     analysis.quality = 'excellent';
-  } else if (pnl > 1.5) {
+  } else if (pnlValue > 1.5) {
     analysis.quality = 'good';
   } else {
     analysis.quality = 'marginal';
   }
 
   if (closeReason === 'TP2') {
-    analysis.primaryReason = `Perfect trade execution - reached TP2 for ${pnl.toFixed(2)}% profit`;
+    analysis.primaryReason = `Perfect trade execution - reached TP2 for ${pnlValue.toFixed(2)}% profit`;
     analysis.lessons.push('Strong trend continuation allowed full profit capture');
     analysis.lessons.push('Risk management worked perfectly with 50% scaling');
   } else if (closeReason === 'TP1') {
@@ -316,15 +320,18 @@ function analyzeSuccess(tradeData) {
   } else if (closeReason === 'BE_SL') {
     analysis.primaryReason = 'Breakeven exit after TP1 hit - protected capital successfully';
     analysis.lessons.push('Moving SL to breakeven after TP1 prevented loss');
+  } else {
+    analysis.primaryReason = `Trade closed successfully: ${closeReason || 'Won'} for ${pnlValue.toFixed(2)}% profit`;
+    analysis.lessons.push('Successful trade execution');
   }
 
-  // Market condition analysis
+  // Market condition analysis - NULL SAFE
   if (marketConditions) {
     if (marketConditions.regime === 'TRENDING_BULL' || marketConditions.regime === 'TRENDING_BEAR') {
       analysis.lessons.push(`✅ Strong trend (${marketConditions.regime}) supported the trade`);
     }
     
-    if (marketConditions.adx > 30) {
+    if (marketConditions.adx && marketConditions.adx > 30) {
       analysis.lessons.push(`✅ High ADX (${marketConditions.adx.toFixed(1)}) = strong momentum`);
     }
   }
@@ -333,16 +340,15 @@ function analyzeSuccess(tradeData) {
     {
       name: 'Reached Target',
       met: true,
-      description: `Trade reached ${closeReason}`
+      description: `Trade reached ${closeReason || 'target'}`
     },
     {
       name: 'Strong Market Conditions',
       met: marketConditions?.adx > 25,
-      description: marketConditions ? `ADX was ${marketConditions.adx.toFixed(1)}` : 'N/A'
+      description: marketConditions?.adx ? `ADX was ${marketConditions.adx.toFixed(1)}` : 'N/A'
     }
   ];
 
-  // What made this trade work
   if (analysis.quality === 'excellent') {
     analysis.improvements.push('Look for similar setups with these exact conditions');
   }
@@ -369,14 +375,11 @@ function analyzeNearMiss(nearMissData) {
     improvements: []
   };
 
-  // Main reason
   const percentage = (conditionsMet / totalConditions * 100).toFixed(0);
   analysis.primaryReason = `${percentage}% of conditions met (${conditionsMet}/${totalConditions}), but blocked by: ${blockingReasons.join(', ')}`;
 
-  // Build conditions list
   analysis.conditions = nearMissData.conditionDetails || [];
 
-  // Analyze blocking reasons
   blockingReasons.forEach(reason => {
     if (reason.includes('risk') || reason.includes('limit')) {
       analysis.lessons.push('⚠️ Risk management limits prevented this trade');
@@ -393,13 +396,12 @@ function analyzeNearMiss(nearMissData) {
     }
   });
 
-  // Add context about market conditions
   if (marketConditions) {
     if (marketConditions.regime === 'CHOPPY') {
       analysis.lessons.push('Market was choppy - signal quality naturally lower');
     }
-    if (marketConditions.adx < 20) {
-      analysis.lessons.push(`Weak ADX (${marketConditions.adx?.toFixed(1)}) suggests low conviction move`);
+    if (marketConditions.adx && marketConditions.adx < 20) {
+      analysis.lessons.push(`Weak ADX (${marketConditions.adx.toFixed(1)}) suggests low conviction move`);
     }
   }
 
@@ -442,7 +444,6 @@ async function getLearningData(filters = {}) {
 
 /**
  * Update near-miss entry after we see outcome
- * Did waiting prove to be the right decision?
  */
 async function updateNearMissOutcome(nearMissId, wasCorrectDecision, actualOutcome) {
   try {

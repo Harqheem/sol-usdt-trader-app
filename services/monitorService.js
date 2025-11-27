@@ -502,7 +502,6 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
       indicators: null // Could store entry indicators if we save them
     });
   }
-}
 
 // ========================================
 // DATABASE UPDATE (unchanged)
