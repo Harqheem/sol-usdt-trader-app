@@ -298,7 +298,7 @@ async function handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, 
   const signalTag = isFastSignal ? '⚡FAST' : '📊DEFAULT';
   console.log(`✅ Closed remaining at TP2 for ${trade.symbol} [${signalTag}] at ${currentPrice.toFixed(4)} (PnL: ${totalNetPnlPct.toFixed(2)}%)`);
   
-  // ⭐ ROUTE TO CORRECT SYSTEM
+  // Route to correct system
   if (isFastSignal) {
     await handleTradeClose({
       symbol: trade.symbol,
@@ -312,7 +312,7 @@ async function handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, 
     recordDefaultTradeClose(trade.symbol, totalNetPnlPct);
   }
   
-  // ✨ NEW: Log successful trade for learning - BEFORE RETURN!
+  // ✅ Log to learning system BEFORE return
   try {
     await learningService.logSuccessfulTrade({
       symbol: trade.symbol,
@@ -334,7 +334,7 @@ async function handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, 
     console.error('⚠️ Failed to log to learning system:', error.message);
   }
   
-  // NOW return
+  // Return AFTER logging
   return { 
     status: 'closed', 
     close_time: new Date().toISOString(), 
@@ -346,6 +346,7 @@ async function handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, 
   };
 }
 
+
 // FIXED handleSLHit function - Learning BEFORE return
 async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, remainingFraction, isFastSignal) {
   const signalTag = isFastSignal ? '⚡FAST' : '📊DEFAULT';
@@ -356,7 +357,7 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
     
     console.log(`❌ Closed full at SL for ${trade.symbol} [${signalTag}] at ${exitPrice.toFixed(4)} (Loss: ${fullLoss.netPnlPct.toFixed(2)}%)`);
     
-    // ⭐ ROUTE TO CORRECT SYSTEM
+    // Route to correct system
     if (isFastSignal) {
       await handleTradeClose({
         symbol: trade.symbol,
@@ -370,7 +371,7 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
       recordDefaultTradeClose(trade.symbol, fullLoss.netPnlPct);
     }
     
-    // ✨ NEW: Log failed trade for learning - BEFORE RETURN!
+    // ✅ Log to learning system BEFORE return
     try {
       await learningService.logFailedTrade({
         symbol: trade.symbol,
@@ -392,7 +393,7 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
       console.error('⚠️ Failed to log to learning system:', error.message);
     }
     
-    // NOW return
+    // Return AFTER logging
     return { 
       status: 'closed', 
       close_time: new Date().toISOString(), 
@@ -413,7 +414,7 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
     const isWin = totalCustomPnl >= 0;
     console.log(`${isWin ? '✅' : '❌'} Closed remaining at BE SL for ${trade.symbol} [${signalTag}] at ${exitPrice.toFixed(4)} (PnL: ${totalNetPnlPct.toFixed(2)}%)`);
     
-    // ⭐ ROUTE TO CORRECT SYSTEM
+    // Route to correct system
     if (isFastSignal) {
       await handleTradeClose({
         symbol: trade.symbol,
@@ -427,7 +428,7 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
       recordDefaultTradeClose(trade.symbol, totalNetPnlPct);
     }
     
-    // ✨ NEW: Log to learning system - BEFORE RETURN!
+    // ✅ Log to learning system BEFORE return
     try {
       if (isWin) {
         await learningService.logSuccessfulTrade({
@@ -467,7 +468,7 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
       console.error('⚠️ Failed to log to learning system:', error.message);
     }
     
-    // NOW return
+    // Return AFTER logging
     return { 
       status: 'closed', 
       close_time: new Date().toISOString(), 
