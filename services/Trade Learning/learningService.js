@@ -1,13 +1,25 @@
 // services/Trade Learning/learningService.js
-// FIXED - Added null safety checks
+// FIXED - Added timeout protection and better error handling
 
 const { supabase } = require('../logsService');
+
+// Timeout wrapper to prevent hanging
+function withTimeout(promise, timeoutMs = 5000) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Operation timed out')), timeoutMs)
+    )
+  ]);
+}
 
 /**
  * Log a failed trade for learning purposes
  */
 async function logFailedTrade(tradeData) {
   try {
+    console.log('🔧 [LEARNING] logFailedTrade called for', tradeData.symbol);
+    
     const {
       symbol,
       direction,
@@ -26,6 +38,7 @@ async function logFailedTrade(tradeData) {
 
     // Analyze WHY it failed
     const analysis = analyzeFailure(tradeData);
+    console.log('🔧 [LEARNING] Analysis complete:', analysis.category);
 
     const learningEntry = {
       type: 'failed_trade',
@@ -54,18 +67,37 @@ async function logFailedTrade(tradeData) {
       category: analysis.category
     };
 
-    const { data, error } = await supabase
+    console.log('🔧 [LEARNING] Attempting DB insert...');
+    
+    const insertPromise = supabase
       .from('learning_data')
       .insert([learningEntry])
       .select();
+    
+    const { data, error } = await withTimeout(insertPromise, 3000);
 
-    if (error) throw error;
+    if (error) {
+      console.error('❌ [LEARNING] DB Error:', error.message);
+      console.error('❌ [LEARNING] Error details:', error);
+      throw error;
+    }
 
     console.log(`📚 Learning entry logged: ${symbol} FAILED (${analysis.category})`);
     return data[0];
 
   } catch (error) {
     console.error('❌ Failed to log failed trade:', error.message);
+    console.error('❌ Stack:', error.stack);
+    
+    // Check for specific error types
+    if (error.message === 'Operation timed out') {
+      console.error('⚠️ [LEARNING] Database operation timed out - possible connection issue');
+    } else if (error.message?.includes('relation') && error.message?.includes('does not exist')) {
+      console.error('⚠️ [LEARNING] Table "learning_data" does not exist in database');
+    } else if (error.message?.includes('permission denied') || error.message?.includes('RLS')) {
+      console.error('⚠️ [LEARNING] Database permission denied - check RLS policies');
+    }
+    
     return null;
   }
 }
@@ -75,6 +107,8 @@ async function logFailedTrade(tradeData) {
  */
 async function logSuccessfulTrade(tradeData) {
   try {
+    console.log('🔧 [LEARNING] logSuccessfulTrade called for', tradeData.symbol);
+    
     const {
       symbol,
       direction,
@@ -92,6 +126,7 @@ async function logSuccessfulTrade(tradeData) {
     } = tradeData;
 
     const analysis = analyzeSuccess(tradeData);
+    console.log('🔧 [LEARNING] Analysis complete:', analysis.quality);
 
     const learningEntry = {
       type: 'successful_trade',
@@ -119,19 +154,36 @@ async function logSuccessfulTrade(tradeData) {
       quality: analysis.quality
     };
 
-    const { data, error } = await supabase
+    console.log('🔧 [LEARNING] Attempting DB insert...');
+    
+    const insertPromise = supabase
       .from('learning_data')
       .insert([learningEntry])
       .select();
+    
+    const { data, error } = await withTimeout(insertPromise, 3000);
 
-    if (error) throw error;
+    if (error) {
+      console.error('❌ [LEARNING] DB Error:', error.message);
+      console.error('❌ [LEARNING] Error details:', error);
+      throw error;
+    }
 
     console.log(`📚 Learning entry logged: ${symbol} SUCCESS (${analysis.quality})`);
     return data[0];
 
   } catch (error) {
     console.error('❌ Failed to log success entry:', error.message);
-    console.error('Stack:', error.stack);
+    console.error('❌ Stack:', error.stack);
+    
+    if (error.message === 'Operation timed out') {
+      console.error('⚠️ [LEARNING] Database operation timed out - possible connection issue');
+    } else if (error.message?.includes('relation') && error.message?.includes('does not exist')) {
+      console.error('⚠️ [LEARNING] Table "learning_data" does not exist in database');
+    } else if (error.message?.includes('permission denied') || error.message?.includes('RLS')) {
+      console.error('⚠️ [LEARNING] Database permission denied - check RLS policies');
+    }
+    
     return null;
   }
 }
@@ -141,6 +193,8 @@ async function logSuccessfulTrade(tradeData) {
  */
 async function logNearMiss(nearMissData) {
   try {
+    console.log('🔧 [LEARNING] logNearMiss called for', nearMissData.symbol);
+    
     const {
       symbol,
       direction,
@@ -180,18 +234,30 @@ async function logNearMiss(nearMissData) {
       was_correct_decision: null
     };
 
-    const { data, error } = await supabase
+    console.log('🔧 [LEARNING] Attempting DB insert...');
+    
+    const insertPromise = supabase
       .from('learning_data')
       .insert([learningEntry])
       .select();
+    
+    const { data, error } = await withTimeout(insertPromise, 3000);
 
-    if (error) throw error;
+    if (error) {
+      console.error('❌ [LEARNING] DB Error:', error.message);
+      throw error;
+    }
 
     console.log(`📚 Near-miss logged: ${symbol} (${conditionsMet}/${totalConditions} conditions)`);
     return data[0];
 
   } catch (error) {
     console.error('❌ Failed to log near-miss:', error.message);
+    
+    if (error.message === 'Operation timed out') {
+      console.error('⚠️ [LEARNING] Database operation timed out');
+    }
+    
     return null;
   }
 }
