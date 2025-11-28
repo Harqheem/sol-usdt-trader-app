@@ -1,4 +1,4 @@
-// server.js - SAFE UPDATE FOR DUAL SYSTEM
+// server.js - FIXED: Initialize monitor service properly
 
 require('dotenv').config();
 const express = require('express');
@@ -13,7 +13,8 @@ const { initializeRiskManagement } = require('./services/dataService/Fast Signal
 // ⭐ ADD DEFAULT SYSTEM RISK MANAGER (new!)
 const { initializeRiskManager, getRiskStatus } = require('./services/riskManager');
 
-require('./services/monitorService'); // Start trade monitoring
+// ⭐ FIX: Import monitor service initialization
+const { initializeMonitorService, cleanup: cleanupMonitor } = require('./services/monitorService');
 
 const { symbols } = config;
 
@@ -34,6 +35,13 @@ async function gracefulShutdown() {
   if (isShuttingDown) return;
   isShuttingDown = true;
   console.log('\n🛑 Shutting down gracefully...');
+  
+  // ⭐ FIX: Clean up monitor service
+  try {
+    cleanupMonitor();
+  } catch (err) {
+    console.error('⚠️ Monitor cleanup error:', err);
+  }
   
   cleanup();
   
@@ -289,13 +297,13 @@ app.post('/force-refresh/:symbol', async (req, res) => {
 (async () => {
   try {
     console.log('🚀 Starting Crypto Trading Bot...');
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     
     // Initialize WebSocket data service
     console.log('\n📡 Initializing WebSocket data service...');
     await initDataService();
     
-    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     
     // ⭐ FAST SIGNALS: Initialize their risk management (KEEP THIS!)
     console.log('\n⚡ Initializing Fast Signals risk management...');
@@ -327,38 +335,50 @@ app.post('/force-refresh/:symbol', async (req, res) => {
       console.log(`   Trading paused: ${riskStatus.pause.isPaused ? 'YES' : 'NO'}`);
     }
     
-    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    // ⭐ FIX: Initialize monitor service for trade tracking
+    console.log('\n👁️  Initializing trade monitor service...');
+    try {
+      await initializeMonitorService();
+      console.log('✅ Monitor service initialized - tracking open/pending trades');
+    } catch (monitorErr) {
+      console.error('⚠️  Monitor service initialization failed:', monitorErr);
+      console.error('   Trades may not be monitored properly!');
+    }
+    
+    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     
     const port = process.env.PORT || 3000;
     server = app.listen(port, () => {
       console.log('\n✅ SERVER RUNNING');
-      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
       console.log(`🌐 Server URL: http://localhost:${port}`);
       console.log(`📊 Monitoring: ${symbols.length} symbols`);
-      console.log(`📌 Data Source: WebSocket (real-time)`);
+      console.log(`🔌 Data Source: WebSocket (real-time)`);
       console.log(`⚡ Fast Signals: ACTIVE`);
       console.log(`🛡️  Default Signals: ACTIVE (with risk management)`);
-      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-      console.log('\n🔍 ENDPOINTS:');
+      console.log(`👁️  Trade Monitor: ACTIVE`);
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      console.log('\n📍 ENDPOINTS:');
       console.log(`   Health: http://localhost:${port}/health`);
       console.log(`   Status: http://localhost:${port}/service-status`);
       console.log(`   Trading: http://localhost:${port}/trading-status`);
       console.log(`   Risk Status (Default): http://localhost:${port}/risk-status`);
       console.log(`   Toggle: POST http://localhost:${port}/toggle-trading`);
       console.log(`   Refresh: POST http://localhost:${port}/force-refresh/:symbol`);
-      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
       
       console.log('✨ Bot is now monitoring markets in real-time');
       console.log('⚡ Fast Signals: No limits (original behavior)');
       console.log('🛡️  Default Signals: Risk limits enforced');
+      console.log('👁️  Monitor: Tracking all open/pending trades');
       console.log('⏰ Signals will be analyzed when 30m candles close\n');
     });
   } catch (error) {
-    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.error('❌ FAILED TO START SERVER');
-    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.error(error);
-    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
     process.exit(1);
   }
 })();
