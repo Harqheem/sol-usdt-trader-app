@@ -165,7 +165,7 @@ async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, dec
     return {
       signal: selectedSignal.direction === 'LONG' ? 'Enter Long' : 'Enter Short',
       signalType: selectedSignal.type,
-      signalSource: signalSource,
+      signalSource: 'default', // ✅ FIX: Always use 'default' for database constraint
       confidence: selectedSignal.confidence,
       regime: regime.type,
       structure: marketStructure.structure,
@@ -177,6 +177,7 @@ async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, dec
       positionSize: trade.positionSize,
       riskAmount: trade.riskAmount,
       strategy: selectedSignal.strategy.toUpperCase(),
+      strategyType: signalSource, // ✅ NEW: Keep strategy type for notes (SMC/SR_BOUNCE)
       notes: buildNotes(selectedSignal, signalSource, regime, marketStructure, trade)
     };
     
