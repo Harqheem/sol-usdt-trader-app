@@ -1,177 +1,203 @@
-// services/dataService/signalNotifier.js - UPDATED WITH RISK MANAGER
+// services/dataService/signalNotifier.js - FIXED
 
-const { sendTelegramNotification } = require('../notificationService');
 const { logSignal } = require('../logsService');
-const { canTakeNewTrade, recordNewTrade } = require('../riskManager');
-const { wsCache } = require('./cacheManager');
+const { sendTelegramNotification } = require('../notificationService');
+const pauseService = require('../pauseService');
 
-// Tracking state
-const previousSignal = {};
+// Tracks last notification time per symbol
 const lastNotificationTime = {};
+const NOTIFICATION_COOLDOWN = 2 * 60 * 60 * 1000; // 2 hours
 
 /**
- * Check if this candle-close signal duplicates a recent fast signal
+ * Check if we should send a signal notification
+ * FIXED: Properly handle "Wait" signals - they're valid, just not tradeable
  */
-function isDuplicateFastSignal(symbol, signals) {
-  const cache = wsCache[symbol];
-  if (!cache || !cache.fastSignals || cache.fastSignals.length === 0) {
-    return false;
-  }
-  
-  const direction = signals.signal.includes('Long') ? 'LONG' : 'SHORT';
-  
-  // Check if any recent fast signal matches this direction
-  for (const fastSignal of cache.fastSignals) {
-    const timeSinceFast = Date.now() - fastSignal.timestamp;
+async function checkAndSendSignal(symbol, analysisResult) {
+  try {
+    // ============================================
+    // STEP 1: VALIDATE ANALYSIS RESULT
+    // ============================================
     
-    // If fast signal was sent in last 30 minutes
-    if (timeSinceFast < 1800000 && fastSignal.direction === direction) {
-      // Check if entry prices are similar (within 1%)
-      const currentEntry = parseFloat(signals.entry);
-      if (!isNaN(currentEntry)) {
-        const entryDiff = Math.abs(currentEntry - fastSignal.entry) / fastSignal.entry;
-        
-        if (entryDiff < 0.01) {
-          console.log(`⭐️ ${symbol}: Skipping candle-close signal - fast signal already sent ${(timeSinceFast / 60000).toFixed(1)}m ago`);
-          return true;
-        }
-      }
+    // Check if analysis errored
+    if (analysisResult.error) {
+      console.log(`   ⚠️  Analysis error: ${analysisResult.error}`);
+      return;
     }
+    
+    // ⭐ FIX: "Wait" signals are VALID but not tradeable
+    // Don't treat them as incomplete - they're complete non-trade signals
+    if (!analysisResult.signals) {
+      console.log(`   ❌ ${symbol}: Incomplete analysis data (no signals object)`);
+      return;
+    }
+    
+    const signal = analysisResult.signals.signal;
+    
+    // If it's a Wait signal, that's valid - just log and return
+    if (signal === 'Wait' || signal === 'Error') {
+      // This is a complete analysis - just no trade opportunity
+      // console.log(`   ℹ️  ${symbol}: ${signal} - ${analysisResult.signals.notes?.substring(0, 50)}...`);
+      return;
+    }
+    
+    // ============================================
+    // STEP 2: VALIDATE TRADEABLE SIGNAL DATA
+    // ============================================
+    
+    // If we got here, it's a trade signal (Enter Long/Short)
+    // Now we need complete trade data
+    const { entry, tp1, tp2, sl, positionSize } = analysisResult.signals;
+    
+    if (!entry || !tp1 || !tp2 || !sl || !positionSize) {
+      console.log(`   ❌ ${symbol}: Trade signal incomplete - missing levels`);
+      console.log(`      Entry: ${entry}, TP1: ${tp1}, TP2: ${tp2}, SL: ${sl}, Size: ${positionSize}`);
+      return;
+    }
+    
+    if (entry === 'N/A' || tp1 === 'N/A' || tp2 === 'N/A' || sl === 'N/A' || positionSize === 'N/A') {
+      console.log(`   ❌ ${symbol}: Trade signal has N/A values`);
+      return;
+    }
+    
+    // ============================================
+    // STEP 3: CHECK IF PAUSED
+    // ============================================
+    
+    if (pauseService.isPaused()) {
+      console.log(`   ⏸️  ${symbol}: Trading paused - signal suppressed`);
+      return;
+    }
+    
+    // ============================================
+    // STEP 4: CHECK NOTIFICATION COOLDOWN
+    // ============================================
+    
+    const now = Date.now();
+    const lastNotif = lastNotificationTime[symbol];
+    const timeSinceLastNotif = lastNotif ? now - lastNotif : Infinity;
+    
+    console.log(`   Time since last notification: ${lastNotif ? Math.round(timeSinceLastNotif / 60000) + 'm ago' : 'never'}`);
+    
+    if (timeSinceLastNotif < NOTIFICATION_COOLDOWN) {
+      const remainingTime = Math.round((NOTIFICATION_COOLDOWN - timeSinceLastNotif) / 60000);
+      console.log(`   ⏰ Notification cooldown active (${remainingTime}m remaining)`);
+      return;
+    }
+    
+    // ============================================
+    // STEP 5: DETERMINE SIGNAL SOURCE
+    // ============================================
+    
+    const signalSource = analysisResult.signals.signalSource || 'default';
+    console.log(`   📡 Signal source: ${signalSource.toUpperCase()}`);
+    
+    // ============================================
+    // STEP 6: LOG TO DATABASE
+    // ============================================
+    
+    console.log(`   💾 Logging signal to database...`);
+    
+    const signalData = {
+      signal: signal,
+      notes: analysisResult.signals.notes || 'No notes',
+      entry: parseFloat(entry),
+      tp1: parseFloat(tp1),
+      tp2: parseFloat(tp2),
+      sl: parseFloat(sl),
+      positionSize: parseFloat(positionSize),
+      leverage: 20
+    };
+    
+    try {
+      const tradeId = await logSignal(symbol, signalData, 'pending', null, signalSource);
+      console.log(`   ✅ Signal logged (ID: ${tradeId})`);
+    } catch (logError) {
+      console.error(`   ❌ Failed to log signal:`, logError.message);
+      // Continue to send notification even if logging fails
+    }
+    
+    // ============================================
+    // STEP 7: SEND TELEGRAM NOTIFICATION
+    // ============================================
+    
+    console.log(`   📱 Sending Telegram notification...`);
+    
+    const message = buildNotificationMessage(symbol, signal, analysisResult);
+    const detailedMessage = buildDetailedMessage(symbol, analysisResult);
+    
+    try {
+      await sendTelegramNotification(message, detailedMessage, symbol);
+      lastNotificationTime[symbol] = now;
+      console.log(`   ✅ Notification sent successfully`);
+    } catch (notifError) {
+      console.error(`   ❌ Failed to send notification:`, notifError.message);
+    }
+    
+  } catch (error) {
+    console.error(`   ❌ Error in checkAndSendSignal for ${symbol}:`, error.message);
   }
-  
-  return false;
 }
 
 /**
- * Check and send signal notification - WITH RISK MANAGER INTEGRATION
+ * Build notification message
  */
-async function checkAndSendSignal(symbol, analysis) {
-  const { signals, regime, earlySignals, assetInfo } = analysis;
+function buildNotificationMessage(symbol, signal, analysis) {
+  const { entry, tp1, tp2, sl, positionSize, signalSource } = analysis.signals;
+  const sourceTag = signalSource === 'fast' ? '⚡FAST' : '📊DEFAULT';
   
+  let message = `🎯 **${signal.toUpperCase()}** [${sourceTag}]\n\n`;
+  message += `${symbol}\n`;
+  message += `Entry: ${entry}\n`;
+  message += `TP1: ${tp1}\n`;
+  message += `TP2: ${tp2}\n`;
+  message += `SL: ${sl}\n`;
+  message += `Size: $${positionSize}`;
+  
+  return message;
+}
 
-  if (!signals || !signals.signal) {
-    console.log(`   ❌ No signals object found`);
-    return;
+/**
+ * Build detailed message
+ */
+function buildDetailedMessage(symbol, analysis) {
+  const { notes, signalType, confidence, strategy } = analysis.signals;
+  const { regime, structure, structureConfidence } = analysis.marketContext || {};
+  
+  let message = `📊 **${symbol} - SIGNAL DETAILS**\n\n`;
+  
+  if (signalType) {
+    message += `**Signal Type:** ${signalType}\n`;
   }
-
-  // Check if this duplicates a recent fast signal
-  if (isDuplicateFastSignal(symbol, signals)) {
-    return; // Skip - fast signal already covered this
-  }
-
-  const now = Date.now();
   
-  // ============================================
-  // RISK MANAGER CHECK
-  // ============================================
-  const riskCheck = canTakeNewTrade(symbol);
-  
-  if (!riskCheck.allowed) {
-    console.log(`\n🚫 ${symbol}: BLOCKED by risk manager`);
-    riskCheck.checks.failed.forEach(msg => console.log(`   ❌ ${msg}`));
-    return;  // Don't send notification if risk limits prevent trading
+  if (strategy) {
+    message += `**Strategy:** ${strategy.toUpperCase()}\n`;
   }
   
-  console.log(`\n✅ ${symbol}: Risk checks passed`);
-  riskCheck.checks.passed.forEach(msg => console.log(`   ✅ ${msg}`));
-
-  // ============================================
-  // NOTIFICATION CHECKS
-  // ============================================
+  if (confidence) {
+    message += `**Confidence:** ${confidence}%\n`;
+  }
   
-  const timeSinceLastNotif = lastNotificationTime[symbol] ? now - lastNotificationTime[symbol] : Infinity;
-  console.log(`   Time since last notification: ${timeSinceLastNotif === Infinity ? 'never' : (timeSinceLastNotif / 1000).toFixed(0) + 's'}`);
-
-  // Check if should send notification
-  const shouldSend = signals.signal.startsWith('Enter') && 
-      signals.signal !== previousSignal[symbol] &&
-      (!lastNotificationTime[symbol] || timeSinceLastNotif > 300000);  // 5 min cooldown
-
-  console.log(`   Should send: ${shouldSend}`);
-
-  if (shouldSend) {
-    try {
-      console.log(`\n📨 ${symbol}: Preparing Telegram notification...`);
-      
-      // Calculate R:R ratios
-      const riskAmountVal = Math.abs(parseFloat(signals.entry) - parseFloat(signals.sl));
-      const rrTP1 = (Math.abs(parseFloat(signals.tp1) - parseFloat(signals.entry)) / riskAmountVal).toFixed(2);
-      const rrTP2 = (Math.abs(parseFloat(signals.tp2) - parseFloat(signals.entry)) / riskAmountVal).toFixed(2);
-
-      console.log(`   Entry: ${signals.entry}, SL: ${signals.sl}`);
-      console.log(`   TP1: ${signals.tp1} (${rrTP1}R), TP2: ${signals.tp2} (${rrTP2}R)`);
-
-      // Build notification messages
-      const earlySignalInfo = earlySignals.pass ? `
-🔍 EARLY SIGNALS: ${earlySignals.signalType.toUpperCase()}
-${earlySignals.reasons.slice(0, 3).map(r => `   • ${r}`).join('\n')}
-` : '';
-
-      const regimeInfo = `
-🎯 MARKET REGIME: ${regime.regime.replace(/_/g, ' ').toUpperCase()}
-   ${regime.description}
-   Confidence: ${regime.confidence}%
-${regime.tradingAdvice ? '\n' + regime.tradingAdvice.slice(0, 3).map(a => `   • ${a}`).join('\n') : ''}
-
-📊 ASSET: ${assetInfo.name} (${assetInfo.category})
-`;
-
-      const firstMessage = `${symbol}\n${signals.signal}\nLEVERAGE: 20x\nEntry: ${signals.entry}\nTP1: ${signals.tp1}\nTP2: ${signals.tp2}\nSL: ${signals.sl}`;
-      
-      const secondMessage = `
-${symbol} - DETAILED ANALYSIS
-${earlySignalInfo}${regimeInfo}
-${signals.notes}
-
-📊 RISK SUMMARY:
-${riskCheck.checks.passed.map(p => `✅ ${p}`).join('\n')}
-${riskCheck.checks.warnings.length > 0 ? '\n⚠️  WARNINGS:\n' + riskCheck.checks.warnings.map(w => `   • ${w}`).join('\n') : ''}
-`;
-
-      console.log(`\n📤 Sending to Telegram...`);
-      console.log(`Message 1:\n${firstMessage}`);
-      console.log(`\nMessage 2 (truncated):\n${secondMessage.substring(0, 200)}...`);
-
-      await sendTelegramNotification(firstMessage, secondMessage, symbol);
-      console.log(`✅ ${symbol}: Telegram notification sent successfully`);
-
-      // ============================================
-      // RECORD TRADE IN RISK MANAGER
-      // ============================================
-      recordNewTrade(symbol);
-      console.log(`📊 ${symbol}: Trade recorded in risk manager`);
-
-      // Update tracking
-      previousSignal[symbol] = signals.signal;
-      lastNotificationTime[symbol] = now;
-
-      // ============================================
-      // LOG TO DATABASE
-      // ============================================
-      console.log(`   💾 Logging to database...`);
-      await logSignal(symbol, {
-        signal: signals.signal,
-        notes: signals.notes,
-        entry: parseFloat(signals.entry),
-        tp1: parseFloat(signals.tp1),
-        tp2: parseFloat(signals.tp2),
-        sl: parseFloat(signals.sl),
-        positionSize: parseFloat(signals.positionSize)
-      }, 'pending', null, 'default');  // Status: pending, source: default
-      console.log(`   ✅ Signal logged to database`);
-
-    } catch (err) {
-      console.error(`\n❌ ${symbol}: Notification failed:`, err.message);
-      console.error(`   Stack trace:`, err.stack);
+  message += `\n**Market Context:**\n`;
+  
+  if (regime) {
+    message += `Regime: ${regime}\n`;
+  }
+  
+  if (structure) {
+    message += `Structure: ${structure}`;
+    if (structureConfidence) {
+      message += ` (${structureConfidence}%)`;
     }
-  } else {
-    console.log(`   ⭐️ Skipping notification (conditions not met)`);
+    message += '\n';
   }
+  
+  if (notes) {
+    message += `\n**Analysis:**\n${notes}`;
+  }
+  
+  return message;
 }
 
 module.exports = {
-  checkAndSendSignal,
-  isDuplicateFastSignal,
-  previousSignal,
-  lastNotificationTime
+  checkAndSendSignal
 };

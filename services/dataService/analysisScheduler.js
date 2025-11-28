@@ -1,4 +1,6 @@
+// services/dataService/analysisScheduler.js - FIXED
 // SCHEDULES AND THROTTLES ANALYSIS EXECUTION
+
 const lastAnalysisTime = {};
 
 // Trigger analysis for a symbol (throttled)
@@ -7,9 +9,9 @@ async function triggerAnalysis(symbol) {
   
   // Throttle: only analyze once per minute
   if (lastAnalysisTime[symbol] && now - lastAnalysisTime[symbol] < 60000) {
-    console.log(`⭐️ ${symbol}: Analysis throttled (${((now - lastAnalysisTime[symbol]) / 1000).toFixed(0)}s ago)`);
+    console.log(`⏱️ ${symbol}: Analysis throttled (${((now - lastAnalysisTime[symbol]) / 1000).toFixed(0)}s ago)`);
     
-    // FIXED: Return cached analysis if available
+    // Return cached analysis if available
     const { wsCache } = require('./cacheManager');
     return wsCache[symbol]?.lastAnalysis || null;
   }
@@ -28,22 +30,32 @@ async function triggerAnalysis(symbol) {
     const { analyzeSymbol } = require('./signalAnalyzer');
     const result = await analyzeSymbol(symbol);
     
-    if (result && !result.error) {
+    // ⭐ FIX: Handle ALL valid analysis results
+    // "Wait" signals are valid - don't treat them as errors
+    if (result) {
+      // If there's an explicit error flag, that's a problem
+      if (result.error) {
+        console.error(`❌ ${symbol}: Analysis failed:`, result.error);
+        return result;
+      }
+      
+      // ⭐ Cache the result regardless of signal type
+      // "Wait" signals should be cached too
       wsCache[symbol].lastAnalysis = result;
       wsCache[symbol].lastAnalysisTime = now;
       
-      // Check for signals and notify
+      // Check for tradeable signals and notify
       const { checkAndSendSignal } = require('./signalNotifier');
       await checkAndSendSignal(symbol, result);
       
-      // FIXED: Return the analysis result
       return result;
     } else {
-      console.error(`❌ ${symbol}: Analysis failed:`, result?.error || 'Unknown error');
-      return result; // Return even if error, so caller can handle it
+      // Null result means something went wrong
+      console.error(`❌ ${symbol}: Analysis returned null/undefined`);
+      return { error: 'Analysis returned no result' };
     }
   } catch (error) {
-    console.error(`❌ ${symbol}: Analysis error:`, error.message);
+    console.error(`❌ ${symbol}: Analysis exception:`, error.message);
     return { error: 'Analysis exception', details: error.message };
   }
 }
