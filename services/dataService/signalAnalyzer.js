@@ -121,38 +121,55 @@ async function analyzeSymbol(symbol) {
     // STEP 4: HANDLE RESULT
     // ============================================
     
-    // If error
+    // ✅ FIX: If error from SMC system
     if (result.error) {
-      return buildErrorResponse(symbol, decimals, currentPrice, ohlc, timestamp, result.reason);
+      return buildErrorResponse(symbol, decimals, currentPrice, ohlc, timestamp, result.reason || 'Analysis error');
     }
     
-    // If wait/filtered/no signal
+    // ✅ FIX: If wait/filtered/no signal - ALWAYS build full response
     if (result.signal === 'WAIT' || result.signal === 'ERROR') {
       const response = buildNoTradeResponse(
         symbol, decimals, currentPrice, ohlc, timestamp,
         indicators, htf, candles30m, result
       );
       
-      // FIXED: Cache the analysis for frontend
+      // Cache the analysis for frontend
       wsCache[symbol].lastAnalysis = response;
       wsCache[symbol].lastAnalysisTime = Date.now();
       
       return response;
     }
     
-    // If signal approved
+    // ✅ FIX: If signal approved
     if (result.signal === 'Enter Long' || result.signal === 'Enter Short') {
-      return buildTradeResponse(
+      const response = buildTradeResponse(
         symbol, decimals, currentPrice, ohlc, timestamp,
         indicators, htf, candles30m, assetConfig, result
       );
+      
+      // Cache the analysis
+      wsCache[symbol].lastAnalysis = response;
+      wsCache[symbol].lastAnalysisTime = Date.now();
+      
+      return response;
     }
     
-    // Fallback
-    return buildNoTradeResponse(
+    // ✅ FIX: Fallback - unknown signal type, treat as wait
+    console.log(`⚠️ ${symbol}: Unknown signal type: ${result.signal}`);
+    const response = buildNoTradeResponse(
       symbol, decimals, currentPrice, ohlc, timestamp,
-      indicators, htf, candles30m, result
+      indicators, htf, candles30m, {
+        signal: 'WAIT',
+        reason: result.reason || 'No clear signal',
+        regime: result.regime || 'Unknown',
+        structure: result.structure || 'Unknown'
+      }
     );
+    
+    wsCache[symbol].lastAnalysis = response;
+    wsCache[symbol].lastAnalysisTime = Date.now();
+    
+    return response;
 
   } catch (error) {
     console.error(`❌ ${symbol} analysis error:`, error.message);
@@ -224,7 +241,8 @@ function buildNoTradeResponse(symbol, decimals, currentPrice, ohlc, timestamp, i
     },
     marketContext: {
       regime: result.regime || 'Unknown',
-      structure: result.structure || 'Unknown'
+      structure: result.structure || 'Unknown',
+      structureConfidence: result.structureConfidence
     },
     assetInfo: { name: symbol, category: 'Crypto' }
   };
