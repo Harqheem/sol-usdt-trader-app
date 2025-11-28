@@ -7,8 +7,11 @@ async function triggerAnalysis(symbol) {
   
   // Throttle: only analyze once per minute
   if (lastAnalysisTime[symbol] && now - lastAnalysisTime[symbol] < 60000) {
-    console.log(`⏭️ ${symbol}: Analysis throttled (${((now - lastAnalysisTime[symbol]) / 1000).toFixed(0)}s ago)`);
-    return;
+    console.log(`⭐️ ${symbol}: Analysis throttled (${((now - lastAnalysisTime[symbol]) / 1000).toFixed(0)}s ago)`);
+    
+    // FIXED: Return cached analysis if available
+    const { wsCache } = require('./cacheManager');
+    return wsCache[symbol]?.lastAnalysis || null;
   }
   
   lastAnalysisTime[symbol] = now;
@@ -17,7 +20,7 @@ async function triggerAnalysis(symbol) {
   
   if (!wsCache[symbol] || !wsCache[symbol].isReady || !wsCache[symbol].currentPrice) {
     console.log(`⏳ ${symbol}: Not ready for analysis`);
-    return;
+    return null;
   }
 
   try {
@@ -27,15 +30,21 @@ async function triggerAnalysis(symbol) {
     
     if (result && !result.error) {
       wsCache[symbol].lastAnalysis = result;
+      wsCache[symbol].lastAnalysisTime = now;
       
       // Check for signals and notify
       const { checkAndSendSignal } = require('./signalNotifier');
       await checkAndSendSignal(symbol, result);
+      
+      // FIXED: Return the analysis result
+      return result;
     } else {
-      console.error(`❌ ${symbol}: Analysis failed:`, result.error);
+      console.error(`❌ ${symbol}: Analysis failed:`, result?.error || 'Unknown error');
+      return result; // Return even if error, so caller can handle it
     }
   } catch (error) {
     console.error(`❌ ${symbol}: Analysis error:`, error.message);
+    return { error: 'Analysis exception', details: error.message };
   }
 }
 
