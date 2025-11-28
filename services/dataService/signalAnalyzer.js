@@ -1,18 +1,18 @@
-// services/dataService/signalAnalyzer.js - REDUCED CONSOLE SPAM
+// services/dataService/signalAnalyzer.js - CLEAN SMC CORE
 
 const utils = require('../../utils');
 const { getAssetConfig } = require('../../config/assetConfig');
 const { wsCache } = require('./cacheManager');
 const { calculateIndicators, calculateHigherTimeframes } = require('./indicatorCalculator');
-const { calculateSimplifiedScore } = require('./simplifiedScorer');
-const { detectSimplifiedRegime } = require('../simplifiedRegime');
-const { detectSimplifiedEarlySignals } = require('../simplifiedEarlySignals');
-const { calculateSimplifiedEntry } = require('./simplifiedEntryCalculator');
 const { canTakeNewTrade } = require('../riskManager');
 const learningService = require('../Trade Learning/learningService');
 
+// ✅ NEW: Single SMC system import
+const { analyzeWithSMC } = require('./coreSMCSystem');
+
 /**
- * SIMPLIFIED SIGNAL ANALYSIS - QUIET VERSION
+ * CLEAN SMC SIGNAL ANALYSIS
+ * No redundant systems - just SMC + S/R
  */
 async function analyzeSymbol(symbol) {
   try {
@@ -50,7 +50,6 @@ async function analyzeSymbol(symbol) {
       close: parseFloat(lastCandle.close)
     };
 
-    // Get asset config
     const assetConfig = getAssetConfig(symbol);
 
     // ============================================
@@ -59,30 +58,27 @@ async function analyzeSymbol(symbol) {
     const riskCheck = canTakeNewTrade(symbol);
     
     if (!riskCheck.allowed) {
-      // ⭐ ONLY LOG FIRST FAILURE REASON (not all checks)
       console.log(`🚫 ${symbol}: ${riskCheck.checks.failed[0]}`);
 
-      // NEW: Don't log every block, only when it was CLOSE
-    // If 4+ checks passed but 1-2 failed, log as near-miss
-    if (riskCheck.checks.passed.length >= 4) {
-      // This was a near-miss! Log it
-      await learningService.logNearMiss({
-        symbol,
-        direction: 'N/A', // Don't know yet
-        signalType: 'Risk Blocked',
-        signalSource: 'default',
-        conditionsMet: riskCheck.checks.passed.length,
-        totalConditions: riskCheck.checks.passed.length + riskCheck.checks.failed.length,
-        blockingReasons: riskCheck.checks.failed,
-        currentPrice: parseFloat(currentPrice),
-        marketConditions: null,
-        indicators: null,
-        conditionDetails: [
-          ...riskCheck.checks.passed.map(p => ({ name: p, met: true, description: p })),
-          ...riskCheck.checks.failed.map(f => ({ name: f, met: false, description: f }))
-        ]
-      });
-    }
+      // Log near-miss if close
+      if (riskCheck.checks.passed.length >= 4) {
+        await learningService.logNearMiss({
+          symbol,
+          direction: 'N/A',
+          signalType: 'Risk Blocked',
+          signalSource: 'default',
+          conditionsMet: riskCheck.checks.passed.length,
+          totalConditions: riskCheck.checks.passed.length + riskCheck.checks.failed.length,
+          blockingReasons: riskCheck.checks.failed,
+          currentPrice: parseFloat(currentPrice),
+          marketConditions: null,
+          indicators: null,
+          conditionDetails: [
+            ...riskCheck.checks.passed.map(p => ({ name: p, met: true, description: p })),
+            ...riskCheck.checks.failed.map(f => ({ name: f, met: false, description: f }))
+          ]
+        });
+      }
       
       return {
         decimals,
@@ -110,171 +106,46 @@ async function analyzeSymbol(symbol) {
     const htf = calculateHigherTimeframes(candles1h, candles4h, currentPrice, assetConfig);
 
     // ============================================
-    // STEP 3: DETECT REGIME
+    // STEP 3: RUN SMC ANALYSIS (ALL-IN-ONE)
     // ============================================
-    const regime = detectSimplifiedRegime(currentPrice, indicators);
-    
-    // ⭐ ONLY LOG REGIME (concise)
-    console.log(`${symbol} | ${regime.regime} (${regime.confidence}%)`);
-
-    // ============================================
-    // STEP 4: EARLY SIGNAL FILTER
-    // ============================================
-    const earlySignals = detectSimplifiedEarlySignals(closes, highs, lows, volumes, indicators);
-    
-    // ⭐ ONLY LOG IF PASS (don't spam failures)
-    if (earlySignals.pass) {
-      console.log(`   ✅ Early: ${earlySignals.signalType} | ${earlySignals.reasons[0]}`);
-    }
-
-    // If early signals don't pass, stop here (NO SPAM LOG)
-    if (!earlySignals.pass) {
-      return buildNoTradeResponse(
-        symbol, decimals, currentPrice, ohlc, timestamp,
-        indicators, htf, regime, earlySignals,
-        candles30m, 'No high-urgency early signals detected'
-      );
-    }
-
-    // ============================================
-    // STEP 5: REGIME VETO CHECK (for choppy)
-    // ============================================
-    if (regime.regime === 'CHOPPY') {
-      const hasVolumeSurge = earlySignals.allDetections.some(
-        s => s.type === 'volume_surge' && s.urgency === 'high'
-      );
-      
-      if (!hasVolumeSurge) {
-        
-        return buildNoTradeResponse(
-          symbol, decimals, currentPrice, ohlc, timestamp,
-          indicators, htf, regime, earlySignals,
-          candles30m, 'Choppy market - need volume surge signal'
-        );
-      }
-      
-      console.log(`   ✅ Choppy OK - volume surge detected (50% size)`);
-    }
-
-    // ============================================
-    // STEP 6: CALCULATE SCORE
-    // ============================================
-    const scoring = calculateSimplifiedScore(currentPrice, indicators, htf);
-    
-    // ⭐ CONCISE SCORE LOG
-    console.log(`   Score: B${scoring.bullishScore} | R${scoring.bearishScore} (need ${scoring.threshold})`);
-
-    // ============================================
-    // STEP 7: DETERMINE SIGNAL DIRECTION
-    // ============================================
-    let isBullish = false;
-    let isBearish = false;
-    let signal = 'No Trade';
-    let notes = 'Signals not strong enough';
-
-    // Check if either score meets threshold
-    if (scoring.bullishScore >= scoring.threshold && scoring.bearishScore >= scoring.threshold) {
-      if (scoring.bullishScore > scoring.bearishScore) {
-        isBullish = true;
-      } else {
-        isBearish = true;
-      }
-    } else if (scoring.bullishScore >= scoring.threshold) {
-      isBullish = true;
-    } else if (scoring.bearishScore >= scoring.threshold) {
-      isBearish = true;
-    }
-
-    // Apply regime vetoes
-    if (isBullish && regime.regime === 'TRENDING_BEAR') {
-      console.log(`   🚫 Bearish trend blocks longs`);
-      isBullish = false;
-    }
-    if (isBearish && regime.regime === 'TRENDING_BULL') {
-      console.log(`   🚫 Bullish trend blocks shorts`);
-      isBearish = false;
-    }
-
-    const finalScore = isBullish ? scoring.bullishScore : isBearish ? scoring.bearishScore : 0;
-    const reasons = isBullish ? scoring.bullishReasons : scoring.bearishReasons;
-
-    // ============================================
-    // STEP 8: CALCULATE ENTRY/EXIT
-    // ============================================
-    const entryCalc = calculateSimplifiedEntry(
-      isBullish,
-      isBearish,
-      currentPrice,
+    const result = await analyzeWithSMC(
+      symbol,
+      candles30m,
+      volumes,
       indicators,
-      earlySignals,
-      regime,
-      highs,
-      lows,
+      htf,
       decimals
     );
 
     // ============================================
-    // STEP 9: FINAL SIGNAL
+    // STEP 4: HANDLE RESULT
     // ============================================
-    if (entryCalc.rejectionReason) {
-      if (finalScore >= scoring.threshold * 0.85) { // Within 85% of threshold
-      await learningService.logNearMiss({
-        symbol,
-        direction: isBullish ? 'LONG' : 'SHORT',
-        signalType: earlySignals.signalType,
-        signalSource: 'default',
-        conditionsMet: Math.floor(finalScore / scoring.maxScore * 10), // Approximate
-        totalConditions: 10,
-        blockingReasons: [entryCalc.rejectionReason],
-        currentPrice: parseFloat(currentPrice),
-        marketConditions: {
-          regime: regime.regime,
-          adx: indicators.adx,
-          rsi: indicators.rsi
-        },
-        indicators: indicators,
-        conditionDetails: [
-          ...reasons.slice(0, 5).map(r => ({ name: r, met: true, description: r })),
-          { name: 'Entry Validation', met: false, description: entryCalc.rejectionReason }
-        ]
-      });
+    
+    // If error
+    if (result.error) {
+      return buildErrorResponse(symbol, decimals, currentPrice, ohlc, timestamp, result.reason);
     }
-      signal = 'Wait';
-      notes = `Score: ${finalScore}/${scoring.maxScore} (threshold: ${scoring.threshold})\n\n`;
-      notes += `REJECTED: ${entryCalc.rejectionReason}\n\n`;
-      notes += `Top Reasons:\n${reasons.slice(0, 5).map(r => `• ${r}`).join('\n')}`;
-      
-      console.log(`   ⭐ Wait: ${entryCalc.rejectionReason}`);
-      
-    } else if (isBullish || isBearish) {
-      signal = isBullish ? 'Enter Long' : 'Enter Short';
-      
-      notes = `✅ SIGNAL APPROVED\n\n`;
-      notes += `Score: ${finalScore}/${scoring.maxScore} (threshold: ${scoring.threshold})\n`;
-      notes += `Strategy: ${entryCalc.signalType.toUpperCase()}\n`;
-      notes += `Risk: ${entryCalc.riskAmount}\n`;
-      notes += `R:R: ${entryCalc.riskRewardRatio}\n\n`;
-      notes += `🎯 Entry Rationale:\n${entryCalc.entryNote}\n${entryCalc.slNote}\n\n`;
-      notes += `📊 Key Reasons:\n${reasons.slice(0, 5).map(r => `• ${r}`).join('\n')}\n\n`;
-      notes += `🔍 Early Signals:\n${earlySignals.reasons.slice(0, 3).map(r => `• ${r}`).join('\n')}`;
-      
-      if (scoring.warnings.length > 0) {
-        notes += `\n\n⚠️  Warnings:\n${scoring.warnings.map(w => `• ${w}`).join('\n')}`;
-      }
-      
-      // ⭐ CLEAR SIGNAL LOG
-      console.log(`   🎯 ${signal.toUpperCase()}`);
-      console.log(`   Entry: ${entryCalc.entry} | SL: ${entryCalc.sl}`);
-      console.log(`   TP1: ${entryCalc.tp1} | TP2: ${entryCalc.tp2}`);
+    
+    // If wait/filtered/no signal
+    if (result.signal === 'WAIT' || result.signal === 'ERROR') {
+      return buildNoTradeResponse(
+        symbol, decimals, currentPrice, ohlc, timestamp,
+        indicators, htf, candles30m, result
+      );
     }
-
-    // ============================================
-    // BUILD RESPONSE
-    // ============================================
-    return buildFullResponse(
+    
+    // If signal approved
+    if (result.signal === 'Enter Long' || result.signal === 'Enter Short') {
+      return buildTradeResponse(
+        symbol, decimals, currentPrice, ohlc, timestamp,
+        indicators, htf, candles30m, assetConfig, result
+      );
+    }
+    
+    // Fallback
+    return buildNoTradeResponse(
       symbol, decimals, currentPrice, ohlc, timestamp,
-      indicators, htf, regime, earlySignals, scoring,
-      signal, notes, entryCalc, candles30m, assetConfig
+      indicators, htf, candles30m, result
     );
 
   } catch (error) {
@@ -284,14 +155,46 @@ async function analyzeSymbol(symbol) {
 }
 
 // ============================================
-// RESPONSE BUILDERS (unchanged)
+// RESPONSE BUILDERS
 // ============================================
 
-function buildNoTradeResponse(
-  symbol, decimals, currentPrice, ohlc, timestamp,
-  indicators, htf, regime, earlySignals, candles30m, reason
-) {
+function buildErrorResponse(symbol, decimals, currentPrice, ohlc, timestamp, reason) {
+  return {
+    decimals,
+    core: { currentPrice: parseFloat(currentPrice).toFixed(decimals), ohlc, timestamp },
+    signals: {
+      signal: 'Error',
+      notes: `Analysis error: ${reason}`,
+      entry: 'N/A',
+      tp1: 'N/A',
+      tp2: 'N/A',
+      sl: 'N/A',
+      positionSize: 'N/A'
+    }
+  };
+}
+
+function buildNoTradeResponse(symbol, decimals, currentPrice, ohlc, timestamp, indicators, htf, candles30m, result) {
   const last5 = formatLast5Candles(candles30m, decimals);
+  
+  let notes = `${result.reason || 'No signals detected'}\n\n`;
+  
+  if (result.regime) {
+    notes += `📊 Market Context:\n`;
+    notes += `• Regime: ${result.regime}\n`;
+  }
+  
+  if (result.structure) {
+    notes += `• Structure: ${result.structure}`;
+    if (result.structureConfidence) {
+      notes += ` (${result.structureConfidence}%)`;
+    }
+    notes += '\n';
+  }
+  
+  if (result.detectedSignal) {
+    notes += `\n⚠️ Signal detected (${result.detectedSignal}) but rejected:\n${result.reason}`;
+  }
   
   return {
     decimals,
@@ -306,32 +209,22 @@ function buildNoTradeResponse(
     higherTF: { trend1h: htf.trend1h, trend4h: htf.trend4h },
     signals: {
       signal: 'Wait',
-      notes: `${reason}\n\nRegime: ${regime.description}\n\nEarly Signals:\n${earlySignals.reasons.join('\n')}`,
+      notes,
       entry: 'N/A',
       tp1: 'N/A',
       tp2: 'N/A',
       sl: 'N/A',
       positionSize: 'N/A'
     },
-    regime: {
-      regime: regime.regime,
-      confidence: regime.confidence,
-      description: regime.description,
-      riskLevel: { level: 'moderate', score: 50 }
-    },
-    earlySignals: {
-      pass: earlySignals.pass,
-      reasons: earlySignals.reasons
+    marketContext: {
+      regime: result.regime || 'Unknown',
+      structure: result.structure || 'Unknown'
     },
     assetInfo: { name: symbol, category: 'Crypto' }
   };
 }
 
-function buildFullResponse(
-  symbol, decimals, currentPrice, ohlc, timestamp,
-  indicators, htf, regime, earlySignals, scoring,
-  signal, notes, entryCalc, candles30m, assetConfig
-) {
+function buildTradeResponse(symbol, decimals, currentPrice, ohlc, timestamp, indicators, htf, candles30m, assetConfig, result) {
   const last5 = formatLast5Candles(candles30m, decimals);
   
   return {
@@ -346,30 +239,22 @@ function buildFullResponse(
     candlePattern: last5[last5.length - 1].pattern,
     higherTF: { trend1h: htf.trend1h, trend4h: htf.trend4h },
     signals: {
-      signal,
-      notes,
-      entry: entryCalc.entry,
-      tp1: entryCalc.tp1,
-      tp2: entryCalc.tp2,
-      sl: entryCalc.sl,
-      positionSize: entryCalc.positionSize
+      signal: result.signal,
+      notes: result.notes,
+      entry: result.entry,
+      tp1: result.tp1,
+      tp2: result.tp2,
+      sl: result.sl,
+      positionSize: result.positionSize,
+      signalType: result.signalType,
+      signalSource: result.signalSource,
+      confidence: result.confidence
     },
-    regime: {
-      regime: regime.regime,
-      confidence: regime.confidence,
-      description: regime.description,
-      riskLevel: { level: 'moderate', score: 50 }
-    },
-    earlySignals: {
-      pass: earlySignals.pass,
-      signalType: earlySignals.signalType,
-      reasons: earlySignals.reasons
-    },
-    scoring: {
-      bullishScore: scoring.bullishScore,
-      bearishScore: scoring.bearishScore,
-      maxScore: scoring.maxScore,
-      threshold: scoring.threshold
+    marketContext: {
+      regime: result.regime,
+      structure: result.structure,
+      structureConfidence: result.structureConfidence,
+      strategy: result.strategy
     },
     assetInfo: {
       name: assetConfig.name,
@@ -378,7 +263,10 @@ function buildFullResponse(
   };
 }
 
-// Helper formatters (unchanged)
+// ============================================
+// HELPER FORMATTERS
+// ============================================
+
 function formatMovingAverages(indicators, decimals) {
   return {
     ema7: indicators.ema7.toFixed(decimals),
