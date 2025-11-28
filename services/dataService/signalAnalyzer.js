@@ -128,10 +128,16 @@ async function analyzeSymbol(symbol) {
     
     // If wait/filtered/no signal
     if (result.signal === 'WAIT' || result.signal === 'ERROR') {
-      return buildNoTradeResponse(
+      const response = buildNoTradeResponse(
         symbol, decimals, currentPrice, ohlc, timestamp,
         indicators, htf, candles30m, result
       );
+      
+      // FIXED: Cache the analysis for frontend
+      wsCache[symbol].lastAnalysis = response;
+      wsCache[symbol].lastAnalysisTime = Date.now();
+      
+      return response;
     }
     
     // If signal approved
