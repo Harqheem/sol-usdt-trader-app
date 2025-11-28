@@ -147,12 +147,12 @@ function buildNotificationMessage(symbol, signal, analysis) {
   
   let message = `🎯 **${signal.toUpperCase()}** [${sourceTag}]\n\n`;
   message += `${symbol}\n`;
+  message += `LEVERAGE: 20x\n`;
   message += `Entry: ${entry}\n`;
   message += `TP1: ${tp1}\n`;
   message += `TP2: ${tp2}\n`;
   message += `SL: ${sl}\n`;
-  message += `Size: $${positionSize}`;
-  
+    
   return message;
 }
 
