@@ -1,4 +1,4 @@
-// public/logs_script.js - ACTUALLY FIXED SYSTEM FILTER
+// public/logs_script.js - UPDATED WITH TRAILING STOP TERMINOLOGY
 
 const tableBody = document.querySelector('#signals-table tbody');
 const symbolFilter = document.getElementById('symbol-filter');
@@ -76,17 +76,13 @@ function formatTime(isoTime) {
   return date.toLocaleString('default', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
+// ✅ UPDATED: Better outcome detection with trailing stop terminology
 function getOutcome(signal) {
   if (signal.status === 'terminated') return 'Terminated';
   if (signal.status === 'expired') return 'Expired';
   if (signal.status !== 'closed') return '-';
 
   const hadPartial = signal.partial_raw_pnl_pct !== null;
-
-  if (!hadPartial) {
-    return 'SL';
-  }
-
   const entry = signal.entry;
   const exit = signal.exit_price;
   const isBuy = signal.signal_type === 'Enter Long' || signal.signal_type === 'Buy';
@@ -94,18 +90,27 @@ function getOutcome(signal) {
 
   if (!exit || !entry || !tp2) return '-';
 
+  // Check if exited at or very close to entry (breakeven)
   const relativeDiff = Math.abs(exit - entry) / entry;
-
   if (relativeDiff < 0.001) {
-    return 'BE';
-  } else {
-    const tp2Hit = isBuy ? exit >= tp2 : exit <= tp2;
-    if (tp2Hit) {
-      return 'TP';
-    } else {
-      return 'SL';
-    }
+    return hadPartial ? 'BE/Trail' : 'BE';
   }
+
+  // Check if TP2 was hit
+  const tp2Hit = isBuy ? exit >= tp2 * 0.9995 : exit <= tp2 * 1.0005;
+  if (tp2Hit) {
+    return 'TP';
+  }
+
+  // If we had partial close and didn't hit TP2, it's a trailing stop
+  if (hadPartial) {
+    // Check if exit was profitable
+    const isProfitable = isBuy ? exit > entry : exit < entry;
+    return isProfitable ? 'Trail Stop' : 'SL';
+  }
+
+  // Full position stopped out before TP1
+  return 'SL';
 }
 
 async function fetchSignals() {
@@ -122,12 +127,9 @@ async function fetchSignals() {
     let url = `/signals?limit=${fetchLimit}`;
     if (symbolFilter.value) url += `&symbol=${symbolFilter.value}`;
     
-    // FIXED: Add both fromDate and toDate
     if (fromDateInput.value) url += `&fromDate=${fromDateInput.value}`;
     if (toDateInput.value) url += `&toDate=${toDateInput.value}`;
     
-    // CRITICAL FIX: Always add signalSource parameter (even for 'all')
-    // Backend will handle filtering appropriately
     url += `&signalSource=${currentSystem}`;
     
     if (currentTab === 'results') {
@@ -141,11 +143,6 @@ async function fetchSignals() {
     const res = await fetch(url);
     if (!res.ok) throw new Error('Fetch failed');
     const data = await res.json();
-  
-    
-    // DEBUG: Log first 3 trades to verify signal_source
-    if (data.length > 0) {
-    }
     
     allData = data;
     currentPage = 1;
@@ -248,7 +245,17 @@ function getSortValue(signal, column) {
     case 'system':
       return signal.signal_source === 'fast' ? 1 : 0;
     case 'outcome':
-      const outcomeOrder = { 'TP': 5, 'BE': 4, 'SL': 3, 'Terminated': 2, 'Expired': 1, '-': 0 };
+      // ✅ UPDATED: Proper outcome ordering
+      const outcomeOrder = { 
+        'TP': 6, 
+        'Trail Stop': 5,
+        'BE/Trail': 4,
+        'BE': 3, 
+        'SL': 2, 
+        'Terminated': 1, 
+        'Expired': 0, 
+        '-': -1 
+      };
       return outcomeOrder[getOutcome(signal)] || 0;
     case 'raw-pnl':
       return signal.raw_pnl_percentage || 0;
@@ -334,7 +341,7 @@ function renderTableAndSummary() {
     const colspan = hasPendingTrades && currentTab === 'logs' ? 13 : 12;
     const systemLabel = currentSystem === 'all' ? 'all systems' : `${currentSystem} system`;
     tableBody.innerHTML = `<tr><td colspan="${colspan}">No logs found for ${systemLabel}</td></tr>`;
-    updateSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    updateSummary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     return;
   }
   
@@ -392,6 +399,7 @@ function renderTableAndSummary() {
   const actualClosedTrades = allData.filter(s => s.status === 'closed');
   const totalRawPnl = actualClosedTrades.reduce((sum, s) => sum + (s.raw_pnl_percentage || 0), 0);
   
+  // ✅ UPDATED: Count outcomes with new categories
   const outcomes = closedTrades.reduce((acc, s) => {
     const out = getOutcome(s);
     if (out !== '-') {
@@ -399,14 +407,17 @@ function renderTableAndSummary() {
     }
     return acc;
   }, {});
+  
   const slCount = outcomes['SL'] || 0;
-  const beCount = outcomes['BE'] || 0;
+  const beCount = (outcomes['BE'] || 0) + (outcomes['BE/Trail'] || 0);
   const tpCount = outcomes['TP'] || 0;
+  const trailStopCount = outcomes['Trail Stop'] || 0;
   const terminatedCount = outcomes['Terminated'] || 0;
   const expiredCount = outcomes['Expired'] || 0;
   
+  // Win rate: TP + Trail Stop + BE are considered wins
   const tradesToCount = closedTrades.filter(s => s.status !== 'terminated' && s.status !== 'expired');
-  const winningTrades = tpCount + beCount;
+  const winningTrades = tpCount + beCount + trailStopCount;
   const winRate = tradesToCount.length > 0 ? (winningTrades / tradesToCount.length) * 100 : 0;
   
   const customResults = actualClosedTrades.map(s => calculateCustomPnL(s));
@@ -429,7 +440,8 @@ function renderTableAndSummary() {
     tpCount,
     winRate,
     terminatedCount,
-    expiredCount
+    expiredCount,
+    trailStopCount
   );
   
   if (currentTab === 'results') {
@@ -441,7 +453,8 @@ function renderTableAndSummary() {
   const endTime = performance.now();
 }
 
-function updateSummary(trades, closedTrades, rawPnl, customPnlPct, customPnlDollars, customFeesPct, customFeesDollars, slCount, beCount, tpCount, winRate, terminatedCount, expiredCount) {
+// ✅ UPDATED: Added trailStopCount parameter
+function updateSummary(trades, closedTrades, rawPnl, customPnlPct, customPnlDollars, customFeesPct, customFeesDollars, slCount, beCount, tpCount, winRate, terminatedCount, expiredCount, trailStopCount) {
   totalTradesEl.textContent = trades;
   closedTradesEl.textContent = closedTrades;
   totalRawPnlEl.textContent = rawPnl.toFixed(2) + '%';
@@ -450,7 +463,7 @@ function updateSummary(trades, closedTrades, rawPnl, customPnlPct, customPnlDoll
   customTotalFeesPctEl.textContent = customFeesPct.toFixed(2) + '%';
   customTotalFeesDollarsEl.textContent = '$' + customFeesDollars.toFixed(2);
   slTradesEl.textContent = slCount;
-  beTradesEl.textContent = beCount;
+  beTradesEl.textContent = `${beCount} (+ ${trailStopCount} Trail)`;
   tpTradesEl.textContent = tpCount;
   terminatedTradesEl.textContent = `${terminatedCount + expiredCount} (${terminatedCount}T/${expiredCount}E)`;
   winRateEl.textContent = winRate.toFixed(2) + '%';
