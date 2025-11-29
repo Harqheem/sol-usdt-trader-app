@@ -1,14 +1,11 @@
-// services/monitorService.js - FIXED: Removed top-level await
+// services/monitorService.js - FIXED: P&L calculations and terminology
 
 const Binance = require('binance-api-node').default;
 const { supabase } = require('./logsService');
 const { sendTelegramNotification } = require('./notificationService');
 const { symbols } = require('../config');
 const { checkTradeManagement, executeManagementActions } = require('./tradeManagementService');
-// KEEP FAST SIGNALS IMPORT (don't remove!)
 const { handleTradeClose } = require('./dataService/Fast Signals/positionTracker');
-
-// ADD DEFAULT SYSTEM RISK MANAGER (new!)
 const { recordTradeClose: recordDefaultTradeClose } = require('./riskManager');
 const learningService = require('./Trade Learning/learningService');
 
@@ -111,7 +108,7 @@ function subscribeToSymbol(symbol) {
 }
 
 // ========================================
-// MAIN PRICE UPDATE PROCESSOR (unchanged)
+// MAIN PRICE UPDATE PROCESSOR
 // ========================================
 
 function calculateATRForTrade(trade) {
@@ -153,10 +150,9 @@ async function processPriceUpdate(trade, currentPrice) {
     }
 
     // OPENED TRADES
-    if (trade.status === 'opened')
-     {
+    if (trade.status === 'opened') {
       // Calculate ATR for management
-      const atr = calculateATRForTrade(trade); // You need to implement this
+      const atr = calculateATRForTrade(trade);
       
       // Check if management action is needed
       const managementCheck = await checkTradeManagement(trade, currentPrice, atr);
@@ -183,11 +179,9 @@ async function processPriceUpdate(trade, currentPrice) {
         if (updatedTrade) {
           Object.assign(trade, updatedTrade);
         }
-      
       }
-    }
-    
-      {
+      
+      // Continue with normal TP/SL checks
       let updates = {};
 
       // Check TP1 (partial close)
@@ -212,20 +206,21 @@ async function processPriceUpdate(trade, currentPrice) {
         }
       }
 
-      // Check SL
+      // Check SL/Trailing Stop
       if (Object.keys(updates).length === 0) {
         const distanceFromEntry = Math.abs((currentPrice - trade.entry) / trade.entry);
         
         if (distanceFromEntry >= 0.002) {
-          const slHit = isBuy 
+          const stopHit = isBuy 
             ? currentPrice <= currentSl * 1.0003
             : currentPrice >= currentSl * 0.9997;
           
-          if (slHit) {
+          if (stopHit) {
             const isActualLoss = isBuy ? (currentPrice < trade.entry) : (currentPrice > trade.entry);
             
+            // ✅ FIX: Use proper terminology based on whether it's a loss or trailing stop
             if (isActualLoss || currentSl === trade.entry) {
-              updates = await handleSLHit(trade, currentSl, isBuy, positionSize, leverage, remainingFraction, isFastSignal);
+              updates = await handleStopHit(trade, currentSl, isBuy, positionSize, leverage, remainingFraction, isFastSignal, isActualLoss);
             }
           }
         }
@@ -248,7 +243,7 @@ async function processPriceUpdate(trade, currentPrice) {
 }
 
 // ========================================
-// TRADE EVENT HANDLERS - UPDATED FOR DUAL SYSTEM
+// TRADE EVENT HANDLERS - UPDATED
 // ========================================
 
 async function handleExpiredTrade(trade, timeSincePlaced, isBuy, isFastSignal) {
@@ -266,7 +261,6 @@ async function handleExpiredTrade(trade, timeSincePlaced, isBuy, isFastSignal) {
   
   console.log(`⏰ Trade expired: ${trade.symbol} [${signalTag}] (pending for ${hours} hours)`);
   
-  // ⭐ FAST SIGNALS: Call their handler (keeps pause logic working)
   if (isFastSignal) {
     await handleTradeClose({
       symbol: trade.symbol,
@@ -277,14 +271,14 @@ async function handleExpiredTrade(trade, timeSincePlaced, isBuy, isFastSignal) {
       signalSource: trade.signal_source
     });
   }
-  // ⭐ DEFAULT SIGNALS: No action needed (expired = no P&L impact)
   
   const openTimeFormatted = new Date(trade.timestamp).toLocaleString();
   
   await sendTelegramNotification(
     `⏰ **TRADE EXPIRED** [${signalTag}]\n\n${trade.symbol} ${trade.signal_type}\nEntry: ${trade.entry?.toFixed(4) || 'N/A'}\n\n**Action Required:** Entry not reached within 4 hours.`,
     `⏰ ${trade.symbol} - EXPIRED DETAILS\n\nOpened at: ${openTimeFormatted}\nTime elapsed: ${hours} hours\nSignal Type: ${isFastSignal ? 'FAST' : 'DEFAULT'}\n\nThis pending trade has been automatically expired because the entry level was not reached within the 4-hour window.`,
-    trade.symbol
+    trade.symbol,
+    false // ✅ FIX: Don't forward to channel
   ).catch(err => console.error(`Failed to send expiry notification:`, err.message));
 }
 
@@ -333,8 +327,9 @@ async function handleTP1Hit(trade, currentPrice, isBuy, positionSize, leverage) 
 async function handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, isFastSignal) {
   const remainingPnl = calculatePnL(trade.entry, trade.tp2, isBuy, positionSize, leverage, 0.5);
   
-  const totalRawPnlPct = 0.5 * ((trade.partial_raw_pnl_pct || 0) + remainingPnl.rawPnlPct);
-  const totalNetPnlPct = 0.5 * ((trade.partial_net_pnl_pct || 0) + remainingPnl.netPnlPct);
+  // ✅ FIX: Don't multiply by 0.5 again - both values already represent their fraction of total position
+  const totalRawPnlPct = (trade.partial_raw_pnl_pct || 0) + remainingPnl.rawPnlPct;
+  const totalNetPnlPct = (trade.partial_net_pnl_pct || 0) + remainingPnl.netPnlPct;
   const totalCustomPnl = (trade.partial_custom_pnl || 0) + remainingPnl.customPnl;
   
   const signalTag = isFastSignal ? '⚡FAST' : '📊DEFAULT';
@@ -354,7 +349,7 @@ async function handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, 
     recordDefaultTradeClose(trade.symbol, totalNetPnlPct);
   }
   
-  // ✅ Log to learning system BEFORE return
+  // Log to learning system
   try {
     await learningService.logSuccessfulTrade({
       symbol: trade.symbol,
@@ -387,21 +382,24 @@ async function handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, 
   };
 }
 
-async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, remainingFraction, isFastSignal) {
+// ✅ FIX: Renamed from handleSLHit to handleStopHit, added isActualLoss parameter
+async function handleStopHit(trade, exitPrice, isBuy, positionSize, leverage, remainingFraction, isFastSignal, isActualLoss) {
   const signalTag = isFastSignal ? '⚡FAST' : '📊DEFAULT';
   
   if (remainingFraction === 1.0) {
     // Full position stopped out
     const fullLoss = calculatePnL(trade.entry, exitPrice, isBuy, positionSize, leverage, 1.0);
     
-    console.log(`❌ Closed full at SL for ${trade.symbol} [${signalTag}] at ${exitPrice.toFixed(4)} (Loss: ${fullLoss.netPnlPct.toFixed(2)}%)`);
+    // ✅ FIX: Use appropriate terminology
+    const stopType = isActualLoss ? 'STOP LOSS' : 'TRAILING STOP';
+    console.log(`${isActualLoss ? '❌' : '✅'} Closed full at ${stopType} for ${trade.symbol} [${signalTag}] at ${exitPrice.toFixed(4)} (P&L: ${fullLoss.netPnlPct.toFixed(2)}%)`);
     
     // Route to correct system
     if (isFastSignal) {
       await handleTradeClose({
         symbol: trade.symbol,
         pnl: fullLoss.customPnl,
-        closeReason: 'SL',
+        closeReason: isActualLoss ? 'SL' : 'TRAILING_STOP',
         direction: isBuy ? 'LONG' : 'SHORT',
         tradeId: trade.id,
         signalSource: trade.signal_source
@@ -410,24 +408,42 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
       recordDefaultTradeClose(trade.symbol, fullLoss.netPnlPct);
     }
     
-    // ✅ Log to learning system BEFORE return
+    // Log to learning system
     try {
-      await learningService.logFailedTrade({
-        symbol: trade.symbol,
-        direction: isBuy ? 'LONG' : 'SHORT',
-        signalType: trade.signal_type || 'Unknown',
-        signalSource: trade.signal_source || 'unknown',
-        entry: trade.entry,
-        sl: trade.sl,
-        tp1: trade.tp1,
-        tp2: trade.tp2,
-        exitPrice: exitPrice,
-        pnl: fullLoss.netPnlPct,
-        closeReason: 'SL',
-        marketConditions: null,
-        indicators: null
-      });
-      console.log(`📚 Logged failed trade to learning system`);
+      if (isActualLoss) {
+        await learningService.logFailedTrade({
+          symbol: trade.symbol,
+          direction: isBuy ? 'LONG' : 'SHORT',
+          signalType: trade.signal_type || 'Unknown',
+          signalSource: trade.signal_source || 'unknown',
+          entry: trade.entry,
+          sl: trade.sl,
+          tp1: trade.tp1,
+          tp2: trade.tp2,
+          exitPrice: exitPrice,
+          pnl: fullLoss.netPnlPct,
+          closeReason: 'SL',
+          marketConditions: null,
+          indicators: null
+        });
+      } else {
+        await learningService.logSuccessfulTrade({
+          symbol: trade.symbol,
+          direction: isBuy ? 'LONG' : 'SHORT',
+          signalType: trade.signal_type || 'Unknown',
+          signalSource: trade.signal_source || 'unknown',
+          entry: trade.entry,
+          sl: trade.sl,
+          tp1: trade.tp1,
+          tp2: trade.tp2,
+          exitPrice: exitPrice,
+          pnl: fullLoss.netPnlPct,
+          closeReason: 'TRAILING_STOP',
+          marketConditions: null,
+          indicators: null
+        });
+      }
+      console.log(`📚 Logged to learning system`);
     } catch (error) {
       console.error('⚠️ Failed to log to learning system:', error.message);
     }
@@ -442,22 +458,25 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
       remaining_position: 0.0 
     };
   } else {
-    // Partial position stopped (breakeven)
+    // Partial position stopped (after TP1)
     const remainingPnl = calculatePnL(trade.entry, exitPrice, isBuy, positionSize, leverage, 0.5);
     
-    const totalRawPnlPct = 0.5 * ((trade.partial_raw_pnl_pct || 0) + remainingPnl.rawPnlPct);
-    const totalNetPnlPct = 0.5 * ((trade.partial_net_pnl_pct || 0) + remainingPnl.netPnlPct);
+    // ✅ FIX: Don't multiply by 0.5 again
+    const totalRawPnlPct = (trade.partial_raw_pnl_pct || 0) + remainingPnl.rawPnlPct;
+    const totalNetPnlPct = (trade.partial_net_pnl_pct || 0) + remainingPnl.netPnlPct;
     const totalCustomPnl = (trade.partial_custom_pnl || 0) + remainingPnl.customPnl;
     
     const isWin = totalCustomPnl >= 0;
-    console.log(`${isWin ? '✅' : '❌'} Closed remaining at BE SL for ${trade.symbol} [${signalTag}] at ${exitPrice.toFixed(4)} (PnL: ${totalNetPnlPct.toFixed(2)}%)`);
+    // ✅ FIX: Use appropriate terminology
+    const stopType = isActualLoss ? 'SL' : 'TRAILING STOP';
+    console.log(`${isWin ? '✅' : '❌'} Closed remaining at ${stopType} for ${trade.symbol} [${signalTag}] at ${exitPrice.toFixed(4)} (P&L: ${totalNetPnlPct.toFixed(2)}%)`);
     
     // Route to correct system
     if (isFastSignal) {
       await handleTradeClose({
         symbol: trade.symbol,
         pnl: totalCustomPnl,
-        closeReason: 'BE_SL',
+        closeReason: isActualLoss ? 'SL' : 'TRAILING_STOP',
         direction: isBuy ? 'LONG' : 'SHORT',
         tradeId: trade.id,
         signalSource: trade.signal_source
@@ -466,7 +485,7 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
       recordDefaultTradeClose(trade.symbol, totalNetPnlPct);
     }
     
-    // ✅ Log to learning system BEFORE return
+    // Log to learning system
     try {
       if (isWin) {
         await learningService.logSuccessfulTrade({
@@ -480,7 +499,7 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
           tp2: trade.tp2,
           exitPrice: exitPrice,
           pnl: totalNetPnlPct,
-          closeReason: 'BE_SL',
+          closeReason: 'TRAILING_STOP',
           marketConditions: null,
           indicators: null
         });
@@ -496,7 +515,7 @@ async function handleSLHit(trade, exitPrice, isBuy, positionSize, leverage, rema
           tp2: trade.tp2,
           exitPrice: exitPrice,
           pnl: totalNetPnlPct,
-          closeReason: 'BE_SL',
+          closeReason: isActualLoss ? 'SL' : 'TRAILING_STOP',
           marketConditions: null,
           indicators: null
         });
@@ -532,7 +551,7 @@ async function updateTrade(id, updates) {
 }
 
 // ========================================
-// INITIALIZATION & CLEANUP - FIXED
+// INITIALIZATION & CLEANUP
 // ========================================
 
 async function initializeMonitorService() {

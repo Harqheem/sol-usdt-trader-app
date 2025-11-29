@@ -1,4 +1,4 @@
-// services/dataService/signalNotifier.js - FIXED
+// services/dataService/signalNotifier.js - FIXED: Explicit channel control
 
 const { logSignal } = require('../logsService');
 const { sendTelegramNotification } = require('../notificationService');
@@ -10,7 +10,6 @@ const NOTIFICATION_COOLDOWN = 2 * 60 * 60 * 1000; // 2 hours
 
 /**
  * Check if we should send a signal notification
- * FIXED: Properly handle "Wait" signals - they're valid, just not tradeable
  */
 async function checkAndSendSignal(symbol, analysisResult) {
   try {
@@ -24,8 +23,7 @@ async function checkAndSendSignal(symbol, analysisResult) {
       return;
     }
     
-    // ⭐ FIX: "Wait" signals are VALID but not tradeable
-    // Don't treat them as incomplete - they're complete non-trade signals
+    // "Wait" signals are VALID but not tradeable
     if (!analysisResult.signals) {
       console.log(`   ❌ ${symbol}: Incomplete analysis data (no signals object)`);
       return;
@@ -36,7 +34,6 @@ async function checkAndSendSignal(symbol, analysisResult) {
     // If it's a Wait signal, that's valid - just log and return
     if (signal === 'Wait' || signal === 'Error') {
       // This is a complete analysis - just no trade opportunity
-      // console.log(`   ℹ️  ${symbol}: ${signal} - ${analysisResult.signals.notes?.substring(0, 50)}...`);
       return;
     }
     
@@ -126,7 +123,11 @@ async function checkAndSendSignal(symbol, analysisResult) {
     const detailedMessage = buildDetailedMessage(symbol, analysisResult);
     
     try {
-      await sendTelegramNotification(message, detailedMessage, symbol);
+      // ✅ DECISION: Forward trade signals to channel? 
+      // Set to true if you want signals in the channel, false if only chat
+      const shouldForwardToChannel = true; // Change to false if you don't want channel forwarding
+      
+      await sendTelegramNotification(message, detailedMessage, symbol, shouldForwardToChannel);
       lastNotificationTime[symbol] = now;
       console.log(`   ✅ Notification sent successfully`);
     } catch (notifError) {

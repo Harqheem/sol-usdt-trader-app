@@ -258,7 +258,7 @@ async function executeManagementActions(trade, checkpoint, currentPrice, atr, si
   const isBuy = trade.signal_type === 'Enter Long' || trade.signal_type === 'Buy';
   const results = [];
 
-  console.log(`\nðŸŽ¯ EXECUTING CHECKPOINT: ${checkpoint.name} for ${trade.symbol}`);
+  console.log(`\nEXECUTING CHECKPOINT: ${checkpoint.name} for ${trade.symbol}`);
 
   for (const action of checkpoint.actions) {
     try {
@@ -269,7 +269,7 @@ async function executeManagementActions(trade, checkpoint, currentPrice, atr, si
       await logManagementAction(trade.id, checkpoint, action, result, currentPrice, atr);
 
     } catch (error) {
-      console.error(`âŒ Action failed:`, error.message);
+      console.error(`Action failed:`, error.message);
       results.push({ success: false, error: error.message });
     }
   }
@@ -282,7 +282,7 @@ async function executeManagementActions(trade, checkpoint, currentPrice, atr, si
   // Send notification
   await sendManagementNotification(trade, checkpoint, results, currentPrice, signalType);
 
-  console.log(`âœ… Checkpoint "${checkpoint.name}" completed for ${trade.symbol}\n`);
+  console.log(`Checkpoint "${checkpoint.name}" completed for ${trade.symbol}\n`);
 
   return { success: true, results };
 }
@@ -300,7 +300,7 @@ async function executeAction(trade, action, currentPrice, atr, isBuy) {
       .update({ updated_sl: newSL })
       .eq('id', trade.id);
 
-    console.log(`  âœ… Moved SL: ${trade.updated_sl || trade.sl} → ${newSL.toFixed(6)}`);
+    console.log(` Moved SL: ${trade.updated_sl || trade.sl} → ${newSL.toFixed(6)}`);
 
     return {
       success: true,
@@ -352,7 +352,7 @@ async function executeAction(trade, action, currentPrice, atr, isBuy) {
       .update(updates)
       .eq('id', trade.id);
 
-    console.log(`  âœ… Closed ${closePercent}%: Remaining ${(newRemaining * 100).toFixed(0)}%`);
+    console.log(`Closed ${closePercent}%: Remaining ${(newRemaining * 100).toFixed(0)}%`);
 
     return {
       success: true,
@@ -527,11 +527,11 @@ async function sendManagementNotification(trade, checkpoint, results, currentPri
   const direction = trade.signal_type.includes('Long') ? 'LONG' : 'SHORT';
   const rules = MANAGEMENT_RULES[signalType] || DEFAULT_RULES;
   
-  let message1 = `ðŸ"„ TRADE MANAGEMENT - AUTO EXECUTED\n\n`;
+  let message1 = `TRADE MANAGEMENT - AUTO EXECUTED\n\n`;
   message1 += `${trade.symbol} ${direction}\n`;
   message1 += `Signal: ${rules.name}\n`;
   message1 += `Entry: ${trade.entry.toFixed(6)} | Current: ${currentPrice.toFixed(6)}\n\n`;
-  message1 += `âœ… ACTION TAKEN:\n`;
+  message1 += `ACTION TAKEN:\n`;
   message1 += `Checkpoint: ${checkpoint.name}\n`;
 
   let message2 = `${trade.symbol} - MANAGEMENT DETAILS\n\n`;
@@ -541,10 +541,10 @@ async function sendManagementNotification(trade, checkpoint, results, currentPri
   results.forEach((result, index) => {
     if (result.success) {
       if (result.action === 'move_sl') {
-        message1 += `â†' Moved SL: ${result.oldSL.toFixed(6)} → ${result.newSL.toFixed(6)}\n`;
+        message1 += `Moved SL: ${result.oldSL.toFixed(6)} → ${result.newSL.toFixed(6)}\n`;
         message2 += `${index + 1}. ${result.reason}\n`;
       } else if (result.action === 'close_partial') {
-        message1 += `â†' Closed ${result.closePercent}% (${result.newRemaining.toFixed(0)}% remaining)\n`;
+        message1 += `Closed ${result.closePercent}% (${result.newRemaining.toFixed(0)}% remaining)\n`;
         message2 += `${index + 1}. ${result.reason}\n`;
         message2 += `   P&L: ${result.pnl.netPnlPct.toFixed(2)}%\n`;
       }
