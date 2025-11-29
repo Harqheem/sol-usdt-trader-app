@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trade Management</title>
+  <link rel="stylesheet" href="management.css">
+</head>
+<body>
+  <div class="dashboard">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-brand">
+        <h1>🎯 Trade Management System</h1>
+        <div class="header-subtitle">Automated trade management for DEFAULT system signals</div>
+      </div>
+      
+      <div class="header-actions">
+        <button id="refresh-btn" class="btn btn-primary">🔄 Refresh</button>
+        <a href="/">← Dashboard</a>
+        <a href="/logs.html">View Logs</a>
+        <a href="/learning.html">📚 Learning</a>
+      </div>
+    </div>
+
+    <!-- Stats Overview -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon">🎯</div>
+        <div class="stat-content">
+          <div class="stat-label">Active Trades</div>
+          <div class="stat-value" id="stat-active">0</div>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon">📊</div>
+        <div class="stat-content">
+          <div class="stat-label">Total Actions (30d)</div>
+          <div class="stat-value" id="stat-actions">0</div>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon">✅</div>
+        <div class="stat-content">
+          <div class="stat-label">Avg Actions/Trade</div>
+          <div class="stat-value" id="stat-avg">0</div>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon">🔄</div>
+        <div class="stat-content">
+          <div class="stat-label">Management Rate</div>
+          <div class="stat-value" id="stat-rate">0%</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs-container">
+      <div class="tab active" data-tab="active">
+        🎯 Active Trades (<span id="count-active">0</span>)
+      </div>
+      <div class="tab" data-tab="history">
+        📜 Management History
+      </div>
+      <div class="tab" data-tab="rules">
+        ⚙️ Rules & Configuration
+      </div>
+      <div class="tab" data-tab="analytics">
+        📈 Analytics
+      </div>
+    </div>
+
+    <!-- Tab Content: Active Trades -->
+    <div id="tab-active" class="tab-content active">
+      <div id="active-trades-container" class="trades-container">
+        <div class="empty-state">
+          <div class="empty-icon">🎯</div>
+          <div class="empty-title">No Active Trades</div>
+          <div class="empty-text">Managed trades will appear here when signals are opened</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab Content: History -->
+    <div id="tab-history" class="tab-content">
+      <div class="filters-bar">
+        <select id="history-symbol-filter" class="filter-select">
+          <option value="">All Symbols</option>
+          <option value="SOLUSDT">SOLUSDT</option>
+          <option value="SUIUSDT">SUIUSDT</option>
+          <option value="ADAUSDT">ADAUSDT</option>
+          <option value="BNBUSDT">BNBUSDT</option>
+          <option value="XRPUSDT">XRPUSDT</option>
+        </select>
+
+        <select id="history-signal-filter" class="filter-select">
+          <option value="">All Signal Types</option>
+          <option value="BOS">BOS</option>
+          <option value="LIQUIDITY_GRAB">Liquidity Grab</option>
+          <option value="CHOCH">ChoCH</option>
+          <option value="SR_BOUNCE">S/R Bounce</option>
+        </select>
+
+        <input type="date" id="history-from-date" class="filter-input">
+        <input type="date" id="history-to-date" class="filter-input">
+      </div>
+
+      <div id="history-container">
+        <div class="loading-state">
+          <div class="loading-spinner"></div>
+          <p>Loading management history...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab Content: Rules -->
+    <div id="tab-rules" class="tab-content">
+      <div class="rules-container">
+        <div class="info-banner">
+          <div class="info-icon">ℹ️</div>
+          <div class="info-content">
+            <strong>Auto-Execution Enabled</strong>
+            <p>All management actions are executed automatically. You'll receive notifications via Telegram and see updates here in real-time.</p>
+          </div>
+        </div>
+
+        <div id="rules-grid" class="rules-grid">
+          <!-- Populated by JavaScript -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab Content: Analytics -->
+    <div id="tab-analytics" class="tab-content">
+      <div class="analytics-grid">
+        <!-- Action Breakdown -->
+        <div class="analytics-card">
+          <div class="analytics-header">
+            <h3>📊 Action Breakdown</h3>
+            <p>Distribution of management actions</p>
+          </div>
+          <div id="action-breakdown" class="chart-container">
+            <div class="loading-state">Loading...</div>
+          </div>
+        </div>
+
+        <!-- Checkpoint Breakdown -->
+        <div class="analytics-card">
+          <div class="analytics-header">
+            <h3>🎯 Checkpoint Breakdown</h3>
+            <p>Most frequently reached checkpoints</p>
+          </div>
+          <div id="checkpoint-breakdown" class="chart-container">
+            <div class="loading-state">Loading...</div>
+          </div>
+        </div>
+
+        <!-- Performance Impact -->
+        <div class="analytics-card full-width">
+          <div class="analytics-header">
+            <h3>💰 Management Impact</h3>
+            <p>How management affects trade outcomes</p>
+          </div>
+          <div id="management-impact" class="impact-container">
+            <div class="loading-state">Loading...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="management.js"></script>
+</body>
+</html>

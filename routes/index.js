@@ -159,6 +159,162 @@ router.get('/price', async (req, res) => {
   }
 });
 
+
+// routes/index.js - ADD THESE ROUTES
+
+const { 
+  getActiveManagedTrades, 
+  getTradeManagementHistory,
+  getManagementStats,
+  MANAGEMENT_RULES 
+} = require('../services/tradeManagementService');
+
+// ========================================
+// TRADE MANAGEMENT API ENDPOINTS
+// ========================================
+
+// Get active managed trades
+router.get('/api/management/active', async (req, res) => {
+  try {
+    const trades = await getActiveManagedTrades();
+    
+    // Enrich with current price and profit calculation
+    const enrichedTrades = await Promise.all(trades.map(async (trade) => {
+      // Get current price from cache or API
+      const { wsCache } = require('../services/dataService');
+      const cache = wsCache[trade.symbol];
+      const currentPrice = cache?.currentPrice || trade.entry;
+      
+      // Calculate profit in ATR
+      const isBuy = trade.signal_type.includes('Long');
+      const atr = cache?.atr || ((trade.tp1 - trade.entry) / 1.5); // Estimate ATR from TP1
+      const profitATR = isBuy 
+        ? (currentPrice - trade.entry) / atr
+        : (trade.entry - currentPrice) / atr;
+      
+      // Get executed checkpoints
+      const { data: executed } = await require('../services/logsService').supabase
+        .from('trade_management_log')
+        .select('checkpoint_name')
+        .eq('trade_id', trade.id);
+      
+      return {
+        ...trade,
+        current_price: currentPrice,
+        profit_atr: profitATR,
+        executed_checkpoints: executed ? executed.map(e => e.checkpoint_name) : []
+      };
+    }));
+    
+    res.json(enrichedTrades);
+  } catch (error) {
+    console.error('❌ Active trades API error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get management history
+router.get('/api/management/history', async (req, res) => {
+  try {
+    const { symbol, signalType, fromDate, toDate } = req.query;
+    
+    let query = require('../services/logsService').supabase
+      .from('trade_management_log')
+      .select(`
+        *,
+        trade:trade_id (
+          id,
+          symbol,
+          signal_type,
+          entry,
+          exit_price,
+          sl,
+          tp1,
+          tp2,
+          pnl_percentage,
+          status,
+          notes,
+          timestamp,
+          close_time
+        )
+      `)
+      .order('timestamp', { ascending: false })
+      .limit(100);
+    
+    const { data, error } = await query;
+    
+    if (error) throw error;
+    
+    // Filter by additional criteria
+    let filtered = data || [];
+    
+    if (symbol) {
+      filtered = filtered.filter(entry => entry.trade?.symbol === symbol);
+    }
+    
+    if (signalType) {
+      filtered = filtered.filter(entry => {
+        const notes = entry.trade?.notes || '';
+        return notes.includes(signalType);
+      });
+    }
+    
+    if (fromDate) {
+      const from = new Date(fromDate);
+      filtered = filtered.filter(entry => new Date(entry.timestamp) >= from);
+    }
+    
+    if (toDate) {
+      const to = new Date(toDate);
+      to.setHours(23, 59, 59, 999);
+      filtered = filtered.filter(entry => new Date(entry.timestamp) <= to);
+    }
+    
+    res.json(filtered);
+  } catch (error) {
+    console.error('❌ History API error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get management statistics
+router.get('/api/management/stats', async (req, res) => {
+  try {
+    const stats = await getManagementStats();
+    res.json(stats);
+  } catch (error) {
+    console.error('❌ Stats API error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get management rules
+router.get('/api/management/rules', (req, res) => {
+  try {
+    res.json(MANAGEMENT_RULES);
+  } catch (error) {
+    console.error('❌ Rules API error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get analytics data
+router.get('/api/management/analytics', async (req, res) => {
+  try {
+    const stats = await getManagementStats();
+    res.json({
+      actionBreakdown: stats.actionBreakdown || {},
+      checkpointBreakdown: stats.checkpointBreakdown || {},
+      totalManaged: stats.totalManaged || 0,
+      totalActions: stats.totalActions || 0
+    });
+  } catch (error) {
+    console.error('❌ Analytics API error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
 router.get('/api/learning-data', async (req, res) => {
   try {
     const { type, symbol, signalSource, limit } = req.query;

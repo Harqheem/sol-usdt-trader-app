@@ -246,6 +246,23 @@ async function startSymbolStream(symbol) {
   }
 }
 
+// Broadcast management updates to dashboard
+function broadcastManagementUpdate(tradeId, action) {
+  const managementClients = sseClients.get('management') || new Set();
+  
+  managementClients.forEach(res => {
+    try {
+      res.write(`data: ${JSON.stringify({
+        type: 'management_action',
+        tradeId,
+        action
+      })}\n\n`);
+    } catch (err) {
+      console.error('Failed to send management update:', err);
+    }
+  });
+}
+
 // Initialize WebSocket manager
 async function initWebSocketManager() {
   console.log('🔌 Initializing WebSocket Manager...');

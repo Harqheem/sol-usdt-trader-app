@@ -4,7 +4,7 @@ const Binance = require('binance-api-node').default;
 const { supabase } = require('./logsService');
 const { sendTelegramNotification } = require('./notificationService');
 const { symbols } = require('../config');
-
+const { checkTradeManagement, executeManagementActions } = require('./tradeManagementService');
 // KEEP FAST SIGNALS IMPORT (don't remove!)
 const { handleTradeClose } = require('./dataService/Fast Signals/positionTracker');
 
@@ -146,7 +146,41 @@ async function processPriceUpdate(trade, currentPrice) {
     }
 
     // OPENED TRADES
-    if (trade.status === 'opened') {
+    if (trade.status === 'opened')
+     {
+      // Calculate ATR for management
+      const atr = calculateATRForTrade(trade); // You need to implement this
+      
+      // Check if management action is needed
+      const managementCheck = await checkTradeManagement(trade, currentPrice, atr);
+      
+      if (managementCheck.needsAction) {
+        console.log(`🎯 ${trade.symbol}: Management checkpoint reached - ${managementCheck.checkpoint.name}`);
+        
+        // Execute the management actions
+        await executeManagementActions(
+          trade,
+          managementCheck.checkpoint,
+          currentPrice,
+          atr,
+          managementCheck.signalType
+        );
+        
+        // Refresh trade data after management
+        const { data: updatedTrade } = await supabase
+          .from('signals')
+          .select('*')
+          .eq('id', trade.id)
+          .single();
+        
+        if (updatedTrade) {
+          Object.assign(trade, updatedTrade);
+        }
+      
+      }
+    }
+    
+      {
       let updates = {};
 
       // Check TP1 (partial close)
