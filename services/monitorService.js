@@ -114,6 +114,13 @@ function subscribeToSymbol(symbol) {
 // MAIN PRICE UPDATE PROCESSOR (unchanged)
 // ========================================
 
+function calculateATRForTrade(trade) {
+  // Estimate ATR from trade levels
+  // TP1 is 1.5 ATR away from entry, so:
+  const atr = Math.abs(trade.tp1 - trade.entry) / 1.5;
+  return atr;
+}
+
 async function processPriceUpdate(trade, currentPrice) {
   try {
     if (recentlyTransitioned.has(trade.id)) return;
