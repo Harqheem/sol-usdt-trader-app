@@ -209,6 +209,8 @@ function renderActiveTrades() {
   });
 }
 
+// Fixed createTradeCard and renderTimeline functions for management.js
+
 function createTradeCard(trade) {
   const card = document.createElement('div');
   card.className = 'trade-card';
@@ -223,32 +225,37 @@ function createTradeCard(trade) {
     ? ((trade.current_price - trade.entry) / trade.entry) * 100
     : ((trade.entry - trade.current_price) / trade.entry) * 100;
   
-  const profitATR = trade.profit_atr || 0;
+  // ✅ FIX: Calculate ATR correctly considering direction
+  const atr = Math.abs(trade.tp1 - trade.entry) / 1.5;
+  const profitDistance = isBuy ? (trade.current_price - trade.entry) : (trade.entry - trade.current_price);
+  const profitATR = profitDistance / atr;
+  
   const profitClass = profitPct >= 0 ? '' : 'negative';
+  const profitSign = profitATR >= 0 ? '+' : '';
 
   card.innerHTML = `
     <div class="trade-header">
       <span class="trade-symbol">${trade.symbol} ${direction}</span>
       <span class="trade-badge ${signalClass}">${formatSignalType(signalType)}</span>
-      <span class="trade-profit ${profitClass}">+${profitATR.toFixed(2)} ATR (${profitPct.toFixed(2)}%)</span>
+      <span class="trade-profit ${profitClass}">${profitSign}${profitATR.toFixed(2)} ATR (${profitPct.toFixed(2)}%)</span>
     </div>
 
     <div class="trade-timeline" id="timeline-${trade.id}">
-      ${renderTimeline(trade)}
+      ${renderTimeline(trade, profitATR)}
     </div>
 
     <div class="trade-current-status">
       <div class="status-item">
         <span class="status-label">Entry</span>
-        <span class="status-value">$${parseFloat(trade.entry).toFixed(4)}</span>
+        <span class="status-value">${parseFloat(trade.entry).toFixed(4)}</span>
       </div>
       <div class="status-item">
         <span class="status-label">Current</span>
-        <span class="status-value">$${parseFloat(trade.current_price).toFixed(4)}</span>
+        <span class="status-value">${parseFloat(trade.current_price).toFixed(4)}</span>
       </div>
       <div class="status-item">
         <span class="status-label">Stop Loss</span>
-        <span class="status-value highlight-green">$${parseFloat(trade.updated_sl || trade.sl).toFixed(4)}</span>
+        <span class="status-value highlight-green">${parseFloat(trade.updated_sl || trade.sl).toFixed(4)}</span>
       </div>
       <div class="status-item">
         <span class="status-label">Remaining</span>
@@ -264,11 +271,12 @@ function createTradeCard(trade) {
   return card;
 }
 
-// Fixed renderTimeline function for management.js
-
-function renderTimeline(trade) {
+function renderTimeline(trade, calculatedProfitATR) {
   const signalType = getSignalTypeFromTrade(trade);
   const executedCheckpoints = trade.executed_checkpoints || [];
+  
+  // ✅ FIX: Use calculated profit ATR (can be negative for losses)
+  const currentProfitATR = calculatedProfitATR || 0;
   
   // Get rules for this signal type
   fetch('/api/management/rules')
@@ -280,10 +288,9 @@ function renderTimeline(trade) {
       const timelineHTML = rule.checkpoints.map(checkpoint => {
         const isExecuted = executedCheckpoints.includes(checkpoint.name);
         
-        // ✅ FIX: Use absolute value of profit_atr for comparison
-        const absProfitATR = Math.abs(trade.profit_atr);
-        const isPending = absProfitATR >= checkpoint.profitATR && !isExecuted;
-        const isUpcoming = absProfitATR < checkpoint.profitATR;
+        // ✅ FIX: Only check against positive profit for triggering checkpoints
+        const isPending = currentProfitATR >= checkpoint.profitATR && !isExecuted;
+        const isUpcoming = currentProfitATR < checkpoint.profitATR;
 
         if (isExecuted) {
           return `
@@ -309,15 +316,15 @@ function renderTimeline(trade) {
             </div>
           `;
         } else if (isUpcoming) {
-          // ✅ FIX: Calculate distance using absolute value
-          const distance = checkpoint.profitATR - absProfitATR;
+          // ✅ FIX: Calculate distance correctly (can show negative if in loss)
+          const distance = checkpoint.profitATR - currentProfitATR;
           return `
             <div class="checkpoint upcoming">
               <span class="checkpoint-icon">🎯</span>
               <div class="checkpoint-content">
                 <span class="checkpoint-label">${checkpoint.name} @ ${checkpoint.profitATR} ATR</span>
               </div>
-              <span class="checkpoint-distance">+${distance.toFixed(2)} ATR away</span>
+              <span class="checkpoint-distance">${distance >= 0 ? '+' : ''}${distance.toFixed(2)} ATR away</span>
             </div>
           `;
         }
