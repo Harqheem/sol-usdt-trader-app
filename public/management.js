@@ -264,6 +264,8 @@ function createTradeCard(trade) {
   return card;
 }
 
+// Fixed renderTimeline function for management.js
+
 function renderTimeline(trade) {
   const signalType = getSignalTypeFromTrade(trade);
   const executedCheckpoints = trade.executed_checkpoints || [];
@@ -277,8 +279,11 @@ function renderTimeline(trade) {
 
       const timelineHTML = rule.checkpoints.map(checkpoint => {
         const isExecuted = executedCheckpoints.includes(checkpoint.name);
-        const isPending = trade.profit_atr >= checkpoint.profitATR && !isExecuted;
-        const isUpcoming = trade.profit_atr < checkpoint.profitATR;
+        
+        // ✅ FIX: Use absolute value of profit_atr for comparison
+        const absProfitATR = Math.abs(trade.profit_atr);
+        const isPending = absProfitATR >= checkpoint.profitATR && !isExecuted;
+        const isUpcoming = absProfitATR < checkpoint.profitATR;
 
         if (isExecuted) {
           return `
@@ -304,7 +309,8 @@ function renderTimeline(trade) {
             </div>
           `;
         } else if (isUpcoming) {
-          const distance = checkpoint.profitATR - trade.profit_atr;
+          // ✅ FIX: Calculate distance using absolute value
+          const distance = checkpoint.profitATR - absProfitATR;
           return `
             <div class="checkpoint upcoming">
               <span class="checkpoint-icon">🎯</span>
