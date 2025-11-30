@@ -49,7 +49,7 @@ let totalPages = 1;
 let sortColumn = 'time';
 let sortDirection = 'desc';
 
-const symbols = ['SOLUSDT', 'SUIUSDT', 'ADAUSDT', 'BNBUSDT', 'XRPUSDT'];
+const symbols = ['SOLUSDT', 'ETHUSDT', 'SUIUSDT', 'ADAUSDT', 'BNBUSDT', 'XRPUSDT'];
 symbols.forEach(sym => {
   const opt = document.createElement('option');
   opt.value = sym;

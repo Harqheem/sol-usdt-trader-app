@@ -102,7 +102,10 @@ async function checkAndSendSignal(symbol, analysisResult) {
       tp2: parseFloat(tp2),
       sl: parseFloat(sl),
       positionSize: parseFloat(positionSize),
-      leverage: 20
+      leverage: 20,
+      entryATR: analysisResult.signals.entryATR || null,
+      entryADX: analysisResult.signals.entryADX || null,
+      entryRegime: analysisResult.signals.entryRegime || null
     };
     
     try {

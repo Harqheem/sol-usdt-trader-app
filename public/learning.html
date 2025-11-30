@@ -4,223 +4,95 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Trade Learning Center</title>
+  
+  <!-- STEP 1: Link the shared styles -->
+  <link rel="stylesheet" href="shared-styles.css">
+  
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
-      background: #f8f9fa;
-      min-height: 100vh;
-      padding: 32px;
-      color: #1a1a1a;
-      line-height: 1.5;
-    }
-
-    .dashboard {
-      max-width: 1600px;
-      margin: 0 auto;
-    }
-
-    /* Header */
-    .header {
-      background: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      padding: 24px 32px;
-      margin-bottom: 24px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 32px;
-      flex-wrap: wrap;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-    }
-
-    .header-brand {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
-    .header h1 {
-      font-size: 18px;
-      font-weight: 600;
-      color: #1a1a1a;
-      letter-spacing: -0.01em;
-    }
-
-    .header-subtitle {
-      font-size: 13px;
-      color: #6b7280;
-      font-weight: 400;
-    }
-
-    .header-actions {
-      display: flex;
-      gap: 12px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    .btn {
-      padding: 10px 20px;
-      border-radius: 6px;
-      border: none;
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      font-family: inherit;
-    }
-
-    .btn-primary {
-      background: #667eea;
-      color: white;
-    }
-
-    .btn-primary:hover {
-      background: #5568d3;
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-    }
-
-    a {
-      color: #667eea;
-      text-decoration: none;
-      font-size: 13px;
-      font-weight: 500;
-      transition: color 0.2s ease;
-    }
-
-    a:hover {
-      color: #5568d3;
-      text-decoration: underline;
-    }
-
+    /* Page-specific styles only */
+    
     /* Stats Grid */
     .stats-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 16px;
-      margin-bottom: 24px;
+      gap: var(--spacing-md);
+      margin-bottom: var(--spacing-lg);
     }
 
-    .stat-card {
-      background: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      padding: 20px;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-    }
-
-    .stat-label {
-      font-size: 11px;
-      font-weight: 600;
-      color: #6b7280;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 8px;
-    }
-
-    .stat-value {
-      font-size: 32px;
-      font-weight: 700;
-      color: #1a1a1a;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .stat-value.blue { color: #3b82f6; }
-    .stat-value.red { color: #ef4444; }
-    .stat-value.yellow { color: #f59e0b; }
-    .stat-value.green { color: #22c55e; }
+    .stat-value.blue { color: var(--info); }
+    .stat-value.red { color: var(--danger); }
+    .stat-value.yellow { color: var(--warning); }
+    .stat-value.green { color: var(--success); }
 
     /* Tabs */
-    .tabs {
+    .tabs-container {
       background: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      padding: 16px 24px;
-      margin-bottom: 24px;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-md);
+      padding: var(--spacing-md) var(--spacing-lg);
+      margin-bottom: var(--spacing-lg);
+      box-shadow: var(--shadow-sm);
       display: flex;
-      gap: 24px;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-      border-bottom: 2px solid #f3f4f6;
+      gap: var(--spacing-lg);
+      border-bottom: 2px solid var(--gray-100);
+      overflow-x: auto;
     }
 
     .tab {
-      padding: 8px 16px;
+      padding: var(--spacing-sm) var(--spacing-md);
       font-size: 13px;
       font-weight: 500;
-      color: #6b7280;
+      color: var(--gray-500);
       cursor: pointer;
       border-bottom: 2px solid transparent;
-      transition: all 0.2s ease;
+      transition: all var(--transition-base);
       user-select: none;
       position: relative;
-      bottom: -18px;
+      bottom: calc(-1 * var(--spacing-md) - 2px);
+      white-space: nowrap;
     }
 
     .tab:hover {
-      color: #667eea;
+      color: var(--primary);
     }
 
     .tab.active {
-      color: #667eea;
-      border-bottom-color: #667eea;
+      color: var(--primary);
+      border-bottom-color: var(--primary);
     }
 
     /* Filters */
-    .filters {
+    .filters-bar {
       background: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      padding: 20px 24px;
-      margin-bottom: 24px;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-md);
+      padding: var(--spacing-lg);
+      margin-bottom: var(--spacing-lg);
+      box-shadow: var(--shadow-sm);
       display: flex;
-      gap: 16px;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      gap: var(--spacing-md);
+      flex-wrap: wrap;
     }
 
     .filter-group {
       flex: 1;
+      min-width: 200px;
       position: relative;
     }
 
-    .filter-input {
+    .filter-input, .filter-select {
       width: 100%;
-      padding: 10px 36px 10px 12px;
-      border: 1px solid #e5e7eb;
-      border-radius: 6px;
+      padding: 10px 16px;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-sm);
       font-size: 13px;
-      font-family: inherit;
-      transition: all 0.2s ease;
+      font-family: var(--font-sans);
+      transition: all var(--transition-base);
     }
 
-    .filter-input:focus {
+    .filter-input:focus, .filter-select:focus {
       outline: none;
-      border-color: #667eea;
-      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-    }
-
-    .filter-select {
-      width: 100%;
-      padding: 10px 12px;
-      border: 1px solid #e5e7eb;
-      border-radius: 6px;
-      font-size: 13px;
-      font-family: inherit;
-      background: white;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-
-    .filter-select:focus {
-      outline: none;
-      border-color: #667eea;
+      border-color: var(--primary);
       box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
     }
 
@@ -229,7 +101,7 @@
       right: 12px;
       top: 50%;
       transform: translateY(-50%);
-      color: #9ca3af;
+      color: var(--gray-400);
       font-size: 16px;
     }
 
@@ -237,44 +109,45 @@
     .entries-container {
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: var(--spacing-md);
     }
 
     .entry-card {
       background: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-md);
       overflow: hidden;
-      transition: all 0.2s ease;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      transition: all var(--transition-base);
+      box-shadow: var(--shadow-sm);
     }
 
     .entry-card:hover {
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      box-shadow: var(--shadow-md);
       transform: translateY(-2px);
     }
 
     .entry-card.failed {
-      border-left: 4px solid #ef4444;
-      background: #fef2f2;
+      border-left: 4px solid var(--danger);
+      background: var(--danger-light);
     }
 
     .entry-card.near-miss {
-      border-left: 4px solid #f59e0b;
-      background: #fffbeb;
+      border-left: 4px solid var(--warning);
+      background: var(--warning-light);
     }
 
     .entry-card.success {
-      border-left: 4px solid #22c55e;
-      background: #f0fdf4;
+      border-left: 4px solid var(--success);
+      background: var(--success-light);
     }
 
     .entry-header {
-      padding: 20px 24px;
+      padding: var(--spacing-lg);
       cursor: pointer;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      transition: background var(--transition-base);
     }
 
     .entry-header:hover {
@@ -284,34 +157,34 @@
     .entry-info {
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: var(--spacing-md);
       flex: 1;
     }
 
     .entry-icon {
-      font-size: 20px;
+      font-size: 24px;
     }
 
     .entry-main {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: var(--spacing-xs);
     }
 
     .entry-symbol {
       font-size: 16px;
       font-weight: 700;
-      color: #1a1a1a;
+      color: var(--gray-900);
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: var(--spacing-sm);
     }
 
     .entry-badge {
       font-size: 11px;
       font-weight: 600;
       padding: 4px 8px;
-      border-radius: 4px;
+      border-radius: var(--border-radius-sm);
       background: rgba(0, 0, 0, 0.1);
       text-transform: uppercase;
       letter-spacing: 0.03em;
@@ -319,14 +192,14 @@
 
     .entry-time {
       font-size: 12px;
-      color: #6b7280;
+      color: var(--gray-500);
       font-variant-numeric: tabular-nums;
     }
 
     .entry-stats {
       display: flex;
       align-items: center;
-      gap: 24px;
+      gap: var(--spacing-lg);
     }
 
     .entry-stat {
@@ -343,15 +216,15 @@
 
     .entry-stat-label {
       font-size: 11px;
-      color: #6b7280;
+      color: var(--gray-500);
       text-transform: uppercase;
       letter-spacing: 0.03em;
     }
 
     .expand-icon {
       font-size: 20px;
-      color: #9ca3af;
-      transition: transform 0.2s ease;
+      color: var(--gray-400);
+      transition: transform var(--transition-base);
     }
 
     .entry-card.expanded .expand-icon {
@@ -372,78 +245,78 @@
     .details-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 32px;
-      padding: 24px;
+      gap: var(--spacing-xl);
+      padding: var(--spacing-lg);
     }
 
     .details-section {
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: var(--spacing-md);
     }
 
     .details-heading {
       font-size: 13px;
       font-weight: 700;
-      color: #1a1a1a;
+      color: var(--gray-900);
       text-transform: uppercase;
       letter-spacing: 0.05em;
-      margin-bottom: 8px;
+      margin-bottom: var(--spacing-sm);
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: var(--spacing-sm);
     }
 
     .detail-box {
-      background: #f9fafb;
-      border: 1px solid #e5e7eb;
-      border-radius: 6px;
-      padding: 16px;
+      background: var(--gray-50);
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-sm);
+      padding: var(--spacing-md);
     }
 
     .detail-row {
       display: flex;
       justify-content: space-between;
       align-items: baseline;
-      padding: 8px 0;
+      padding: var(--spacing-sm) 0;
     }
 
     .detail-row:not(:last-child) {
-      border-bottom: 1px solid #e5e7eb;
+      border-bottom: 1px solid var(--gray-200);
     }
 
     .detail-label {
       font-size: 12px;
-      color: #6b7280;
+      color: var(--gray-500);
       font-weight: 500;
     }
 
     .detail-value {
       font-size: 14px;
       font-weight: 600;
-      color: #1a1a1a;
-      font-family: 'Courier New', monospace;
+      color: var(--gray-900);
+      font-family: var(--font-mono);
     }
 
     .lesson-box {
-      background: #eff6ff;
+      background: var(--info-light);
       border: 1px solid #bfdbfe;
-      border-radius: 6px;
-      padding: 16px;
+      border-radius: var(--border-radius-sm);
+      padding: var(--spacing-md);
     }
 
     .lesson-box.warning {
-      background: #fef3c7;
+      background: var(--warning-light);
       border-color: #fde68a;
     }
 
     .lesson-box.success {
-      background: #d1fae5;
+      background: var(--success-light);
       border-color: #a7f3d0;
     }
 
     .lesson-box.error {
-      background: #fee2e2;
+      background: var(--danger-light);
       border-color: #fecaca;
     }
 
@@ -451,7 +324,7 @@
       font-size: 12px;
       font-weight: 700;
       color: #1e40af;
-      margin-bottom: 12px;
+      margin-bottom: var(--spacing-md);
     }
 
     .lesson-box.warning .lesson-title { color: #92400e; }
@@ -461,20 +334,20 @@
     .lesson-text {
       font-size: 13px;
       line-height: 1.6;
-      color: #374151;
+      color: var(--gray-700);
     }
 
     .condition-list {
       list-style: none;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: var(--spacing-md);
     }
 
     .condition-item {
       display: flex;
       align-items: flex-start;
-      gap: 12px;
+      gap: var(--spacing-md);
       font-size: 13px;
     }
 
@@ -506,12 +379,12 @@
 
     .condition-name {
       font-weight: 600;
-      color: #1a1a1a;
+      color: var(--gray-900);
     }
 
     .condition-desc {
       font-size: 12px;
-      color: #6b7280;
+      color: var(--gray-500);
       margin-top: 4px;
     }
 
@@ -519,7 +392,7 @@
       list-style: none;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: var(--spacing-sm);
     }
 
     .bullet-list li {
@@ -533,41 +406,10 @@
       content: "•";
       position: absolute;
       left: 0;
-      color: #667eea;
+      color: var(--primary);
       font-weight: bold;
     }
 
-    /* Loading & Empty States */
-    .loading-state {
-      text-align: center;
-      padding: 64px 32px;
-      color: #9ca3af;
-    }
-
-    .loading-spinner {
-      width: 48px;
-      height: 48px;
-      border: 4px solid #f3f4f6;
-      border-top-color: #667eea;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin: 0 auto 16px;
-    }
-
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-
-    .empty-state {
-      text-align: center;
-      padding: 64px 32px;
-      background: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      color: #9ca3af;
-    }
-
-    /* Responsive */
     @media (max-width: 1200px) {
       .stats-grid {
         grid-template-columns: repeat(2, 1fr);
@@ -579,43 +421,14 @@
     }
 
     @media (max-width: 768px) {
-      body {
-        padding: 16px;
-      }
-
-      .header {
-        flex-direction: column;
-        align-items: stretch;
-      }
-
-      .header-actions {
-        flex-direction: column;
-        width: 100%;
-      }
-
-      .header-actions a,
-      .header-actions .btn {
-        width: 100%;
-        text-align: center;
-      }
-
       .stats-grid {
         grid-template-columns: 1fr;
-      }
-
-      .tabs {
-        overflow-x: auto;
-        flex-wrap: nowrap;
-      }
-
-      .filters {
-        flex-direction: column;
       }
 
       .entry-header {
         flex-direction: column;
         align-items: flex-start;
-        gap: 16px;
+        gap: var(--spacing-md);
       }
 
       .entry-stats {
@@ -626,9 +439,13 @@
   </style>
 </head>
 <body>
-  <div class="dashboard">
-    <!-- Header -->
-    <div class="header">
+  <!-- STEP 2: Navigation will be auto-injected by navigation.js -->
+  
+  <!-- STEP 3: Your page content goes here (will be wrapped by navigation.js) -->
+  
+  <!-- Page Header -->
+  <div class="page-header">
+    <div class="header-content">
       <div class="header-brand">
         <h1>📚 Trade Learning Center</h1>
         <div class="header-subtitle">Learn from every trade, near-miss, and market condition</div>
@@ -636,66 +453,78 @@
       
       <div class="header-actions">
         <button id="refresh-btn" class="btn btn-primary">🔄 Refresh</button>
-        <a href="/">← Back to Dashboard</a>
-        <a href="/logs.html">View Logs</a>
-      </div>
-    </div>
-
-    <!-- Stats Grid -->
-    <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-label">Total Entries</div>
-        <div class="stat-value blue" id="stat-total">0</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Failed Trades</div>
-        <div class="stat-value red" id="stat-failed">0</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Near Misses</div>
-        <div class="stat-value yellow" id="stat-near">0</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Successful</div>
-        <div class="stat-value green" id="stat-success">0</div>
-      </div>
-    </div>
-
-    <!-- Tabs -->
-    <div class="tabs">
-      <div class="tab active" data-tab="all">All (<span id="count-all">0</span>)</div>
-      <div class="tab" data-tab="trades">Trades (<span id="count-trades">0</span>)</div>
-      <div class="tab" data-tab="near-misses">Near Misses (<span id="count-near">0</span>)</div>
-    </div>
-
-    <!-- Filters -->
-    <div class="filters">
-      <div class="filter-group">
-        <input 
-          type="text" 
-          id="search-input" 
-          class="filter-input" 
-          placeholder="Search by symbol..."
-        >
-        <span class="search-icon">🔍</span>
-      </div>
-      <select id="type-filter" class="filter-select">
-        <option value="all">All Types</option>
-        <option value="failed_trade">Failed Trades</option>
-        <option value="near_miss">Near Misses</option>
-        <option value="successful_trade">Successful Trades</option>
-      </select>
-    </div>
-
-    <!-- Entries Container -->
-    <div id="entries-container" class="entries-container">
-      <div class="loading-state">
-        <div class="loading-spinner"></div>
-        <p>Loading learning data...</p>
       </div>
     </div>
   </div>
 
+  <!-- Stats Grid -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-icon">📊</div>
+      <div class="stat-content">
+        <div class="stat-label">Total Entries</div>
+        <div class="stat-value blue" id="stat-total">0</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">❌</div>
+      <div class="stat-content">
+        <div class="stat-label">Failed Trades</div>
+        <div class="stat-value red" id="stat-failed">0</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">⚠️</div>
+      <div class="stat-content">
+        <div class="stat-label">Near Misses</div>
+        <div class="stat-value yellow" id="stat-near">0</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">✅</div>
+      <div class="stat-content">
+        <div class="stat-label">Successful</div>
+        <div class="stat-value green" id="stat-success">0</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs-container">
+    <div class="tab active" data-tab="all">All (<span id="count-all">0</span>)</div>
+    <div class="tab" data-tab="trades">Trades (<span id="count-trades">0</span>)</div>
+    <div class="tab" data-tab="near-misses">Near Misses (<span id="count-near">0</span>)</div>
+  </div>
+
+  <!-- Filters -->
+  <div class="filters-bar">
+    <div class="filter-group">
+      <input 
+        type="text" 
+        id="search-input" 
+        class="filter-input" 
+        placeholder="Search by symbol..."
+      >
+      <span class="search-icon">🔍</span>
+    </div>
+    <select id="type-filter" class="filter-select">
+      <option value="all">All Types</option>
+      <option value="failed_trade">Failed Trades</option>
+      <option value="near_miss">Near Misses</option>
+      <option value="successful_trade">Successful Trades</option>
+    </select>
+  </div>
+
+  <!-- Entries Container -->
+  <div id="entries-container" class="entries-container">
+    <div class="loading-state">
+      <div class="loading-spinner"></div>
+      <p>Loading learning data...</p>
+    </div>
+  </div>
+
+  <!-- STEP 4: Include navigation.js BEFORE your page script -->
+  <script src="navigation.js"></script>
   <script src="learning.js"></script>
 </body>
 </html>

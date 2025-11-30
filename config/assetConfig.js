@@ -61,6 +61,62 @@ const assetProfiles = {
       trendAlignmentBonus: 2
     }
   },
+  
+  // Ethereum (ETH) - Moderate-high volatility, established smart contract platform
+ETHUSDT: {
+  name: 'Ethereum',
+  category: 'layer1',
+  
+  // Technical parameters
+  ema: {
+    fast: 7,
+    medium: 21,      // Responsive to ETH's moderate momentum
+    slow: 99
+  },
+  sma: {
+    trend: 50,
+    major: 200
+  },
+  
+  // Volatility characteristics
+  volatility: {
+    atrPeriod: 14,
+    atrMultiplier: 1.1,  // Moderate-high volatility
+    highThreshold: 2.3,   // % of price
+    lowThreshold: 0.7
+  },
+  
+  // Momentum settings
+  momentum: {
+    rsiPeriod: 14,
+    rsiBullish: 43,      // Balanced entry threshold
+    rsiBearish: 57,
+    rsiOverbought: 70,   // Standard levels work well for ETH
+    rsiOversold: 30,
+    adxPeriod: 14,
+    adxStrong: 28,       // ETH shows clear trends
+    adxWeak: 19
+  },
+  
+  // Entry/Exit optimization
+  trade: {
+    entryPullbackATR: 0.35,   // Moderate pullback entry
+    slBufferATR: 0.55,        // Balanced stop loss
+    tpMultiplier1: 1.5,
+    tpMultiplier2: 3.2,       // Good upside potential
+    maxRiskPercent: 0.013,    // 1.3% max risk
+    minRiskPercent: 0.005
+  },
+  
+  // Scoring adjustments
+  scoring: {
+    baseThreshold: 12,
+    strongADXAdjust: -1,
+    weakADXAdjust: 1,
+    emaStackWeight: 2,
+    trendAlignmentBonus: 2
+  }
+},
 
   // BNB - Moderate volatility, exchange token dynamics
   BNBUSDT: {

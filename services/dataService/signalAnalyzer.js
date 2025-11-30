@@ -251,6 +251,9 @@ function buildNoTradeResponse(symbol, decimals, currentPrice, ohlc, timestamp, i
 function buildTradeResponse(symbol, decimals, currentPrice, ohlc, timestamp, indicators, htf, candles30m, assetConfig, result) {
   const last5 = formatLast5Candles(candles30m, decimals);
   
+  // ✅ NEW: Determine regime for storage
+  const regime = determineRegimeForEntry(currentPrice, indicators);
+  
   return {
     decimals,
     core: { currentPrice: parseFloat(currentPrice).toFixed(decimals), ohlc, timestamp },
@@ -272,7 +275,12 @@ function buildTradeResponse(symbol, decimals, currentPrice, ohlc, timestamp, ind
       positionSize: result.positionSize,
       signalType: result.signalType,
       signalSource: result.signalSource,
-      confidence: result.confidence
+      confidence: result.confidence,
+      
+      // ✅ NEW: Add entry conditions for dynamic management
+      entryATR: indicators.atr,           // Store ATR at entry
+      entryADX: indicators.adx,           // Store ADX at entry
+      entryRegime: regime.type            // Store regime at entry
     },
     marketContext: {
       regime: result.regime,
@@ -287,6 +295,36 @@ function buildTradeResponse(symbol, decimals, currentPrice, ohlc, timestamp, ind
   };
 }
 
+// ============================================
+// NEW HELPER FUNCTION
+// Determine regime at entry for tracking
+// ============================================
+
+function determineRegimeForEntry(price, indicators) {
+  const { sma200, adx, ema7, ema25 } = indicators;
+  
+  // TRENDING BULL
+  if (price > sma200 && adx > 25 && ema7 > ema25) {
+    return {
+      type: 'TRENDING_BULL',
+      description: 'Strong uptrend'
+    };
+  }
+  
+  // TRENDING BEAR
+  if (price < sma200 && adx > 25 && ema7 < ema25) {
+    return {
+      type: 'TRENDING_BEAR',
+      description: 'Strong downtrend'
+    };
+  }
+  
+  // CHOPPY
+  return {
+    type: 'CHOPPY',
+    description: 'Ranging/Choppy market'
+  };
+}
 // ============================================
 // HELPER FORMATTERS
 // ============================================
@@ -352,5 +390,6 @@ function calculateAvgVolume(candles30m) {
 }
 
 module.exports = {
-  analyzeSymbol
+  analyzeSymbol,
+  determineRegimeForEntry 
 };

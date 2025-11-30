@@ -6,6 +6,7 @@ const routes = require('./routes');
 const { initDataService, cleanup, getServiceStatus, forceRefresh } = require('./services/dataService');
 const config = require('./config');
 const pauseService = require('./services/pauseService');
+const { initializeDynamicManager, cleanup: cleanupDynamicManager } = require('./services/dynamicPositionManager');
 
 // ⭐ KEEP FAST SIGNALS IMPORT (don't remove!)
 const { initializeRiskManagement } = require('./services/dataService/Fast Signals/positionTracker');
@@ -41,6 +42,12 @@ async function gracefulShutdown() {
     cleanupMonitor();
   } catch (err) {
     console.error('⚠️ Monitor cleanup error:', err);
+  }
+  
+ try {
+    cleanupDynamicManager();
+  } catch (err) {
+    console.error('⚠️ Dynamic manager cleanup error:', err);
   }
   
   cleanup();
@@ -93,6 +100,23 @@ app.get('/risk-status', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+app.post('/api/review-position/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { manualReview } = require('./services/dynamicPositionManager');
+    
+    const result = await manualReview(id);
+    res.json(result);
+  } catch (error) {
+    console.error('❌ Manual review error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
 
 // Get trading status
 app.get('/trading-status', (req, res) => {
@@ -344,7 +368,26 @@ app.post('/force-refresh/:symbol', async (req, res) => {
       console.error('⚠️  Monitor service initialization failed:', monitorErr);
       console.error('   Trades may not be monitored properly!');
     }
+
+    console.log('\n🔄 Initializing dynamic position manager...');
+    try {
+      const dynamicInit = await initializeDynamicManager();
+      
+      if (!dynamicInit.success) {
+        console.error('⚠️ Dynamic position manager initialization failed');
+        console.error('   Position adjustments will not work!');
+      } else {
+        console.log('✅ Dynamic position manager initialized');
+        console.log('   📊 Reviews every 2 hours');
+        console.log('   🎯 Adaptive TP/SL based on ATR & ADX changes');
+        console.log('   🛡️ Breakeven protection at 1.0 ATR profit');
+      }
+    } catch (dynamicErr) {
+      console.error('⚠️ Dynamic position manager error:', dynamicErr);
+      console.error('   Continuing without dynamic management');
+    }
     
+  
     console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     
     const port = process.env.PORT || 3000;

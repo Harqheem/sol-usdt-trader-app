@@ -8,6 +8,11 @@ const { symbols } = require('../config');
 const { withTimeout, getDecimalPlaces } = require('../utils');
 const Binance = require('binance-api-node').default;
 const client = Binance();
+const { 
+  manualReview, 
+  reviewAllPositions,
+  REVIEW_CONFIG 
+} = require('../services/dynamicPositionManager');
 
 // Rate limiting for price endpoint
 const priceRateLimiter = new Map();
@@ -387,6 +392,212 @@ router.get('/signals', async (req, res) => {
   } catch (err) {
     console.error('❌ Error fetching signals:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Get dynamic management configuration
+router.get('/api/dynamic-config', (req, res) => {
+  try {
+    res.json({
+      reviewInterval: REVIEW_CONFIG.reviewInterval / 3600000, // Convert to hours
+      adxThresholds: {
+        significantIncrease: REVIEW_CONFIG.adxSignificantIncrease,
+        significantDecrease: REVIEW_CONFIG.adxSignificantDecrease,
+        strongTrend: REVIEW_CONFIG.adxStrongTrend,
+        weakTrend: REVIEW_CONFIG.adxWeakTrend
+      },
+      atrThresholds: {
+        expansion: REVIEW_CONFIG.atrExpansionRatio,
+        contraction: REVIEW_CONFIG.atrContractionRatio
+      },
+      adjustmentLimits: {
+        maxTPAdjustment: REVIEW_CONFIG.maxTPAdjustment,
+        minProfitATR: REVIEW_CONFIG.minProfitATR,
+        maxProfitATR: REVIEW_CONFIG.maxProfitATR,
+        minStopDistance: REVIEW_CONFIG.minStopDistance
+      },
+      breakevenRules: {
+        triggerATR: REVIEW_CONFIG.breakevenAfterATR,
+        buffer: REVIEW_CONFIG.breakevenBuffer
+      },
+      neverWidenStops: REVIEW_CONFIG.neverWidenStops
+    });
+  } catch (error) {
+    console.error('❌ Config error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Manually trigger position review for specific trade
+router.post('/api/review-position/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    console.log(`🔍 Manual review requested for trade ${id}`);
+    const result = await manualReview(id);
+    
+    res.json(result);
+  } catch (error) {
+    console.error('❌ Manual review error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// Manually trigger review of ALL open positions
+router.post('/api/review-all-positions', async (req, res) => {
+  try {
+    console.log('🔍 Manual review of all positions requested');
+    
+    // Run review in background, respond immediately
+    reviewAllPositions().catch(err => {
+      console.error('❌ Background review error:', err);
+    });
+    
+    res.json({ 
+      success: true, 
+      message: 'Position review started in background' 
+    });
+  } catch (error) {
+    console.error('❌ Review trigger error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// Get position adjustment history
+router.get('/api/adjustment-history', async (req, res) => {
+  try {
+    const { symbol, tradeId, limit } = req.query;
+    
+    let query = supabase
+      .from('position_adjustments_log')
+      .select(`
+        *,
+        trade:trade_id (
+          id,
+          symbol,
+          signal_type,
+          entry,
+          status,
+          open_time
+        )
+      `)
+      .order('timestamp', { ascending: false });
+    
+    if (limit) {
+      query = query.limit(parseInt(limit));
+    } else {
+      query = query.limit(50);
+    }
+    
+    const { data, error } = await query;
+    
+    if (error) throw error;
+    
+    // Filter by symbol or trade ID if provided
+    let filtered = data || [];
+    
+    if (symbol) {
+      filtered = filtered.filter(entry => entry.trade?.symbol === symbol);
+    }
+    
+    if (tradeId) {
+      filtered = filtered.filter(entry => entry.trade_id === parseInt(tradeId));
+    }
+    
+    res.json(filtered);
+  } catch (error) {
+    console.error('❌ Adjustment history error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get adjustment statistics
+router.get('/api/adjustment-stats', async (req, res) => {
+  try {
+    // Get all adjustments from last 30 days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const { data: adjustments, error } = await supabase
+      .from('position_adjustments_log')
+      .select('*')
+      .gte('timestamp', thirtyDaysAgo.toISOString());
+    
+    if (error) throw error;
+    
+    // Calculate statistics
+    const totalAdjustments = adjustments.length;
+    
+    const statusBreakdown = adjustments.reduce((acc, adj) => {
+      acc[adj.status] = (acc[adj.status] || 0) + 1;
+      return acc;
+    }, {});
+    
+    const avgProfitATR = adjustments.length > 0
+      ? (adjustments.reduce((sum, adj) => sum + (parseFloat(adj.profit_atr) || 0), 0) / adjustments.length).toFixed(2)
+      : 0;
+    
+    const avgADXChange = adjustments.length > 0
+      ? (adjustments.reduce((sum, adj) => sum + (parseFloat(adj.adx_change) || 0), 0) / adjustments.length).toFixed(2)
+      : 0;
+    
+    const regimeBreakdown = adjustments.reduce((acc, adj) => {
+      acc[adj.volatility_regime] = (acc[adj.volatility_regime] || 0) + 1;
+      return acc;
+    }, {});
+    
+    // Count unique trades adjusted
+    const uniqueTrades = new Set(adjustments.map(adj => adj.trade_id)).size;
+    
+    res.json({
+      totalAdjustments,
+      uniqueTradesAdjusted: uniqueTrades,
+      avgAdjustmentsPerTrade: uniqueTrades > 0 ? (totalAdjustments / uniqueTrades).toFixed(2) : 0,
+      statusBreakdown,
+      regimeBreakdown,
+      averages: {
+        profitATR: avgProfitATR,
+        adxChange: avgADXChange
+      },
+      period: '30 days'
+    });
+  } catch (error) {
+    console.error('❌ Adjustment stats error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get trades with entry conditions (for monitoring)
+router.get('/api/trades-with-conditions', async (req, res) => {
+  try {
+    const { status } = req.query;
+    
+    let query = supabase
+      .from('signals')
+      .select('id, symbol, signal_type, entry, entry_atr, entry_adx, entry_regime, status, open_time, last_review_time, review_count')
+      .eq('signal_source', 'default')
+      .not('entry_atr', 'is', null)
+      .order('open_time', { ascending: false })
+      .limit(100);
+    
+    if (status) {
+      query = query.eq('status', status);
+    }
+    
+    const { data, error } = await query;
+    
+    if (error) throw error;
+    
+    res.json(data || []);
+  } catch (error) {
+    console.error('❌ Trades with conditions error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 

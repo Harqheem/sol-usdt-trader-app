@@ -31,29 +31,37 @@ async function logSignal(symbol, signalData, status = 'pending', errorMessage = 
       remaining_position: 1.0,
       updated_sl: sl,
       partial_pnl_percentage: null,
-      signal_source: signalSource
+      signal_source: signalSource,
+      last_review_time: null,
+      review_count: 0
     };
     
     if (status === 'opened') {
       insertData.open_time = timestamp;
     }
-    
+
     const { data, error } = await supabase
       .from('signals')
       .insert([insertData])
       .select();
-      
+
     if (error) throw error;
     if (!data || data.length === 0) {
       throw new Error('No data returned from insert');
     }
+    
     console.log(`✅ Signal logged for ${symbol} (ID: ${data[0].id}, Status: ${status}, Source: ${signalSource})`);
+    
+    // ✅ NEW: Log entry conditions if present
+    if (signalData.entryATR && signalData.entryADX) {
+      console.log(`   📊 Entry conditions: ATR ${signalData.entryATR.toFixed(2)}, ADX ${signalData.entryADX.toFixed(1)}, Regime ${signalData.entryRegime || 'N/A'}`);
+    }
+    
     return data[0].id;
   } catch (err) {
     console.error(`Log error for ${symbol}:`, err.message);
     throw err;
-  }
-}
+  }}
 
 async function getSignals(options = {}) {
   const { symbol, limit = 50, fromDate, toDate, status, signalSource } = options;

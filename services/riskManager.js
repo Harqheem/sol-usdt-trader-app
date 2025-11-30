@@ -15,7 +15,7 @@ const RISK_PARAMS = {
   // Daily Limits (DEFAULT SYSTEM ONLY)
   maxDailyTrades: 8,
   maxConsecutiveLosses: 2,
-  catastrophicLossPct: -100,  // -30% of account
+  catastrophicLossPct: -100,  // -100% of account
   
   // Per-Symbol Limits
   maxSymbolTradesPerDay: 2,
@@ -24,7 +24,7 @@ const RISK_PARAMS = {
   cooldownAfterWinHours: 4,
   
   // Pause Duration
-  pauseDurationHours: 12
+  pauseDurationHours: 8
 };
 
 // ============================================

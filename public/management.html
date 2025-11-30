@@ -4,175 +4,580 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Trade Management</title>
-  <link rel="stylesheet" href="management.css">
+  <link rel="stylesheet" href="shared-styles.css">
+  <style>
+    /* Only management-specific styles */
+    .tabs-container {
+      background: white;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-md);
+      padding: var(--spacing-md) var(--spacing-lg);
+      margin-bottom: var(--spacing-lg);
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      gap: var(--spacing-lg);
+      border-bottom: 2px solid var(--gray-100);
+      overflow-x: auto;
+    }
+
+    .tab {
+      padding: var(--spacing-sm) var(--spacing-md);
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--gray-500);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all var(--transition-base);
+      user-select: none;
+      position: relative;
+      bottom: calc(-1 * var(--spacing-md) - 2px);
+      white-space: nowrap;
+    }
+
+    .tab:hover { color: var(--primary); }
+    .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    .trades-container {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-md);
+    }
+
+    .trade-card {
+      background: white;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-md);
+      padding: var(--spacing-lg);
+      box-shadow: var(--shadow-sm);
+      transition: all var(--transition-base);
+    }
+
+    .trade-card:hover {
+      box-shadow: var(--shadow-md);
+      transform: translateY(-2px);
+    }
+
+    .trade-header {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-md);
+      margin-bottom: var(--spacing-lg);
+      padding-bottom: var(--spacing-md);
+      border-bottom: 1px solid var(--gray-100);
+    }
+
+    .trade-symbol {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--gray-900);
+    }
+
+    .trade-badge {
+      padding: 4px 12px;
+      border-radius: var(--border-radius-sm);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .trade-badge.bos { background: #dbeafe; color: #1e40af; }
+    .trade-badge.liquidity_grab { background: #f3e8ff; color: #6b21a8; }
+    .trade-badge.choch { background: #fce7f3; color: #9f1239; }
+    .trade-badge.sr_bounce { background: #d1fae5; color: #065f46; }
+
+    .trade-profit {
+      margin-left: auto;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--success);
+    }
+
+    .trade-profit.negative { color: var(--danger); }
+
+    .trade-timeline {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-md);
+      margin-bottom: var(--spacing-lg);
+    }
+
+    .checkpoint {
+      display: flex;
+      align-items: start;
+      gap: var(--spacing-md);
+      padding: var(--spacing-md);
+      border-radius: var(--border-radius-sm);
+      transition: all var(--transition-base);
+    }
+
+    .checkpoint.completed {
+      background: var(--success-light);
+      border-left: 3px solid var(--success);
+    }
+
+    .checkpoint.upcoming {
+      background: var(--gray-50);
+      border-left: 3px solid var(--gray-400);
+    }
+
+    .checkpoint-icon {
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+
+    .checkpoint-content { flex: 1; }
+
+    .checkpoint-label {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--gray-900);
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .checkpoint-action {
+      font-size: 13px;
+      color: var(--success);
+      display: block;
+      margin-top: 4px;
+    }
+
+    .checkpoint-time {
+      font-size: 12px;
+      color: var(--gray-500);
+      margin-left: auto;
+      white-space: nowrap;
+    }
+
+    .checkpoint-distance {
+      font-size: 12px;
+      color: var(--gray-500);
+      margin-left: auto;
+    }
+
+    .trade-current-status {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: var(--spacing-md);
+      background: var(--gray-50);
+      padding: var(--spacing-md);
+      border-radius: var(--border-radius-sm);
+    }
+
+    .status-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .status-label {
+      font-size: 11px;
+      color: var(--gray-500);
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+
+    .status-value {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--gray-900);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .status-value.highlight-green { color: var(--success); }
+    .status-value.highlight-red { color: var(--danger); }
+
+    .filters-bar {
+      background: white;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-md);
+      padding: var(--spacing-lg);
+      margin-bottom: var(--spacing-lg);
+      display: flex;
+      gap: var(--spacing-md);
+      flex-wrap: wrap;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .filter-select, .filter-input {
+      padding: 10px 16px;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-sm);
+      font-size: 13px;
+      font-weight: 500;
+      background: white;
+      color: var(--gray-700);
+      outline: none;
+      transition: all var(--transition-base);
+      font-family: var(--font-sans);
+    }
+
+    .filter-select:focus, .filter-input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .filter-select {
+      cursor: pointer;
+      min-width: 140px;
+    }
+
+    .rules-container {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-lg);
+    }
+
+    .info-banner {
+      background: #dbeafe;
+      border: 1px solid #93c5fd;
+      border-radius: var(--border-radius-md);
+      padding: var(--spacing-lg);
+      display: flex;
+      align-items: start;
+      gap: var(--spacing-md);
+    }
+
+    .info-icon {
+      font-size: 24px;
+      flex-shrink: 0;
+    }
+
+    .info-content { flex: 1; }
+
+    .info-content strong {
+      display: block;
+      font-size: 14px;
+      font-weight: 600;
+      color: #1e40af;
+      margin-bottom: 4px;
+    }
+
+    .info-content p {
+      font-size: 13px;
+      color: #1e3a8a;
+      line-height: 1.6;
+    }
+
+    .rules-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: var(--spacing-lg);
+    }
+
+    .rule-card {
+      background: white;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-md);
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .rule-header {
+      padding: var(--spacing-lg);
+      border-bottom: 1px solid var(--gray-200);
+    }
+
+    .rule-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--gray-900);
+      margin-bottom: 4px;
+    }
+
+    .rule-subtitle {
+      font-size: 13px;
+      color: var(--gray-500);
+    }
+
+    .rule-checkpoints {
+      padding: var(--spacing-md) var(--spacing-lg);
+    }
+
+    .rule-checkpoint {
+      padding: var(--spacing-md) 0;
+      border-bottom: 1px solid var(--gray-100);
+    }
+
+    .rule-checkpoint:last-child { border-bottom: none; }
+
+    .checkpoint-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--gray-900);
+      margin-bottom: var(--spacing-sm);
+    }
+
+    .checkpoint-trigger {
+      font-size: 12px;
+      color: var(--gray-500);
+      margin-bottom: var(--spacing-sm);
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+    }
+
+    .checkpoint-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: var(--spacing-sm);
+    }
+
+    .checkpoint-action-item {
+      font-size: 13px;
+      color: var(--success);
+      padding-left: 20px;
+      position: relative;
+    }
+
+    .checkpoint-action-item:before {
+      content: "→";
+      position: absolute;
+      left: 0;
+      font-weight: bold;
+    }
+
+    .analytics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: var(--spacing-lg);
+    }
+
+    .analytics-card {
+      background: white;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-md);
+      padding: var(--spacing-lg);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .analytics-card.full-width { grid-column: 1 / -1; }
+
+    .analytics-header {
+      margin-bottom: var(--spacing-lg);
+      padding-bottom: var(--spacing-md);
+      border-bottom: 1px solid var(--gray-100);
+    }
+
+    .analytics-header h3 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--gray-900);
+      margin-bottom: 4px;
+    }
+
+    .analytics-header p {
+      font-size: 13px;
+      color: var(--gray-500);
+    }
+
+    .chart-container { min-height: 200px; }
+
+    .chart-bar { margin-bottom: var(--spacing-md); }
+
+    .chart-bar-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--gray-700);
+      margin-bottom: var(--spacing-sm);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .chart-bar-value {
+      font-weight: 700;
+      color: var(--primary);
+    }
+
+    .chart-bar-fill {
+      height: 32px;
+      background: var(--primary);
+      border-radius: var(--border-radius-sm);
+      transition: width var(--transition-slow);
+      display: flex;
+      align-items: center;
+      padding: 0 var(--spacing-md);
+      color: white;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .impact-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: var(--spacing-md);
+    }
+
+    .impact-metric {
+      background: var(--gray-50);
+      padding: var(--spacing-lg);
+      border-radius: var(--border-radius-sm);
+      text-align: center;
+    }
+
+    .impact-value {
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--gray-900);
+      margin-bottom: var(--spacing-sm);
+    }
+
+    .impact-label {
+      font-size: 13px;
+      color: var(--gray-500);
+      text-transform: uppercase;
+    }
+
+    @media (max-width: 768px) {
+      .rules-grid,
+      .analytics-grid {
+        grid-template-columns: 1fr;
+      }
+      .trade-current-status {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
 </head>
 <body>
-  <div class="dashboard">
-    <!-- Header -->
-    <div class="header">
+  <div class="page-header">
+    <div class="header-content">
       <div class="header-brand">
         <h1>🎯 Trade Management System</h1>
         <div class="header-subtitle">Automated trade management for DEFAULT system signals</div>
       </div>
-      
       <div class="header-actions">
         <button id="refresh-btn" class="btn btn-primary">🔄 Refresh</button>
-        <a href="/">← Dashboard</a>
-        <a href="/logs.html">View Logs</a>
-        <a href="/learning.html">📚 Learning</a>
       </div>
     </div>
+  </div>
 
-    <!-- Stats Overview -->
-    <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-icon">🎯</div>
-        <div class="stat-content">
-          <div class="stat-label">Active Trades</div>
-          <div class="stat-value" id="stat-active">0</div>
-        </div>
-      </div>
-
-      <div class="stat-card">
-        <div class="stat-icon">📊</div>
-        <div class="stat-content">
-          <div class="stat-label">Total Actions (30d)</div>
-          <div class="stat-value" id="stat-actions">0</div>
-        </div>
-      </div>
-
-      <div class="stat-card">
-        <div class="stat-icon">✅</div>
-        <div class="stat-content">
-          <div class="stat-label">Avg Actions/Trade</div>
-          <div class="stat-value" id="stat-avg">0</div>
-        </div>
-      </div>
-
-      <div class="stat-card">
-        <div class="stat-icon">🔄</div>
-        <div class="stat-content">
-          <div class="stat-label">Management Rate</div>
-          <div class="stat-value" id="stat-rate">0%</div>
-        </div>
+  <div class="grid grid-4" style="margin-bottom: var(--spacing-lg);">
+    <div class="stat-card">
+      <div class="stat-icon">🎯</div>
+      <div class="stat-content">
+        <div class="stat-label">Active Trades</div>
+        <div class="stat-value" id="stat-active">0</div>
       </div>
     </div>
-
-    <!-- Tabs -->
-    <div class="tabs-container">
-      <div class="tab active" data-tab="active">
-        🎯 Active Trades (<span id="count-active">0</span>)
-      </div>
-      <div class="tab" data-tab="history">
-        📜 Management History
-      </div>
-      <div class="tab" data-tab="rules">
-        ⚙️ Rules & Configuration
-      </div>
-      <div class="tab" data-tab="analytics">
-        📈 Analytics
+    <div class="stat-card">
+      <div class="stat-icon">📊</div>
+      <div class="stat-content">
+        <div class="stat-label">Total Actions (30d)</div>
+        <div class="stat-value" id="stat-actions">0</div>
       </div>
     </div>
-
-    <!-- Tab Content: Active Trades -->
-    <div id="tab-active" class="tab-content active">
-      <div id="active-trades-container" class="trades-container">
-        <div class="empty-state">
-          <div class="empty-icon">🎯</div>
-          <div class="empty-title">No Active Trades</div>
-          <div class="empty-text">Managed trades will appear here when signals are opened</div>
-        </div>
+    <div class="stat-card">
+      <div class="stat-icon">✅</div>
+      <div class="stat-content">
+        <div class="stat-label">Avg Actions/Trade</div>
+        <div class="stat-value" id="stat-avg">0</div>
       </div>
     </div>
-
-    <!-- Tab Content: History -->
-    <div id="tab-history" class="tab-content">
-      <div class="filters-bar">
-        <select id="history-symbol-filter" class="filter-select">
-          <option value="">All Symbols</option>
-          <option value="SOLUSDT">SOLUSDT</option>
-          <option value="SUIUSDT">SUIUSDT</option>
-          <option value="ADAUSDT">ADAUSDT</option>
-          <option value="BNBUSDT">BNBUSDT</option>
-          <option value="XRPUSDT">XRPUSDT</option>
-        </select>
-
-        <select id="history-signal-filter" class="filter-select">
-          <option value="">All Signal Types</option>
-          <option value="BOS">BOS</option>
-          <option value="LIQUIDITY_GRAB">Liquidity Grab</option>
-          <option value="CHOCH">ChoCH</option>
-          <option value="SR_BOUNCE">S/R Bounce</option>
-        </select>
-
-        <input type="date" id="history-from-date" class="filter-input">
-        <input type="date" id="history-to-date" class="filter-input">
-      </div>
-
-      <div id="history-container">
-        <div class="loading-state">
-          <div class="loading-spinner"></div>
-          <p>Loading management history...</p>
-        </div>
+    <div class="stat-card">
+      <div class="stat-icon">🔄</div>
+      <div class="stat-content">
+        <div class="stat-label">Management Rate</div>
+        <div class="stat-value" id="stat-rate">0%</div>
       </div>
     </div>
+  </div>
 
-    <!-- Tab Content: Rules -->
-    <div id="tab-rules" class="tab-content">
-      <div class="rules-container">
-        <div class="info-banner">
-          <div class="info-icon">ℹ️</div>
-          <div class="info-content">
-            <strong>Auto-Execution Enabled</strong>
-            <p>All management actions are executed automatically. You'll receive notifications via Telegram and see updates here in real-time.</p>
-          </div>
-        </div>
+  <div class="tabs-container">
+    <div class="tab active" data-tab="active">🎯 Active Trades (<span id="count-active">0</span>)</div>
+    <div class="tab" data-tab="history">📜 Management History</div>
+    <div class="tab" data-tab="rules">⚙️ Rules & Configuration</div>
+    <div class="tab" data-tab="analytics">📈 Analytics</div>
+  </div>
 
-        <div id="rules-grid" class="rules-grid">
-          <!-- Populated by JavaScript -->
-        </div>
+  <div id="tab-active" class="tab-content active">
+    <div id="active-trades-container" class="trades-container">
+      <div class="empty-state">
+        <div class="empty-icon">🎯</div>
+        <div class="empty-title">No Active Trades</div>
+        <div class="empty-text">Managed trades will appear here when signals are opened</div>
       </div>
     </div>
+  </div>
 
-    <!-- Tab Content: Analytics -->
-    <div id="tab-analytics" class="tab-content">
-      <div class="analytics-grid">
-        <!-- Action Breakdown -->
-        <div class="analytics-card">
-          <div class="analytics-header">
-            <h3>📊 Action Breakdown</h3>
-            <p>Distribution of management actions</p>
-          </div>
-          <div id="action-breakdown" class="chart-container">
-            <div class="loading-state">Loading...</div>
-          </div>
+  <div id="tab-history" class="tab-content">
+    <div class="filters-bar">
+      <select id="history-symbol-filter" class="filter-select">
+        <option value="">All Symbols</option>
+        <option value="SOLUSDT">SOLUSDT</option>
+        <option value="SUIUSDT">SUIUSDT</option>
+        <option value="ADAUSDT">ADAUSDT</option>
+        <option value="BNBUSDT">BNBUSDT</option>
+        <option value="XRPUSDT">XRPUSDT</option>
+      </select>
+      <select id="history-signal-filter" class="filter-select">
+        <option value="">All Signal Types</option>
+        <option value="BOS">BOS</option>
+        <option value="LIQUIDITY_GRAB">Liquidity Grab</option>
+        <option value="CHOCH">ChoCH</option>
+        <option value="SR_BOUNCE">S/R Bounce</option>
+      </select>
+      <input type="date" id="history-from-date" class="filter-input">
+      <input type="date" id="history-to-date" class="filter-input">
+    </div>
+    <div id="history-container">
+      <div class="loading-state">
+        <div class="loading-spinner"></div>
+        <p>Loading management history...</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-rules" class="tab-content">
+    <div class="rules-container">
+      <div class="info-banner">
+        <div class="info-icon">ℹ️</div>
+        <div class="info-content">
+          <strong>Auto-Execution Enabled</strong>
+          <p>All management actions are executed automatically. You'll receive notifications via Telegram and see updates here in real-time.</p>
         </div>
+      </div>
+      <div id="rules-grid" class="rules-grid"></div>
+    </div>
+  </div>
 
-        <!-- Checkpoint Breakdown -->
-        <div class="analytics-card">
-          <div class="analytics-header">
-            <h3>🎯 Checkpoint Breakdown</h3>
-            <p>Most frequently reached checkpoints</p>
-          </div>
-          <div id="checkpoint-breakdown" class="chart-container">
-            <div class="loading-state">Loading...</div>
-          </div>
+  <div id="tab-analytics" class="tab-content">
+    <div class="analytics-grid">
+      <div class="analytics-card">
+        <div class="analytics-header">
+          <h3>📊 Action Breakdown</h3>
+          <p>Distribution of management actions</p>
         </div>
-
-        <!-- Performance Impact -->
-        <div class="analytics-card full-width">
-          <div class="analytics-header">
-            <h3>💰 Management Impact</h3>
-            <p>How management affects trade outcomes</p>
-          </div>
-          <div id="management-impact" class="impact-container">
-            <div class="loading-state">Loading...</div>
-          </div>
+        <div id="action-breakdown" class="chart-container">
+          <div class="loading-state">Loading...</div>
+        </div>
+      </div>
+      <div class="analytics-card">
+        <div class="analytics-header">
+          <h3>🎯 Checkpoint Breakdown</h3>
+          <p>Most frequently reached checkpoints</p>
+        </div>
+        <div id="checkpoint-breakdown" class="chart-container">
+          <div class="loading-state">Loading...</div>
+        </div>
+      </div>
+      <div class="analytics-card full-width">
+        <div class="analytics-header">
+          <h3>💰 Management Impact</h3>
+          <p>How management affects trade outcomes</p>
+        </div>
+        <div id="management-impact" class="impact-container">
+          <div class="loading-state">Loading...</div>
         </div>
       </div>
     </div>
   </div>
 
+  <script src="navigation.js"></script>
   <script src="management.js"></script>
 </body>
 </html>

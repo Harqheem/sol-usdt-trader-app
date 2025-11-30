@@ -3,171 +3,39 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Multi-Symbol Trading Dashboard</title>
+  <title>Trading Dashboard</title>
+  <link rel="stylesheet" href="shared-styles.css">
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
-      background: #f8f9fa;
-      min-height: 100vh;
-      padding: 32px;
-      color: #1a1a1a;
-      line-height: 1.5;
-    }
-
-    .dashboard {
-      max-width: 1600px;
-      margin: 0 auto;
-    }
-
-    /* Header */
-    .header {
-      background: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      padding: 24px 32px;
-      margin-bottom: 24px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 32px;
-      flex-wrap: wrap;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-    }
-
-    .header-brand {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
-    .header h1 {
-      font-size: 18px;
-      font-weight: 600;
-      color: #1a1a1a;
-      letter-spacing: -0.01em;
-    }
-
-    .header-subtitle {
-      font-size: 13px;
-      color: #6b7280;
-      font-weight: 400;
-    }
-
-    .header-center {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-    }
-
+    /* Only dashboard-specific styles */
     .price-display {
-      font-size: 24px;
+      font-size: 28px;
       font-weight: 700;
-      color: #1a1a1a;
+      color: var(--gray-900);
       letter-spacing: -0.02em;
       font-variant-numeric: tabular-nums;
+      display: flex;
+      align-items: center;
+      gap: 12px;
     }
 
     .time-display {
-      font-size: 12px;
-      color: #6b7280;
+      font-size: 13px;
+      color: var(--gray-500);
       font-variant-numeric: tabular-nums;
     }
 
-    .header-actions {
-      display: flex;
-      gap: 12px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    .status-indicator {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 16px;
-      background: #f0fdf4;
-      border: 1px solid #86efac;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 500;
-      color: #15803d;
-    }
-
-    .status-dot {
-      width: 6px;
-      height: 6px;
-      background: #22c55e;
-      border-radius: 50%;
-      animation: pulse 2s ease-in-out infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.5; }
-    }
-
-    .btn {
-      padding: 10px 20px;
-      border-radius: 6px;
-      border: none;
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      font-family: inherit;
-    }
-
-    .btn-primary {
-      background: #667eea;
-      color: white;
-    }
-
-    .btn-primary:hover {
-      background: #5568d3;
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-    }
-
-    .btn-secondary {
-      background: white;
-      color: #374151;
-      border: 1px solid #e5e7eb;
-    }
-
-    .btn-secondary:hover {
-      background: #f9fafb;
-      border-color: #d1d5db;
-    }
-
-    /* Symbol Selector */
     .symbol-selector {
       background: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      padding: 24px 32px;
-      margin-bottom: 24px;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-    }
-
-    .symbol-selector-header {
-      font-size: 11px;
-      font-weight: 600;
-      color: #6b7280;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 16px;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-md);
+      padding: var(--spacing-lg);
+      margin-bottom: var(--spacing-lg);
+      box-shadow: var(--shadow-sm);
     }
 
     .radio-group {
       display: flex;
-      gap: 12px;
+      gap: var(--spacing-md);
       flex-wrap: wrap;
     }
 
@@ -183,73 +51,85 @@
 
     .radio-label {
       display: inline-block;
-      padding: 10px 24px;
-      background: #f9fafb;
-      border: 1px solid #e5e7eb;
-      border-radius: 6px;
+      padding: 12px 24px;
+      background: var(--gray-50);
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-sm);
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: all var(--transition-base);
       font-weight: 500;
       font-size: 14px;
-      color: #374151;
+      color: var(--gray-700);
       user-select: none;
     }
 
     .radio-item input[type="radio"]:checked + .radio-label {
-      background: #667eea;
+      background: var(--primary);
       color: white;
-      border-color: #667eea;
+      border-color: var(--primary);
       box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
     }
 
     .radio-label:hover {
-      border-color: #667eea;
-      background: #f3f4f6;
+      border-color: var(--primary);
+      background: var(--gray-100);
     }
 
     .radio-item input[type="radio"]:checked + .radio-label:hover {
-      background: #5568d3;
+      background: linear-gradient(135deg, var(--primary-dark) 0%, var(--secondary) 100%);
     }
 
-    /* Grid Layout */
-    .grid {
+    .dashboard-grid {
       display: grid;
       grid-template-columns: repeat(12, 1fr);
-      gap: 24px;
-      margin-bottom: 24px;
+      gap: var(--spacing-lg);
     }
 
-    .card {
+    .signal-card {
+      grid-column: 1 / -1;
+      background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
+    }
+
+    .signal-main {
+      font-size: 36px;
+      font-weight: 700;
+      text-align: center;
+      padding: var(--spacing-2xl);
+      margin: var(--spacing-lg) 0;
       background: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      padding: 24px;
-      transition: all 0.2s ease;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      border-radius: var(--border-radius-sm);
+      border: 1px solid var(--gray-200);
+      letter-spacing: -0.02em;
     }
 
-    .card:hover {
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-      transform: translateY(-2px);
+    .notes-box {
+      background: white;
+      border: 1px solid var(--gray-200);
+      padding: var(--spacing-lg);
+      border-radius: var(--border-radius-sm);
+      line-height: 1.7;
+      font-size: 14px;
+      color: var(--gray-700);
     }
 
-    .card-header {
+    .timestamp {
       font-size: 11px;
-      font-weight: 600;
-      color: #6b7280;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 20px;
-      padding-bottom: 12px;
-      border-bottom: 1px solid #f3f4f6;
+      color: var(--gray-400);
+      margin-top: var(--spacing-md);
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .metric-card {
+      grid-column: span 3;
     }
 
     .metric {
       display: flex;
       justify-content: space-between;
       align-items: baseline;
-      padding: 12px 0;
-      border-bottom: 1px solid #f9fafb;
+      padding: var(--spacing-md) 0;
+      border-bottom: 1px solid var(--gray-50);
     }
 
     .metric:last-child {
@@ -260,83 +140,23 @@
     .metric-label {
       font-size: 13px;
       font-weight: 500;
-      color: #6b7280;
+      color: var(--gray-500);
     }
 
     .metric-value {
       font-size: 15px;
       font-weight: 600;
-      color: #1a1a1a;
+      color: var(--gray-900);
       font-variant-numeric: tabular-nums;
     }
 
-    /* Signal Card - Full Width */
-    .signal-card {
-      grid-column: 1 / -1;
-      background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
-      border: 1px solid #e5e7eb;
-    }
-
-    .signal-main {
-      font-size: 28px;
-      font-weight: 700;
-      text-align: center;
-      padding: 32px;
-      margin: 20px 0;
-      background: white;
-      border-radius: 6px;
-      border: 1px solid #e5e7eb;
-      letter-spacing: -0.02em;
-    }
-
-    .notes-box {
-      background: white;
-      border: 1px solid #e5e7eb;
-      padding: 20px;
-      border-radius: 6px;
-      margin-top: 16px;
-      line-height: 1.7;
-      font-size: 14px;
-      color: #374151;
-    }
-
-    .timestamp {
-      font-size: 11px;
-      color: #9ca3af;
-      margin-top: 16px;
-      text-align: right;
-      font-variant-numeric: tabular-nums;
-    }
-
-    /* Trend Indicators - 3 columns */
-    .trend-card {
-      grid-column: span 3;
-    }
-
-    /* Volatility - 3 columns */
-    .volatility-card {
-      grid-column: span 3;
-    }
-
-    /* Market Status - 3 columns */
-    .market-card {
-      grid-column: span 3;
-    }
-
-    /* Recent Candles - 3 columns */
-    .candles-card {
-      grid-column: span 3;
-    }
-
-    /* Trade Levels - 12 columns */
     .trade-levels {
       grid-column: span 12;
       background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
-      border: 1px solid #e5e7eb;
     }
 
     .trade-levels .metric {
-      padding: 16px 0;
+      padding: var(--spacing-md) 0;
     }
 
     .trade-levels .metric-value {
@@ -344,43 +164,41 @@
       font-weight: 700;
     }
 
-    /* Trade Level Specific Styling */
     .trade-levels .metric:nth-child(2) {
-      background: #eff6ff;
-      padding: 16px 20px;
-      margin: 0 -24px;
-      border-left: 3px solid #3b82f6;
+      background: var(--info-light);
+      padding: var(--spacing-md) var(--spacing-lg);
+      margin: 0 calc(-1 * var(--spacing-lg));
+      border-left: 3px solid var(--info);
     }
 
     .trade-levels .metric:nth-child(3),
     .trade-levels .metric:nth-child(4) {
-      background: #f0fdf4;
-      padding: 16px 20px;
-      margin: 0 -24px;
-      border-left: 3px solid #22c55e;
+      background: var(--success-light);
+      padding: var(--spacing-md) var(--spacing-lg);
+      margin: 0 calc(-1 * var(--spacing-lg));
+      border-left: 3px solid var(--success);
     }
 
     .trade-levels .metric:nth-child(5) {
-      background: #fef2f2;
-      padding: 16px 20px;
-      margin: 0 -24px;
-      border-left: 3px solid #ef4444;
+      background: var(--danger-light);
+      padding: var(--spacing-md) var(--spacing-lg);
+      margin: 0 calc(-1 * var(--spacing-lg));
+      border-left: 3px solid var(--danger);
     }
 
-    /* Candles List */
     .candles-list {
       list-style: none;
       padding: 0;
     }
 
     .candles-list li {
-      padding: 12px 16px;
-      background: #f9fafb;
-      border-radius: 6px;
-      margin-bottom: 8px;
+      padding: var(--spacing-md);
+      background: var(--gray-50);
+      border-radius: var(--border-radius-sm);
+      margin-bottom: var(--spacing-sm);
       font-size: 13px;
       line-height: 1.6;
-      border-left: 2px solid #e5e7eb;
+      border-left: 2px solid var(--gray-200);
       font-variant-numeric: tabular-nums;
     }
 
@@ -388,7 +206,6 @@
       margin-bottom: 0;
     }
 
-    /* Status Colors */
     .status-positive {
       color: #059669 !important;
       font-weight: 600;
@@ -404,310 +221,204 @@
       font-weight: 600;
     }
 
-    /* Loading State */
-    .loading {
-      text-align: center;
-      padding: 32px;
-      color: #9ca3af;
-      font-style: italic;
-      font-size: 14px;
-    }
-
-    /* Responsive */
     @media (max-width: 1200px) {
-      .trend-card,
-      .volatility-card,
-      .market-card,
-      .candles-card {
+      .metric-card {
         grid-column: span 6;
-      }
-
-      .trade-levels {
-        grid-column: span 12;
       }
     }
 
     @media (max-width: 768px) {
-      body {
-        padding: 16px;
-      }
-
-      .header {
-        flex-direction: column;
-        gap: 20px;
-        padding: 20px;
-        align-items: stretch;
-      }
-
-      .header-brand,
-      .header-center {
-        align-items: center;
-        text-align: center;
-      }
-
-      .header-actions {
-        flex-direction: column;
-        width: 100%;
-      }
-
-      .header-actions .btn,
-      .status-indicator {
-        width: 100%;
-        justify-content: center;
-      }
-
-      .radio-group {
-        justify-content: stretch;
-      }
-
-      .radio-item {
-        flex: 1;
-      }
-
-      .radio-label {
-        width: 100%;
-        text-align: center;
-      }
-
-      .trend-card,
-      .volatility-card,
-      .market-card,
-      .candles-card,
-      .trade-levels {
+      .metric-card,
+      .trade-levels,
+      .signal-card {
         grid-column: span 12;
       }
 
-      .price-display {
-        font-size: 28px;
-      }
-
       .signal-main {
-        font-size: 36px;
-        padding: 24px;
+        font-size: 28px;
+        padding: var(--spacing-lg);
       }
-    }
-
-    /* Link styling */
-    a {
-      color: #667eea;
-      text-decoration: none;
-      font-size: 13px;
-      font-weight: 500;
-      transition: color 0.2s ease;
-    }
-
-    a:hover {
-      color: #5568d3;
-      text-decoration: underline;
     }
   </style>
 </head>
 <body>
-  <!-- Updated Header Section for index.html -->
-<!-- Replace your existing header section with this -->
-
-<div class="header">
-  <div class="header-brand">
-    <h1>Dashboard</h1>
-    <div class="header-subtitle">Real-time market analysis • 30m timeframe</div>
-  </div>
-  
-  <div class="header-center">
-    <div id="current-price" class="price-display">Loading...</div>
-    <div id="current-time" class="time-display"></div>
-  </div>
-
-  <div class="header-actions">
-    <div class="status-indicator" id="pause-status">
-      <span class="status-dot"></span>
-      <span>Trading Active</span>
+  <div class="page-header">
+    <div class="header-content">
+      <div class="header-brand">
+        <h1>Live Market Dashboard</h1>
+        <div class="header-subtitle">Real-time analysis • 30m timeframe</div>
+      </div>
+      
+      <div class="header-actions">
+        <div id="current-price" class="price-display">Loading...</div>
+        <div class="status-indicator active" id="pause-status">
+          <span class="status-dot"></span>
+          <span>Trading Active</span>
+        </div>
+        <button id="pause-btn" class="btn btn-secondary">⏸️ Pause Trading</button>
+        </div>
     </div>
-    <button id="pause-btn" class="btn btn-secondary">Pause</button>
-    <button id="copy-btn" class="btn btn-primary">Copy Data</button>
-    <a href="/learning.html">📚 Learning Center</a>
-    <a href="/logs.html">View Logs</a>
-    <a href="/management.html">Trade Management</a>
   </div>
-</div>
 
-    <!-- Symbol Selector -->
-    <div class="symbol-selector">
-      <div class="symbol-selector-header">Trading Pair Selection</div>
-      <div class="radio-group">
-        <div class="radio-item">
-          <input type="radio" id="sol" name="symbol" value="SOLUSDT" checked>
-          <label for="sol" class="radio-label">SOL/USDT</label>
-        </div>
-        <div class="radio-item">
-          <input type="radio" id="sui" name="symbol" value="SUIUSDT">
-          <label for="sui" class="radio-label">SUI/USDT</label>
-        </div>
-        <div class="radio-item">
-          <input type="radio" id="ada" name="symbol" value="ADAUSDT">
-          <label for="ada" class="radio-label">ADA/USDT</label>
-        </div>
-        <div class="radio-item">
-          <input type="radio" id="bnb" name="symbol" value="BNBUSDT">
-          <label for="bnb" class="radio-label">BNB/USDT</label>
-        </div>
-        <div class="radio-item">
-          <input type="radio" id="xrp" name="symbol" value="XRPUSDT">
-          <label for="xrp" class="radio-label">XRP/USDT</label>
-        </div>
+  <div class="symbol-selector">
+    <div class="card-header">Trading Pair Selection</div>
+    <div class="radio-group">
+      <div class="radio-item">
+        <input type="radio" id="sol" name="symbol" value="SOLUSDT" checked>
+        <label for="sol" class="radio-label">SOL/USDT</label>
+      </div>
+      <div class="radio-item">
+        <input type="radio" id="eth" name="symbol" value="ETHUSDT">
+        <label for="eth" class="radio-label">ETH/USDT</label>
+      </div>
+      <div class="radio-item">
+        <input type="radio" id="sui" name="symbol" value="SUIUSDT">
+        <label for="sui" class="radio-label">SUI/USDT</label>
+      </div>
+      <div class="radio-item">
+        <input type="radio" id="ada" name="symbol" value="ADAUSDT">
+        <label for="ada" class="radio-label">ADA/USDT</label>
+      </div>
+      <div class="radio-item">
+        <input type="radio" id="bnb" name="symbol" value="BNBUSDT">
+        <label for="bnb" class="radio-label">BNB/USDT</label>
+      </div>
+      <div class="radio-item">
+        <input type="radio" id="xrp" name="symbol" value="XRPUSDT">
+        <label for="xrp" class="radio-label">XRP/USDT</label>
       </div>
     </div>
+  </div>
 
-    <!-- Main Grid -->
-    <div class="grid">
-      <!-- Signal Card - Full Width -->
-      <div class="card signal-card">
-        <div class="card-header">Trading Signal</div>
-        <div class="signal-main" id="signal">⏳ Analyzing...</div>
-        <div class="notes-box" id="notes">Waiting for data...</div>
-        <div class="timestamp" id="timestamp">Last updated: -</div>
-      </div>
-
-      <!-- Trend Indicators - 4 cols -->
-      <div class="card trend-card">
-        <div class="card-header">Trend Indicators</div>
-        <div class="metric">
-          <span class="metric-label">EMA 7</span>
-          <span class="metric-value" id="ema7">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">EMA 25</span>
-          <span class="metric-value" id="ema25">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">EMA 99</span>
-          <span class="metric-value" id="ema99">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">SMA 50</span>
-          <span class="metric-value" id="sma50">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">SMA 200</span>
-          <span class="metric-value" id="sma200">-</span>
-        </div>
-      </div>
-
-      <!-- Volatility - 4 cols -->
-      <div class="card volatility-card">
-        <div class="card-header">Volatility & Momentum</div>
-        <div class="metric">
-          <span class="metric-label">ATR (14)</span>
-          <span class="metric-value" id="atr">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">ADX (14)</span>
-          <span class="metric-value" id="adx">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">1H Trend</span>
-          <span class="metric-value" id="trend1h">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">4H Trend</span>
-          <span class="metric-value" id="trend4h">-</span>
-        </div>
-      </div>
-
-      <!-- Market Status - 4 cols -->
-      <div class="card market-card">
-        <div class="card-header">Market Status</div>
-        <div class="metric">
-          <span class="metric-label">BB Upper</span>
-          <span class="metric-value" id="bb-upper">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">BB Middle</span>
-          <span class="metric-value" id="bb-middle">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">BB Lower</span>
-          <span class="metric-value" id="bb-lower">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">PSAR</span>
-          <span class="metric-value">
-            <span id="psar">-</span>
-            <span id="psar-pos" style="font-size: 11px; opacity: 0.6;"></span>
-          </span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">Candle Pattern</span>
-          <span class="metric-value" id="candle-pattern">-</span>
-        </div>
-      </div>
-     <!-- Recent Candles - 4 cols -->
-      <div class="card candles-card">
-        <div class="card-header">Recent Candles</div>
-        <ul id="last5-candles" class="candles-list">
-          <li class="loading">Loading candle data...</li>
-        </ul>
-      </div>
-      </div>
-
-    <div>  
-      <!-- Regime Card -->
+  <div class="dashboard-grid">
+    <div class="card signal-card">
+      <div class="card-header">Trading Signal</div>
+      <div class="signal-main" id="signal">⏳ Analyzing...</div>
+      <div class="notes-box" id="notes">Waiting for data...</div>
+      <div class="timestamp" id="timestamp">Last updated: -</div>
     </div>
-      <div class="card regime-card">
-        <div class="card-header">Market Regime</div>
-        <div class="metric">
+
+    <div class="card metric-card">
+      <div class="card-header">Trend Indicators</div>
+      <div class="metric">
+        <span class="metric-label">EMA 7</span>
+        <span class="metric-value" id="ema7">-</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">EMA 25</span>
+        <span class="metric-value" id="ema25">-</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">EMA 99</span>
+        <span class="metric-value" id="ema99">-</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">SMA 50</span>
+        <span class="metric-value" id="sma50">-</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">SMA 200</span>
+        <span class="metric-value" id="sma200">-</span>
+      </div>
+    </div>
+
+    <div class="card metric-card">
+      <div class="card-header">Volatility & Momentum</div>
+      <div class="metric">
+        <span class="metric-label">ATR (14)</span>
+        <span class="metric-value" id="atr">-</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">ADX (14)</span>
+        <span class="metric-value" id="adx">-</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">1H Trend</span>
+        <span class="metric-value" id="trend1h">-</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">4H Trend</span>
+        <span class="metric-value" id="trend4h">-</span>
+      </div>
+    </div>
+
+    <div class="card metric-card">
+      <div class="card-header">Market Status</div>
+      <div class="metric">
+        <span class="metric-label">BB Upper</span>
+        <span class="metric-value" id="bb-upper">-</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">BB Middle</span>
+        <span class="metric-value" id="bb-middle">-</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">BB Lower</span>
+        <span class="metric-value" id="bb-lower">-</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">PSAR</span>
+        <span class="metric-value">
+          <span id="psar">-</span>
+          <span id="psar-pos" style="font-size: 11px; opacity: 0.6;"></span>
+        </span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Candle Pattern</span>
+        <span class="metric-value" id="candle-pattern">-</span>
+      </div>
+    </div>
+
+    <div class="card metric-card">
+      <div class="card-header">Recent Candles</div>
+      <ul id="last5-candles" class="candles-list">
+        <li class="loading-state">Loading candle data...</li>
+      </ul>
+    </div>
+
+    <div class="card metric-card">
+      <div class="card-header">Market Regime</div>
+      <div class="metric">
         <span class="metric-label">Regime Type</span>
         <span class="metric-value" id="regime-type">-</span>
-        </div>
-        <div class="metric">
+      </div>
+      <div class="metric">
         <span class="metric-label">Confidence</span>
         <span class="metric-value" id="regime-confidence">-</span>
-        </div>
-        <div class="metric">
+      </div>
+      <div class="metric">
         <span class="metric-label">Risk Level</span>
         <span class="metric-value" id="regime-risk">-</span>
-        </div>
-        <div class="notes-box" id="regime-description">Analyzing...</div>
-        </div>
-
-      <!-- Trade Levels - 8 cols -->
-      <div>  
-      <div class="card trade-levels">
-        <div class="card-header">Trade Levels</div>
-        <div class="metric">
-          <span class="metric-label">Entry Price</span>
-          <span class="metric-value" id="entry">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">Take Profit 1 (50%)</span>
-          <span class="metric-value" id="tp1">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">Take Profit 2 (50%)</span>
-          <span class="metric-value" id="tp2">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">Stop Loss</span>
-          <span class="metric-value" id="sl">-</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">Position Size</span>
-          <span class="metric-value" id="positionSize">-</span>
-        </div>
-        </div>
-    </div> 
-      
+      </div>
+      <div class="notes-box" id="regime-description" style="margin-top: 16px;">Analyzing...</div>
     </div>
 
-    <div class="card active-trades-panel" style="grid-column: span 12;">
-  <div class="card-header">Active Trade Management</div>
-  
-  <div id="active-trades-container">
-    <!-- Populated by JavaScript -->
-    <div class="empty-state">No active trades being managed</div>
-  </div>
-</div>
+    <div class="card trade-levels">
+      <div class="card-header">Trade Levels</div>
+      <div class="metric">
+        <span class="metric-label">Entry Price</span>
+        <span class="metric-value" id="entry">-</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Take Profit 1 (50%)</span>
+        <span class="metric-value" id="tp1">-</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Take Profit 2 (50%)</span>
+        <span class="metric-value" id="tp2">-</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Stop Loss</span>
+        <span class="metric-value" id="sl">-</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Position Size</span>
+        <span class="metric-value" id="positionSize">-</span>
+      </div>
+    </div>
   </div>
 
+  <script src="navigation.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

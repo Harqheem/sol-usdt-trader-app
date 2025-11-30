@@ -3,180 +3,118 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Signal Logs</title>
+  <title>Signal Logs & Analytics</title>
+  <link rel="stylesheet" href="shared-styles.css">
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
-      background: #f8f9fa;
-      color: #1a1a1a;
-      line-height: 1.5;
-    }
-
-    .dashboard {
-      max-width: 1600px;
-      margin: 0 auto;
-      padding: 32px;
-    }
-
-    /* Header */
-    .header {
-      background: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      padding: 24px 32px;
-      margin-bottom: 24px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-    }
-
-    .header h1 {
-      font-size: 18px;
-      font-weight: 600;
-      color: #1a1a1a;
-      letter-spacing: -0.01em;
-    }
-
-    .header a {
-      color: #667eea;
-      text-decoration: none;
-      font-size: 13px;
-      font-weight: 500;
-      padding: 10px 20px;
-      border: 1px solid #e5e7eb;
-      border-radius: 6px;
-      transition: all 0.2s ease;
-      background: white;
-    }
-
-    .header a:hover {
-      background: #f9fafb;
-      border-color: #667eea;
-      color: #5568d3;
-    }
-
     /* Tabs */
     .tabs-container {
       background: white;
-      padding: 16px;
-      border-radius: 8px;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-      border: 1px solid #e5e7eb;
-      margin-bottom: 24px;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-md);
+      padding: var(--spacing-md) var(--spacing-lg);
+      margin-bottom: var(--spacing-lg);
+      box-shadow: var(--shadow-sm);
     }
 
     .tab-section {
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: var(--spacing-md);
+      margin-bottom: var(--spacing-lg);
+    }
+
+    .tab-section:last-child {
+      margin-bottom: 0;
     }
 
     .tab-label {
       font-size: 11px;
       font-weight: 600;
-      color: #6b7280;
+      color: var(--gray-500);
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
 
     .tabs {
       display: flex;
-      gap: 8px;
+      gap: var(--spacing-sm);
       flex-wrap: wrap;
     }
 
     .tabs button {
       padding: 10px 24px;
-      background: #f9fafb;
-      border: 1px solid #e5e7eb;
-      border-radius: 6px;
+      background: var(--gray-50);
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-sm);
       font-size: 13px;
       font-weight: 500;
       cursor: pointer;
-      transition: all 0.2s ease;
-      color: #6b7280;
-      font-family: inherit;
+      transition: all var(--transition-base);
+      color: var(--gray-600);
+      font-family: var(--font-sans);
     }
 
     .tabs button:hover {
-      background: #f3f4f6;
-      border-color: #d1d5db;
-      color: #374151;
+      background: var(--gray-100);
+      border-color: var(--gray-300);
+      color: var(--gray-700);
     }
 
     .tabs button.active {
-      background: #667eea;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
       color: white;
-      border-color: #667eea;
+      border-color: var(--primary);
       box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
     }
 
     .tabs.system-tabs button.active {
-      background: #10b981;
-      border-color: #10b981;
-      box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+      background: var(--success);
+      border-color: var(--success);
+      box-shadow: 0 2px 8px rgba(34, 197, 94, 0.3);
     }
 
     .tabs.system-tabs button.active.all-tab {
-      background: #8b5cf6;
+      background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
       border-color: #8b5cf6;
-      box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
     }
 
     .tabs.system-tabs button.active.fast-tab {
-      background: #f59e0b;
-      border-color: #f59e0b;
-      box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+      background: var(--warning);
+      border-color: var(--warning);
     }
 
     /* Filters */
-    .symbol-selector {
+    .filters-bar {
       background: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      padding: 24px 32px;
-      margin-bottom: 24px;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-    }
-
-    .filter-header {
-      font-size: 11px;
-      font-weight: 600;
-      color: #6b7280;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 16px;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-md);
+      padding: var(--spacing-lg);
+      margin-bottom: var(--spacing-lg);
+      box-shadow: var(--shadow-sm);
     }
 
     .filter-controls {
       display: flex;
-      gap: 12px;
+      gap: var(--spacing-md);
       align-items: center;
       flex-wrap: wrap;
     }
 
     select, input[type="date"], input[type="number"] {
       padding: 10px 16px;
-      border: 1px solid #e5e7eb;
-      border-radius: 6px;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-sm);
       font-size: 13px;
       font-weight: 500;
       background: white;
-      color: #374151;
+      color: var(--gray-700);
       outline: none;
-      transition: all 0.2s ease;
-      font-family: inherit;
+      transition: all var(--transition-base);
+      font-family: var(--font-sans);
     }
 
-    select:focus, input[type="date"]:focus, input[type="number"]:focus {
-      border-color: #667eea;
+    select:focus, input:focus {
+      border-color: var(--primary);
       box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
     }
 
@@ -185,174 +123,42 @@
       min-width: 140px;
     }
 
-    input[type="number"] {
-      width: 120px;
-      font-variant-numeric: tabular-nums;
-    }
-
-    input[type="date"] {
-      font-variant-numeric: tabular-nums;
-    }
-
-    .btn {
-      padding: 10px 20px;
-      border-radius: 6px;
-      border: none;
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      font-family: inherit;
-    }
-
-    .btn-primary {
-      background: #667eea;
-      color: white;
-    }
-
-    .btn-primary:hover:not(:disabled) {
-      background: #5568d3;
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-    }
-
-    .btn-secondary {
+    /* Summary Panel */
+    .summary-panel {
       background: white;
-      color: #374151;
-      border: 1px solid #e5e7eb;
-    }
-
-    .btn-secondary:hover:not(:disabled) {
-      background: #f9fafb;
-      border-color: #d1d5db;
-    }
-
-    .btn-danger {
-      background: #ef4444;
-      color: white;
-    }
-
-    .btn-danger:hover:not(:disabled) {
-      background: #dc2626;
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
-    }
-
-    .btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-      transform: none;
-      box-shadow: none;
-    }
-
-    /* Summary Panels */
-    .summary-panel, .stats-section {
-      background: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      padding: 24px 32px;
-      margin-bottom: 24px;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-    }
-
-    .panel-header {
-      font-size: 11px;
-      font-weight: 600;
-      color: #6b7280;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 20px;
-      padding-bottom: 12px;
-      border-bottom: 1px solid #f3f4f6;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-md);
+      padding: var(--spacing-lg);
+      margin-bottom: var(--spacing-lg);
+      box-shadow: var(--shadow-sm);
     }
 
     .summary-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 24px;
+      gap: var(--spacing-lg);
     }
 
     .summary-item {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: var(--spacing-sm);
     }
 
     .summary-item label {
       font-size: 13px;
-      color: #6b7280;
+      color: var(--gray-500);
       font-weight: 500;
       display: flex;
       align-items: center;
       gap: 6px;
     }
 
-    .info-icon {
-      font-size: 11px;
-      cursor: help;
-      color: #9ca3af;
-    }
-
     .summary-item .value {
-      font-size: 24px;
+      font-size: 28px;
       font-weight: 700;
-      color: #1a1a1a;
+      color: var(--gray-900);
       font-variant-numeric: tabular-nums;
-    }
-
-    .custom-inputs {
-      display: flex;
-      gap: 20px;
-      align-items: center;
-      margin-top: 20px;
-      padding-top: 20px;
-      border-top: 1px solid #f3f4f6;
-      flex-wrap: wrap;
-    }
-
-    .custom-inputs label {
-      font-size: 13px;
-      color: #6b7280;
-      font-weight: 500;
-    }
-
-    /* Pagination */
-    .pagination-controls {
-      background: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      padding: 20px 32px;
-      margin-bottom: 24px;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 16px;
-    }
-
-    .left-controls {
-      display: flex;
-      gap: 12px;
-      align-items: center;
-    }
-
-    .left-controls label {
-      font-size: 13px;
-      color: #6b7280;
-      font-weight: 500;
-    }
-
-    .page-info {
-      font-size: 13px;
-      color: #6b7280;
-      font-weight: 500;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .pagination-buttons {
-      display: flex;
-      gap: 8px;
     }
 
     /* Table */
@@ -362,15 +168,15 @@
       border-spacing: 0;
       font-size: 13px;
       background: white;
-      border-radius: 8px;
+      border-radius: var(--border-radius-md);
       overflow: hidden;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-      border: 1px solid #e5e7eb;
-      margin-bottom: 24px;
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--gray-200);
+      margin-bottom: var(--spacing-lg);
     }
 
     .minimal-table thead {
-      background: #f9fafb;
+      background: var(--gray-50);
     }
 
     .minimal-table th {
@@ -380,142 +186,70 @@
       font-size: 11px;
       letter-spacing: 0.05em;
       text-transform: uppercase;
-      color: #6b7280;
-      border-bottom: 1px solid #e5e7eb;
+      color: var(--gray-500);
+      border-bottom: 1px solid var(--gray-200);
       cursor: pointer;
       user-select: none;
-      position: relative;
-      transition: background 0.2s ease;
+      transition: background var(--transition-base);
     }
 
     .minimal-table th:hover {
-      background: #f3f4f6;
+      background: var(--gray-100);
     }
 
     .minimal-table th.sortable::after {
       content: '⇅';
       margin-left: 6px;
       opacity: 0.3;
-      font-size: 10px;
     }
 
     .minimal-table th.sorted-asc::after {
       content: '↑';
       opacity: 1;
-      color: #667eea;
+      color: var(--primary);
     }
 
     .minimal-table th.sorted-desc::after {
       content: '↓';
       opacity: 1;
-      color: #667eea;
+      color: var(--primary);
     }
 
     .minimal-table tbody tr {
-      border-bottom: 1px solid #f9fafb;
+      border-bottom: 1px solid var(--gray-50);
       cursor: pointer;
-      transition: all 0.15s ease;
+      transition: all var(--transition-fast);
     }
 
     .minimal-table tbody tr:hover {
-      background: #fafbfc;
+      background: var(--gray-50);
     }
 
     .minimal-table td {
       padding: 14px 16px;
-      color: #374151;
+      color: var(--gray-700);
       font-variant-numeric: tabular-nums;
     }
 
-    .minimal-table tbody tr:last-child {
-      border-bottom: none;
+    /* Pagination */
+    .pagination-controls {
+      background: white;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-md);
+      padding: var(--spacing-lg);
+      margin-bottom: var(--spacing-lg);
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: var(--spacing-md);
     }
 
-    .checkbox-cell {
-      width: 40px;
-      text-align: center;
-    }
-
-    .checkbox-cell input[type="checkbox"] {
-      cursor: pointer;
-      width: 16px;
-      height: 16px;
-    }
-
-    /* Status Badges */
-    .status-badge {
-      display: inline-block;
-      padding: 4px 10px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 600;
-      border: 1px solid;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .status-sent {
-      background: #eff6ff;
-      border-color: #bfdbfe;
-      color: #1e40af;
-    }
-
-    .status-pending {
-      background: #fef3c7;
-      border-color: #fde68a;
-      color: #92400e;
-    }
-
-    .status-opened {
-      background: #d1fae5;
-      border-color: #a7f3d0;
-      color: #065f46;
-    }
-
-    .status-closed {
-      background: #f3f4f6;
-      border-color: #d1d5db;
-      color: #4b5563;
-    }
-
-    .status-failed {
-      background: #fee2e2;
-      border-color: #fecaca;
-      color: #991b1b;
-    }
-
-    .status-terminated {
-      background: #f9fafb;
-      border-color: #e5e7eb;
-      color: #6b7280;
-    }
-
-    .status-expired {
-      background: #fef3c7;
-      border-color: #fde68a;
-      color: #92400e;
-    }
-
-    /* Signal Direction */
-    .signal-long {
-      color: #059669;
-      font-weight: 600;
-    }
-
-    .signal-short {
-      color: #dc2626;
-      font-weight: 600;
-    }
-
-    /* PnL Colors */
-    .pnl-positive {
-      color: #059669;
-      font-weight: 600;
-    }
-
-    .pnl-negative {
-      color: #dc2626;
-      font-weight: 600;
+    .page-info {
+      font-size: 13px;
+      color: var(--gray-500);
+      font-weight: 500;
     }
 
     /* Side Sheet */
@@ -526,10 +260,10 @@
       width: 500px;
       height: 100vh;
       background: white;
-      border-left: 1px solid #e5e7eb;
-      padding: 32px;
+      border-left: 1px solid var(--gray-200);
+      padding: var(--spacing-xl);
       overflow-y: auto;
-      transition: right 0.3s ease;
+      transition: right var(--transition-slow);
       z-index: 1000;
       box-shadow: -4px 0 16px rgba(0, 0, 0, 0.1);
     }
@@ -538,75 +272,34 @@
       right: 0;
     }
 
-    .side-sheet .btn-secondary {
-      margin-bottom: 24px;
-      width: 100%;
-    }
-
     #sheet-content h3 {
-      font-size: 18px;
-      font-weight: 600;
-      margin-bottom: 24px;
-      color: #1a1a1a;
-      letter-spacing: -0.01em;
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: var(--spacing-lg);
+      color: var(--gray-900);
     }
 
     #sheet-content h4 {
       font-size: 13px;
       font-weight: 600;
-      margin-top: 24px;
-      margin-bottom: 16px;
-      color: #6b7280;
+      margin-top: var(--spacing-lg);
+      margin-bottom: var(--spacing-md);
+      color: var(--gray-500);
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
 
     #sheet-content p {
       font-size: 14px;
-      margin-bottom: 12px;
+      margin-bottom: var(--spacing-md);
       line-height: 1.7;
-      color: #374151;
-    }
-
-    #sheet-content strong {
-      font-weight: 600;
-      color: #6b7280;
-      display: inline-block;
-      min-width: 140px;
-      font-size: 13px;
-    }
-
-    #sheet-content hr {
-      margin: 24px 0;
-      border: none;
-      border-top: 1px solid #f3f4f6;
-    }
-
-    .hidden {
-      display: none;
-    }
-
-    /* Responsive */
-    @media (max-width: 1200px) {
-      .summary-grid {
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      }
+      color: var(--gray-700);
     }
 
     @media (max-width: 768px) {
-      .dashboard {
-        padding: 16px;
-      }
-
-      .header {
-        flex-direction: column;
-        gap: 16px;
-        align-items: stretch;
-        padding: 20px;
-      }
-
-      .header a {
-        text-align: center;
+      .side-sheet {
+        width: 100%;
+        right: -100%;
       }
 
       .filter-controls {
@@ -614,251 +307,201 @@
         align-items: stretch;
       }
 
-      select, input[type="date"], input[type="number"] {
+      select, input {
         width: 100%;
       }
-
-      .side-sheet {
-        width: 100%;
-        right: -100%;
-      }
-
-      .minimal-table {
-        font-size: 12px;
-      }
-
-      .minimal-table th,
-      .minimal-table td {
-        padding: 10px 8px;
-      }
-
-      .summary-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .custom-inputs {
-        flex-direction: column;
-        align-items: stretch;
-      }
-
-      .pagination-controls {
-        flex-direction: column;
-        align-items: stretch;
-      }
-
-      .left-controls,
-      .pagination-buttons {
-        flex-direction: column;
-        width: 100%;
-      }
-
-      .pagination-buttons button {
-        width: 100%;
-      }
-    }
-
-    /* Scrollbar Styling */
-    ::-webkit-scrollbar {
-      width: 8px;
-      height: 8px;
-    }
-
-    ::-webkit-scrollbar-track {
-      background: #f9fafb;
-    }
-
-    ::-webkit-scrollbar-thumb {
-      background: #d1d5db;
-      border-radius: 4px;
-    }
-
-    ::-webkit-scrollbar-thumb:hover {
-      background: #9ca3af;
     }
   </style>
 </head>
 <body>
-  <div class="dashboard">
-    <!-- Header -->
-    <div class="header">
-      <h1>Signal Logs & Analytics</h1>
-      <div><a href="/">← Back to Dashboard</a>
-      <a href="/learning.html">📚 Learning Center</a></div>
-    </div>
+  <!-- Navigation will be injected here -->
 
-    <!-- Signal System Filter (Top Level) -->
-    <div class="tabs-container">
-      <div class="tab-section">
-        <div class="tab-label">Signal System</div>
-        <div class="tabs system-tabs">
-          <button id="all-system-tab" class="active all-tab">🔄 All Trades</button>
-          <button id="default-system-tab">📊 Default System</button>
-          <button id="fast-system-tab" class="fast-tab">⚡ Fast Signals</button>
-        </div>
+  <!-- Page Header -->
+  <div class="page-header">
+    <div class="header-content">
+      <div class="header-brand">
+        <h1>Signal Logs & Analytics</h1>
+        <div class="header-subtitle">Comprehensive trade history and performance metrics</div>
       </div>
-    </div>
-
-    <!-- View Type Tabs -->
-    <div class="tabs-container">
-      <div class="tab-section">
-        <div class="tab-label">View Type</div>
-        <div class="tabs view-tabs">
-          <button id="logs-tab" class="active">All Logs</button>
-          <button id="results-tab">Trade Results</button>
-        </div>
-      </div>
-    </div>
-    
-    <!-- Filters -->
-    <div class="symbol-selector">
-      <div class="filter-header">Filters</div>
-      <div class="filter-controls">
-        <select id="symbol-filter">
-          <option value="">All Symbols</option>
-        </select>
-        <input type="date" id="from-date" placeholder="From Date">
-        <input type="date" id="to-date" placeholder="To Date">
-        <select id="status-filter">
-          <option value="">All Statuses</option>
-          <option value="sent">Sent</option>
-          <option value="pending">Pending</option>
-          <option value="opened">Opened</option>
-          <option value="closed">Closed</option>
-          <option value="terminated">Terminated</option>
-          <option value="expired">Expired</option>
-          <option value="failed">Failed</option>
-        </select>
-        <button id="refresh-btn" class="btn btn-primary">Refresh</button>
+      <div class="header-actions">
+        <button id="refresh-btn" class="btn btn-primary">🔄 Refresh</button>
         <button id="bulk-terminate-btn" class="btn btn-danger hidden">Terminate Selected</button>
       </div>
     </div>
-    
-    <!-- Trade Summary -->
-    <div id="summary" class="summary-panel">
-      <div class="panel-header">Trade Summary</div>
-      <div class="summary-grid">
-        <div class="summary-item">
-          <label>Total Trades <span class="info-icon" title="All trades including open and closed">ℹ️</span></label>
-          <span class="value" id="total-trades">0</span>
-        </div>
-        <div class="summary-item">
-          <label>Closed Trades <span class="info-icon" title="Number of completed trades">ℹ️</span></label>
-          <span class="value" id="closed-trades">0</span>
-        </div>
-        <div class="summary-item">
-          <label>Win Rate <span class="info-icon" title="Percentage of winning trades (TP or BE)">ℹ️</span></label>
-          <span class="value" id="win-rate">0.00%</span>
-        </div>
-        <div class="summary-item">
-          <label>Total Raw PnL <span class="info-icon" title="Total profit/loss without fees">ℹ️</span></label>
-          <span class="value" id="total-raw-pnl">0.00%</span>
-        </div>
-      </div>
+  </div>
 
-      <div id="outcomes-summary" class="summary-grid hidden" style="margin-top: 24px;">
-        <div class="summary-item">
-          <label>SL Trades <span class="info-icon" title="Trades stopped out">ℹ️</span></label>
-          <span class="value" id="sl-trades">0</span>
-        </div>
-        <div class="summary-item">
-          <label>BE Trades <span class="info-icon" title="Trades closed at breakeven">ℹ️</span></label>
-          <span class="value" id="be-trades">0</span>
-        </div>
-        <div class="summary-item">
-          <label>TP Trades <span class="info-icon" title="Trades that hit take profit">ℹ️</span></label>
-          <span class="value" id="tp-trades">0</span>
-        </div>
-        <div class="summary-item">
-          <label>Terminated <span class="info-icon" title="Trades manually terminated or expired">ℹ️</span></label>
-          <span class="value" id="terminated-trades">0</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Custom Position Settings -->
-    <div class="stats-section">
-      <div class="panel-header">Custom Position Settings</div>
-      
-      <div class="custom-inputs">
-        <label>Position Size ($):</label>
-        <input type="number" id="custom-position-size" value="100" min="1" step="10">
-        <label>Leverage:</label>
-        <input type="number" id="custom-leverage" value="20" min="1" max="125">
-      </div>
-      
-      <div class="summary-grid" style="margin-top: 24px;">
-        <div class="summary-item">
-          <label>Custom Total PnL (%) <span class="info-icon" title="Total PnL based on your settings">ℹ️</span></label>
-          <span class="value" id="custom-total-pnl">0.00%</span>
-        </div>
-        <div class="summary-item">
-          <label>Custom Total PnL ($) <span class="info-icon" title="Total dollar profit/loss">ℹ️</span></label>
-          <span class="value" id="custom-total-pnl-dollars">$0.00</span>
-        </div>
-        <div class="summary-item">
-          <label>Total Fees (%) <span class="info-icon" title="Total fees as percentage">ℹ️</span></label>
-          <span class="value" id="custom-total-fees-pct">0.00%</span>
-        </div>
-        <div class="summary-item">
-          <label>Total Fees ($) <span class="info-icon" title="Total dollar fees paid">ℹ️</span></label>
-          <span class="value" id="custom-total-fees-dollars">$0.00</span>
-        </div>
-      </div>
-    </div>
-    
-    <!-- Table -->
-    <table id="signals-table" class="minimal-table">
-      <thead>
-        <tr>
-          <th class="checkbox-cell" id="checkbox-header" style="display: none;">
-            <input type="checkbox" id="select-all-checkbox">
-          </th>
-          <th class="sortable" data-sort="time">Time</th>
-          <th class="sortable" data-sort="symbol">Symbol</th>
-          <th class="sortable" data-sort="signal">Signal</th>
-          <th class="sortable" data-sort="system">System</th>
-          <th class="sortable" id="outcome-header" style="display: none;" data-sort="outcome">Outcome</th>
-          <th class="sortable" data-sort="raw-pnl">Raw PnL (%)</th>
-          <th class="sortable" data-sort="custom-pnl-pct">Custom PnL (%)</th>
-          <th class="sortable" data-sort="custom-pnl-usd">Custom PnL ($)</th>
-          <th class="sortable" data-sort="status">Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        <!-- Rows will be populated by JS -->
-      </tbody>
-    </table>
-
-    <!-- Pagination -->
-    <div class="pagination-controls">
-      <div class="left-controls">
-        <label for="page-size">Rows per page:</label>
-        <select id="page-size">
-          <option value="10">10</option>
-          <option value="25" selected>25</option>
-          <option value="50">50</option>
-          <option value="100">100</option>
-          <option value="200">200</option>
-        </select>
-      </div>
-      <div class="page-info">
-        <span id="page-info-text">Page 1 of 1 (0 trades)</span>
-      </div>
-      <div class="pagination-buttons">
-        <button id="prev-page" class="btn btn-secondary">← Previous</button>
-        <button id="next-page" class="btn btn-secondary">Next →</button>
-      </div>
-    </div>
-    
-    <!-- Side Sheet -->
-    <div id="side-sheet" class="side-sheet">
-      <button id="close-sheet" class="btn btn-secondary">✕ Close</button>
-      <div id="sheet-content">
-        <h3>Trade Details</h3>
-        <p>Select a trade to view details</p>
+  <!-- Signal System Filter -->
+  <div class="tabs-container">
+    <div class="tab-section">
+      <div class="tab-label">Signal System</div>
+      <div class="tabs system-tabs">
+        <button id="all-system-tab" class="active all-tab">🔄 All Trades</button>
+        <button id="default-system-tab">📊 Default System</button>
+        <button id="fast-system-tab" class="fast-tab">⚡ Fast Signals</button>
       </div>
     </div>
   </div>
+
+  <!-- View Type Tabs -->
+  <div class="tabs-container">
+    <div class="tab-section">
+      <div class="tab-label">View Type</div>
+      <div class="tabs view-tabs">
+        <button id="logs-tab" class="active">All Logs</button>
+        <button id="results-tab">Trade Results</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="filters-bar">
+    <div class="card-header" style="margin-bottom: var(--spacing-md);">Filters</div>
+    <div class="filter-controls">
+      <select id="symbol-filter">
+        <option value="">All Symbols</option>
+      </select>
+      <input type="date" id="from-date">
+      <input type="date" id="to-date">
+      <select id="status-filter">
+        <option value="">All Statuses</option>
+        <option value="sent">Sent</option>
+        <option value="pending">Pending</option>
+        <option value="opened">Opened</option>
+        <option value="closed">Closed</option>
+        <option value="terminated">Terminated</option>
+        <option value="expired">Expired</option>
+        <option value="failed">Failed</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Summary -->
+  <div id="summary" class="summary-panel">
+    <div class="card-header">Trade Summary</div>
+    <div class="summary-grid">
+      <div class="summary-item">
+        <label>Total Trades</label>
+        <span class="value" id="total-trades">0</span>
+      </div>
+      <div class="summary-item">
+        <label>Closed Trades</label>
+        <span class="value" id="closed-trades">0</span>
+      </div>
+      <div class="summary-item">
+        <label>Win Rate</label>
+        <span class="value" id="win-rate">0.00%</span>
+      </div>
+      <div class="summary-item">
+        <label>Total Raw PnL</label>
+        <span class="value" id="total-raw-pnl">0.00%</span>
+      </div>
+    </div>
+
+    <div id="outcomes-summary" class="summary-grid hidden" style="margin-top: var(--spacing-lg);">
+      <div class="summary-item">
+        <label>SL Trades</label>
+        <span class="value" id="sl-trades">0</span>
+      </div>
+      <div class="summary-item">
+        <label>BE Trades</label>
+        <span class="value" id="be-trades">0</span>
+      </div>
+      <div class="summary-item">
+        <label>TP Trades</label>
+        <span class="value" id="tp-trades">0</span>
+      </div>
+      <div class="summary-item">
+        <label>Terminated</label>
+        <span class="value" id="terminated-trades">0</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom Position Settings -->
+  <div class="summary-panel">
+    <div class="card-header">Custom Position Settings</div>
+    <div style="display: flex; gap: var(--spacing-lg); align-items: center; flex-wrap: wrap; margin-bottom: var(--spacing-lg);">
+      <label style="display: flex; align-items: center; gap: var(--spacing-sm);">
+        Position Size ($):
+        <input type="number" id="custom-position-size" value="100" min="1" step="10" style="width: 120px;">
+      </label>
+      <label style="display: flex; align-items: center; gap: var(--spacing-sm);">
+        Leverage:
+        <input type="number" id="custom-leverage" value="20" min="1" max="125" style="width: 120px;">
+      </label>
+    </div>
+    <div class="summary-grid">
+      <div class="summary-item">
+        <label>Custom Total PnL (%)</label>
+        <span class="value" id="custom-total-pnl">0.00%</span>
+      </div>
+      <div class="summary-item">
+        <label>Custom Total PnL ($)</label>
+        <span class="value" id="custom-total-pnl-dollars">$0.00</span>
+      </div>
+      <div class="summary-item">
+        <label>Total Fees (%)</label>
+        <span class="value" id="custom-total-fees-pct">0.00%</span>
+      </div>
+      <div class="summary-item">
+        <label>Total Fees ($)</label>
+        <span class="value" id="custom-total-fees-dollars">$0.00</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <table id="signals-table" class="minimal-table">
+    <thead>
+      <tr>
+        <th class="checkbox-cell" id="checkbox-header" style="display: none;">
+          <input type="checkbox" id="select-all-checkbox">
+        </th>
+        <th class="sortable" data-sort="time">Time</th>
+        <th class="sortable" data-sort="symbol">Symbol</th>
+        <th class="sortable" data-sort="signal">Signal</th>
+        <th class="sortable" data-sort="system">System</th>
+        <th class="sortable" id="outcome-header" style="display: none;" data-sort="outcome">Outcome</th>
+        <th class="sortable" data-sort="raw-pnl">Raw PnL (%)</th>
+        <th class="sortable" data-sort="custom-pnl-pct">Custom PnL (%)</th>
+        <th class="sortable" data-sort="custom-pnl-usd">Custom PnL ($)</th>
+        <th class="sortable" data-sort="status">Status</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <!-- Pagination -->
+  <div class="pagination-controls">
+    <div style="display: flex; gap: var(--spacing-md); align-items: center;">
+      <label for="page-size" style="font-size: 13px; color: var(--gray-500);">Rows per page:</label>
+      <select id="page-size">
+        <option value="10">10</option>
+        <option value="25" selected>25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+        <option value="200">200</option>
+      </select>
+    </div>
+    <div class="page-info">
+      <span id="page-info-text">Page 1 of 1 (0 trades)</span>
+    </div>
+    <div style="display: flex; gap: var(--spacing-sm);">
+      <button id="prev-page" class="btn btn-secondary">← Previous</button>
+      <button id="next-page" class="btn btn-secondary">Next →</button>
+    </div>
+  </div>
+
+  <!-- Side Sheet -->
+  <div id="side-sheet" class="side-sheet">
+    <button id="close-sheet" class="btn btn-secondary" style="width: 100%; margin-bottom: var(--spacing-lg);">✕ Close</button>
+    <div id="sheet-content">
+      <h3>Trade Details</h3>
+      <p>Select a trade to view details</p>
+    </div>
+  </div>
+
+  <script src="navigation.js"></script>
   <script src="logs_script.js"></script>
 </body>
 </html>
