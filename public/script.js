@@ -3,8 +3,8 @@ let previousPrice = null;
 let selectedSymbol = 'SOLUSDT';
 let currentDecimals = 2;
 let priceWebSocket = null;
-// REPLACE the updateUI function in script.js with this version
 
+// REPLACE the updateUI function in script.js with this version
 function updateUI(data) {
   // Comprehensive error checking
   if (!data) {
@@ -409,8 +409,7 @@ function initPriceWebSocket() {
         priceEl.style.color = 'black';
       }
       
-      priceEl.textContent = `Current Price: ${newPrice.toFixed(currentDecimals)}${arrow}`;
-      document.getElementById('current-time').textContent = `Current Time: ${new Date().toLocaleTimeString()}`;
+      priceEl.textContent = `${newPrice.toFixed(currentDecimals)}${arrow}`;
       previousPrice = newPrice;
     } catch (err) {
       console.error('WebSocket message error:', err);
@@ -515,93 +514,11 @@ async function fetchPriceHTTP() {
       priceEl.style.color = 'black';
     }
     
-    priceEl.textContent = `Current Price: ${newPrice.toFixed(decimals)}${arrow} [HTTP]`;
+    priceEl.textContent = `${newPrice.toFixed(decimals)}${arrow} [HTTP]`;
     priceEl.style.borderLeft = '3px solid orange'; // Indicate polling mode
-    document.getElementById('current-time').textContent = `Current Time: ${new Date().toLocaleTimeString()}`;
     previousPrice = newPrice;
   } catch (err) {
     console.error('HTTP price fetch error:', err);
-  }
-}
-
-// Update pause status display
-async function updatePauseStatus() {
-  try {
-    const res = await fetch('/trading-status');
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-    }
-    const status = await res.json();
-    console.log('Trading status:', status);
-    
-    const pauseBtn = document.getElementById('pause-btn');
-    const pauseStatusEl = document.getElementById('pause-status');
-    
-    if (!pauseBtn || !pauseStatusEl) {
-      console.error('Pause button or status element not found');
-      return;
-    }
-    
-    if (status.isPaused) {
-      pauseBtn.textContent = '▶️ Resume Trading';
-      pauseBtn.style.background = '#ef4444';
-      
-      const elapsed = Math.floor(status.pauseDuration / 60000);
-      const remaining = Math.floor(status.timeUntilAutoResume / 60000);
-      pauseStatusEl.textContent = `⏸️ Paused for ${elapsed}m (auto-resume in ${remaining}m)`;
-      pauseStatusEl.style.color = '#ef4444';
-    } else {
-      pauseBtn.textContent = '⏸️ Pause Trading';
-      pauseBtn.style.background = '#10b981';
-      pauseStatusEl.textContent = '▶️ Trading Active';
-      pauseStatusEl.style.color = '#10b981';
-    }
-  } catch (err) {
-    console.error('Status fetch error:', err);
-    const pauseStatusEl = document.getElementById('pause-status');
-    if (pauseStatusEl) {
-      pauseStatusEl.textContent = '⚠️ Status unavailable';
-      pauseStatusEl.style.color = '#f59e0b';
-    }
-  }
-}
-
-// Toggle trading pause
-async function toggleTrading() {
-  const pauseBtn = document.getElementById('pause-btn');
-  
-  if (pauseBtn) {
-    pauseBtn.disabled = true;
-    pauseBtn.style.opacity = '0.5';
-  }
-  
-  try {
-    console.log('Toggling trading...');
-    const res = await fetch('/toggle-trading', { 
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    });
-    
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-    }
-    
-    const result = await res.json();
-    console.log('Trading toggled:', result);
-    
-    alert(result.message || (result.isPaused ? 'Trading paused successfully' : 'Trading resumed successfully'));
-    
-    await updatePauseStatus();
-  } catch (err) {
-    console.error('Toggle error:', err);
-    alert('Failed to toggle trading: ' + err.message);
-  } finally {
-    if (pauseBtn) {
-      pauseBtn.disabled = false;
-      pauseBtn.style.opacity = '1';
-    }
   }
 }
 
@@ -618,7 +535,6 @@ async function fetchData() {
     console.log('Received data for', selectedSymbol, ':', data);
     
     updateUI(data);
-    updatePauseStatus();
   } catch (err) {
     console.error('Data fetch error:', err);
     document.getElementById('signal').textContent = '❌ Network Error';
@@ -888,7 +804,6 @@ fetchData();
 setInterval(fetchData, 300000); // 5 min full refresh
 setInterval(updatePauseStatus, 300000); // 5 min pause status
 
-document.getElementById('copy-btn').addEventListener('click', () => {
-  navigator.clipboard.writeText(JSON.stringify(currentData, null, 2));
-  alert('Data copied to clipboard!');
-});
+//document.getElementById('copy-btn').addEventListener('click', () => {
+  //navigator.clipboard.writeText(JSON.stringify(currentData, null, 2));
+  //alert('Data copied to clipboard!');});

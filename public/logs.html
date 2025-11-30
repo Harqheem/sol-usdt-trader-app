@@ -6,7 +6,7 @@
   <title>Signal Logs & Analytics</title>
   <link rel="stylesheet" href="shared-styles.css">
   <style>
-    /* Tabs */
+    /* Only logs-specific styles */
     .tabs-container {
       background: white;
       border: 1px solid var(--gray-200);
@@ -57,11 +57,10 @@
     .tabs button:hover {
       background: var(--gray-100);
       border-color: var(--gray-300);
-      color: var(--gray-700);
     }
 
     .tabs button.active {
-      background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+      background: var(--primary);
       color: white;
       border-color: var(--primary);
       box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
@@ -74,16 +73,17 @@
     }
 
     .tabs.system-tabs button.active.all-tab {
-      background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+      background: #8b5cf6;
       border-color: #8b5cf6;
+      box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
     }
 
     .tabs.system-tabs button.active.fast-tab {
       background: var(--warning);
       border-color: var(--warning);
+      box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
     }
 
-    /* Filters */
     .filters-bar {
       background: white;
       border: 1px solid var(--gray-200);
@@ -123,7 +123,6 @@
       min-width: 140px;
     }
 
-    /* Summary Panel */
     .summary-panel {
       background: white;
       border: 1px solid var(--gray-200);
@@ -161,7 +160,12 @@
       font-variant-numeric: tabular-nums;
     }
 
-    /* Table */
+    .info-icon {
+      font-size: 11px;
+      cursor: help;
+      color: var(--gray-400);
+    }
+
     .minimal-table {
       width: 100%;
       border-collapse: separate;
@@ -231,7 +235,79 @@
       font-variant-numeric: tabular-nums;
     }
 
-    /* Pagination */
+    .checkbox-cell {
+      width: 40px;
+      text-align: center;
+    }
+
+    .checkbox-cell input[type="checkbox"] {
+      cursor: pointer;
+      width: 16px;
+      height: 16px;
+    }
+
+    .status-sent {
+      background: var(--info-light);
+      border-color: #bfdbfe;
+      color: #1e40af;
+    }
+
+    .status-pending {
+      background: var(--warning-light);
+      border-color: #fde68a;
+      color: #92400e;
+    }
+
+    .status-opened {
+      background: var(--success-light);
+      border-color: #a7f3d0;
+      color: #065f46;
+    }
+
+    .status-closed {
+      background: var(--gray-100);
+      border-color: var(--gray-300);
+      color: var(--gray-600);
+    }
+
+    .status-failed {
+      background: var(--danger-light);
+      border-color: #fecaca;
+      color: #991b1b;
+    }
+
+    .status-terminated {
+      background: var(--gray-50);
+      border-color: var(--gray-200);
+      color: var(--gray-500);
+    }
+
+    .status-expired {
+      background: var(--warning-light);
+      border-color: #fde68a;
+      color: #92400e;
+    }
+
+    .signal-long {
+      color: var(--success);
+      font-weight: 600;
+    }
+
+    .signal-short {
+      color: var(--danger);
+      font-weight: 600;
+    }
+
+    .pnl-positive {
+      color: var(--success);
+      font-weight: 600;
+    }
+
+    .pnl-negative {
+      color: var(--danger);
+      font-weight: 600;
+    }
+
     .pagination-controls {
       background: white;
       border: 1px solid var(--gray-200);
@@ -252,7 +328,6 @@
       font-weight: 500;
     }
 
-    /* Side Sheet */
     .side-sheet {
       position: fixed;
       right: -500px;
@@ -314,9 +389,6 @@
   </style>
 </head>
 <body>
-  <!-- Navigation will be injected here -->
-
-  <!-- Page Header -->
   <div class="page-header">
     <div class="header-content">
       <div class="header-brand">
@@ -330,7 +402,6 @@
     </div>
   </div>
 
-  <!-- Signal System Filter -->
   <div class="tabs-container">
     <div class="tab-section">
       <div class="tab-label">Signal System</div>
@@ -342,7 +413,6 @@
     </div>
   </div>
 
-  <!-- View Type Tabs -->
   <div class="tabs-container">
     <div class="tab-section">
       <div class="tab-label">View Type</div>
@@ -353,7 +423,6 @@
     </div>
   </div>
 
-  <!-- Filters -->
   <div class="filters-bar">
     <div class="card-header" style="margin-bottom: var(--spacing-md);">Filters</div>
     <div class="filter-controls">
@@ -375,24 +444,23 @@
     </div>
   </div>
 
-  <!-- Summary -->
   <div id="summary" class="summary-panel">
     <div class="card-header">Trade Summary</div>
     <div class="summary-grid">
       <div class="summary-item">
-        <label>Total Trades</label>
+        <label>Total Trades <span class="info-icon" title="All trades">ℹ️</span></label>
         <span class="value" id="total-trades">0</span>
       </div>
       <div class="summary-item">
-        <label>Closed Trades</label>
+        <label>Closed Trades <span class="info-icon" title="Completed">ℹ️</span></label>
         <span class="value" id="closed-trades">0</span>
       </div>
       <div class="summary-item">
-        <label>Win Rate</label>
+        <label>Win Rate <span class="info-icon" title="% winning">ℹ️</span></label>
         <span class="value" id="win-rate">0.00%</span>
       </div>
       <div class="summary-item">
-        <label>Total Raw PnL</label>
+        <label>Total Raw PnL <span class="info-icon" title="No fees">ℹ️</span></label>
         <span class="value" id="total-raw-pnl">0.00%</span>
       </div>
     </div>
@@ -417,7 +485,6 @@
     </div>
   </div>
 
-  <!-- Custom Position Settings -->
   <div class="summary-panel">
     <div class="card-header">Custom Position Settings</div>
     <div style="display: flex; gap: var(--spacing-lg); align-items: center; flex-wrap: wrap; margin-bottom: var(--spacing-lg);">
@@ -450,7 +517,6 @@
     </div>
   </div>
 
-  <!-- Table -->
   <table id="signals-table" class="minimal-table">
     <thead>
       <tr>
@@ -471,7 +537,6 @@
     <tbody></tbody>
   </table>
 
-  <!-- Pagination -->
   <div class="pagination-controls">
     <div style="display: flex; gap: var(--spacing-md); align-items: center;">
       <label for="page-size" style="font-size: 13px; color: var(--gray-500);">Rows per page:</label>
@@ -492,7 +557,6 @@
     </div>
   </div>
 
-  <!-- Side Sheet -->
   <div id="side-sheet" class="side-sheet">
     <button id="close-sheet" class="btn btn-secondary" style="width: 100%; margin-bottom: var(--spacing-lg);">✕ Close</button>
     <div id="sheet-content">
