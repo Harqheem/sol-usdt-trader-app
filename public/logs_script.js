@@ -403,7 +403,6 @@ function renderTableAndSummary() {
     <td>${signal.symbol}</td>
     <td class="${isLong ? 'signal-long' : 'signal-short'}">${signal.signal_type}</td>
     <td>${systemBadge}</td>
-    <td>${currentSLDisplay}</td>
     ${outcomeTd}
     <td class="${signal.raw_pnl_percentage > 0 ? 'pnl-positive' : signal.raw_pnl_percentage < 0 ? 'pnl-negative' : ''}">${signal.raw_pnl_percentage ? signal.raw_pnl_percentage.toFixed(2) + '%' : '-'}</td>
     <td class="${customPnlPct > 0 ? 'pnl-positive' : customPnlPct < 0 ? 'pnl-negative' : ''}">${customPnlPct !== 0 ? customPnlPct.toFixed(2) + '%' : '-'}</td>
