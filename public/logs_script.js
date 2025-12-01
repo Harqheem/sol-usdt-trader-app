@@ -78,6 +78,21 @@ function formatTime(isoTime) {
 
 // ✅ UPDATED: Better outcome detection with trailing stop terminology
 function getOutcome(signal) {
+  // ✅ PRIORITY 1: Use stored close_reason if available (most accurate)
+  if (signal.close_reason) {
+    const reasonMap = {
+      'TP2': 'TP',
+      'TP1': 'TP1',
+      'BE/TRAIL': 'BE/Trail',
+      'TRAIL': 'Trail Stop',
+      'SL': 'SL',
+      'TERMINATED': 'Terminated',
+      'EXPIRED': 'Expired'
+    };
+    return reasonMap[signal.close_reason] || signal.close_reason;
+  }
+  
+  // ✅ PRIORITY 2: Fallback to legacy detection for old trades
   if (signal.status === 'terminated') return 'Terminated';
   if (signal.status === 'expired') return 'Expired';
   if (signal.status !== 'closed') return '-';
@@ -87,8 +102,13 @@ function getOutcome(signal) {
   const exit = signal.exit_price;
   const isBuy = signal.signal_type === 'Enter Long' || signal.signal_type === 'Buy';
   const tp2 = signal.tp2;
+  const currentSL = signal.updated_sl || signal.sl;
 
   if (!exit || !entry || !tp2) return '-';
+
+  // Check if TP2 was hit
+  const tp2Hit = isBuy ? exit >= tp2 * 0.9995 : exit <= tp2 * 1.0005;
+  if (tp2Hit) return 'TP';
 
   // Check if exited at or very close to entry (breakeven)
   const relativeDiff = Math.abs(exit - entry) / entry;
@@ -96,20 +116,27 @@ function getOutcome(signal) {
     return hadPartial ? 'BE/Trail' : 'BE';
   }
 
-  // Check if TP2 was hit
-  const tp2Hit = isBuy ? exit >= tp2 * 0.9995 : exit <= tp2 * 1.0005;
-  if (tp2Hit) {
-    return 'TP';
-  }
-
-  // If we had partial close and didn't hit TP2, it's a trailing stop
-  if (hadPartial) {
-    // Check if exit was profitable
+  // Check if SL was moved (dynamic management occurred)
+  const slWasMoved = currentSL !== signal.sl;
+  
+  if (slWasMoved) {
+    // Check if moved SL was at or above entry
+    const wasBreakevenOrBetter = isBuy 
+      ? (currentSL >= entry * 0.999)
+      : (currentSL <= entry * 1.001);
+    
+    if (wasBreakevenOrBetter) {
+      return hadPartial ? 'BE/Trail' : 'BE';
+    }
+    
+    // SL was moved but still in loss territory - check if exit was profitable
     const isProfitable = isBuy ? exit > entry : exit < entry;
-    return isProfitable ? 'Trail Stop' : 'SL';
+    if (isProfitable) {
+      return 'Trail Stop';
+    }
   }
 
-  // Full position stopped out before TP1
+  // Default to SL
   return 'SL';
 }
 

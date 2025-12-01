@@ -386,20 +386,39 @@ async function handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, 
 async function handleStopHit(trade, exitPrice, isBuy, positionSize, leverage, remainingFraction, isFastSignal, isActualLoss) {
   const signalTag = isFastSignal ? '⚡FAST' : '📊DEFAULT';
   
+  // ✅ FIX: Check if SL was moved (indicating management occurred)
+  const slWasMoved = trade.updated_sl && trade.updated_sl !== trade.sl;
+  
+  // ✅ FIX: For moved SL, check if it's at or above entry (breakeven+)
+  let adjustedStopType = 'SL';
+  if (slWasMoved) {
+    const isBreakevenOrBetter = isBuy 
+      ? (trade.updated_sl >= trade.entry * 0.999) // Allow tiny buffer
+      : (trade.updated_sl <= trade.entry * 1.001);
+    
+    if (isBreakevenOrBetter) {
+      adjustedStopType = 'BE/TRAIL'; // Breakeven or trailing stop
+      // Override isActualLoss since we protected capital
+      isActualLoss = false;
+    } else {
+      // SL was moved but still below entry
+      const isProfitable = isBuy ? (exitPrice > trade.entry) : (exitPrice < trade.entry);
+      adjustedStopType = isProfitable ? 'TRAIL' : 'SL';
+    }
+  }
+  
   if (remainingFraction === 1.0) {
     // Full position stopped out
     const fullLoss = calculatePnL(trade.entry, exitPrice, isBuy, positionSize, leverage, 1.0);
     
-    // ✅ FIX: Use appropriate terminology
-    const stopType = isActualLoss ? 'STOP LOSS' : 'TRAILING STOP';
-    console.log(`${isActualLoss ? '❌' : '✅'} Closed full at ${stopType} for ${trade.symbol} [${signalTag}] at ${exitPrice.toFixed(4)} (P&L: ${fullLoss.netPnlPct.toFixed(2)}%)`);
+    console.log(`${isActualLoss ? '❌' : '✅'} Closed full at ${adjustedStopType} for ${trade.symbol} [${signalTag}] at ${exitPrice.toFixed(4)} (P&L: ${fullLoss.netPnlPct.toFixed(2)}%)`);
     
-    // Route to correct system
+    // ✅ Log with correct reason
     if (isFastSignal) {
       await handleTradeClose({
         symbol: trade.symbol,
         pnl: fullLoss.customPnl,
-        closeReason: isActualLoss ? 'SL' : 'TRAILING_STOP',
+        closeReason: adjustedStopType,
         direction: isBuy ? 'LONG' : 'SHORT',
         tradeId: trade.id,
         signalSource: trade.signal_source
@@ -408,9 +427,9 @@ async function handleStopHit(trade, exitPrice, isBuy, positionSize, leverage, re
       recordDefaultTradeClose(trade.symbol, fullLoss.netPnlPct);
     }
     
-    // Log to learning system
+    // ✅ Log to learning system with correct categorization
     try {
-      if (isActualLoss) {
+      if (adjustedStopType === 'SL') {
         await learningService.logFailedTrade({
           symbol: trade.symbol,
           direction: isBuy ? 'LONG' : 'SHORT',
@@ -427,6 +446,7 @@ async function handleStopHit(trade, exitPrice, isBuy, positionSize, leverage, re
           indicators: null
         });
       } else {
+        // BE/TRAIL or TRAIL = successful capital protection
         await learningService.logSuccessfulTrade({
           symbol: trade.symbol,
           direction: isBuy ? 'LONG' : 'SHORT',
@@ -438,12 +458,12 @@ async function handleStopHit(trade, exitPrice, isBuy, positionSize, leverage, re
           tp2: trade.tp2,
           exitPrice: exitPrice,
           pnl: fullLoss.netPnlPct,
-          closeReason: 'TRAILING_STOP',
+          closeReason: adjustedStopType,
           marketConditions: null,
           indicators: null
         });
       }
-      console.log(`📚 Logged to learning system`);
+      console.log(`📚 Logged to learning system as ${adjustedStopType}`);
     } catch (error) {
       console.error('⚠️ Failed to log to learning system:', error.message);
     }
@@ -455,28 +475,25 @@ async function handleStopHit(trade, exitPrice, isBuy, positionSize, leverage, re
       raw_pnl_percentage: fullLoss.rawPnlPct, 
       pnl_percentage: fullLoss.netPnlPct,
       custom_pnl: fullLoss.customPnl,
-      remaining_position: 0.0 
+      remaining_position: 0.0,
+      close_reason: adjustedStopType // ✅ Store the actual close reason
     };
   } else {
     // Partial position stopped (after TP1)
     const remainingPnl = calculatePnL(trade.entry, exitPrice, isBuy, positionSize, leverage, 0.5);
     
-    // ✅ FIX: Don't multiply by 0.5 again
     const totalRawPnlPct = (trade.partial_raw_pnl_pct || 0) + remainingPnl.rawPnlPct;
     const totalNetPnlPct = (trade.partial_net_pnl_pct || 0) + remainingPnl.netPnlPct;
     const totalCustomPnl = (trade.partial_custom_pnl || 0) + remainingPnl.customPnl;
     
     const isWin = totalCustomPnl >= 0;
-    // ✅ FIX: Use appropriate terminology
-    const stopType = isActualLoss ? 'SL' : 'TRAILING STOP';
-    console.log(`${isWin ? '✅' : '❌'} Closed remaining at ${stopType} for ${trade.symbol} [${signalTag}] at ${exitPrice.toFixed(4)} (P&L: ${totalNetPnlPct.toFixed(2)}%)`);
+    console.log(`${isWin ? '✅' : '❌'} Closed remaining at ${adjustedStopType} for ${trade.symbol} [${signalTag}] at ${exitPrice.toFixed(4)} (P&L: ${totalNetPnlPct.toFixed(2)}%)`);
     
-    // Route to correct system
     if (isFastSignal) {
       await handleTradeClose({
         symbol: trade.symbol,
         pnl: totalCustomPnl,
-        closeReason: isActualLoss ? 'SL' : 'TRAILING_STOP',
+        closeReason: adjustedStopType,
         direction: isBuy ? 'LONG' : 'SHORT',
         tradeId: trade.id,
         signalSource: trade.signal_source
@@ -487,7 +504,7 @@ async function handleStopHit(trade, exitPrice, isBuy, positionSize, leverage, re
     
     // Log to learning system
     try {
-      if (isWin) {
+      if (isWin || adjustedStopType !== 'SL') {
         await learningService.logSuccessfulTrade({
           symbol: trade.symbol,
           direction: isBuy ? 'LONG' : 'SHORT',
@@ -499,7 +516,7 @@ async function handleStopHit(trade, exitPrice, isBuy, positionSize, leverage, re
           tp2: trade.tp2,
           exitPrice: exitPrice,
           pnl: totalNetPnlPct,
-          closeReason: 'TRAILING_STOP',
+          closeReason: adjustedStopType,
           marketConditions: null,
           indicators: null
         });
@@ -515,7 +532,7 @@ async function handleStopHit(trade, exitPrice, isBuy, positionSize, leverage, re
           tp2: trade.tp2,
           exitPrice: exitPrice,
           pnl: totalNetPnlPct,
-          closeReason: isActualLoss ? 'SL' : 'TRAILING_STOP',
+          closeReason: adjustedStopType,
           marketConditions: null,
           indicators: null
         });
@@ -532,11 +549,11 @@ async function handleStopHit(trade, exitPrice, isBuy, positionSize, leverage, re
       raw_pnl_percentage: totalRawPnlPct, 
       pnl_percentage: totalNetPnlPct,
       custom_pnl: totalCustomPnl,
-      remaining_position: 0.0 
+      remaining_position: 0.0,
+      close_reason: adjustedStopType // ✅ Store the actual close reason
     };
   }
 }
-
 // ========================================
 // DATABASE UPDATE (unchanged)
 // ========================================

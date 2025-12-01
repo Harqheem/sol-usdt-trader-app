@@ -298,64 +298,86 @@ async function executeManagementActions(trade, checkpoint, currentPrice, atr, si
 }
 
 /**
- * Check if a trade needs management action
- * FIXED: Better logging to detect race conditions
+ * ✅ UPDATED: Execute a single action (move SL or close partial)
+ * Now tracks if SL move is to breakeven for better logging
  */
-async function checkTradeManagement(trade, currentPrice, atr) {
-  // Only manage DEFAULT system trades
-  if (trade.signal_source === 'fast') {
-    return { needsAction: false, reason: 'Fast signal - not managed' };
-  }
-
-  // Only manage opened trades
-  if (trade.status !== 'opened') {
-    return { needsAction: false, reason: 'Trade not opened' };
-  }
-
-  // Get signal type and rules
-  const signalType = getSignalType(trade);
-  const rules = MANAGEMENT_RULES[signalType] || DEFAULT_RULES;
-
-  // Calculate current profit in ATR
-  const isBuy = trade.signal_type === 'Enter Long' || trade.signal_type === 'Buy';
-  const profitATR = calculateProfitATR(trade.entry, currentPrice, atr, isBuy);
-
-  // Get executed checkpoints for this trade
-  if (!executedCheckpoints.has(trade.id)) {
-    await loadExecutedCheckpoints(trade.id);
-  }
-
-  const executed = executedCheckpoints.get(trade.id);
-
-  // Find the next checkpoint to execute
-  for (const checkpoint of rules.checkpoints) {
-    // Skip if already executed
-    if (executed.has(checkpoint.name)) {
-      continue;
-    }
-
-    // Check if checkpoint is reached
-    if (profitATR >= checkpoint.profitATR) {
-      console.log(`📊 ${trade.symbol}: Profit ${profitATR.toFixed(2)} ATR → Checkpoint "${checkpoint.name}" ready`);
-      
-      return {
-        needsAction: true,
-        checkpoint,
-        signalType,
-        profitATR,
-        currentPrice,
-        atr
+async function executeAction(trade, action, currentPrice, atr, isBuy) {
+  if (action.type === 'move_sl') {
+    const newSL = calculateNewSL(trade, action.target, currentPrice, atr, isBuy);
+    
+    // Ensure we never widen stops
+    const currentSL = trade.updated_sl || trade.sl;
+    const wouldWiden = isBuy ? (newSL < currentSL) : (newSL > currentSL);
+    
+    if (wouldWiden) {
+      console.log(`   ⚠️  Stop widening rejected: ${currentSL.toFixed(6)} -> ${newSL.toFixed(6)}`);
+      return { 
+        success: false, 
+        action: 'move_sl',
+        reason: 'Would widen stop - rejected',
+        oldSL: currentSL,
+        newSL: newSL
       };
     }
+    
+    // ✅ NEW: Check if this is a breakeven move
+    const isBreakeven = Math.abs(newSL - trade.entry) / trade.entry < 0.001;
+    
+    // Update database
+    const { error } = await supabase
+      .from('signals')
+      .update({ updated_sl: newSL })
+      .eq('id', trade.id);
+    
+    if (error) throw error;
+    
+    console.log(`   ✅ SL moved: ${currentSL.toFixed(6)} -> ${newSL.toFixed(6)}${isBreakeven ? ' (BREAKEVEN)' : ''}`);
+    
+    return { 
+      success: true, 
+      action: 'move_sl',
+      reason: action.reason,
+      oldSL: currentSL,
+      newSL: newSL,
+      isBreakeven: isBreakeven // ✅ NEW: Track for logging
+    };
+    
+  } else if (action.type === 'close_partial') {
+    const fraction = action.percent / 100;
+    const pnl = calculatePartialPnL(trade, currentPrice, fraction, isBuy);
+    const newRemaining = (trade.remaining_position || 1.0) - fraction;
+    
+    // Update database
+    const updates = {
+      partial_raw_pnl_pct: (trade.partial_raw_pnl_pct || 0) + pnl.rawPnlPct,
+      partial_net_pnl_pct: (trade.partial_net_pnl_pct || 0) + pnl.netPnlPct,
+      partial_custom_pnl: (trade.partial_custom_pnl || 0) + pnl.customPnl,
+      remaining_position: newRemaining
+    };
+    
+    const { error } = await supabase
+      .from('signals')
+      .update(updates)
+      .eq('id', trade.id);
+    
+    if (error) throw error;
+    
+    console.log(`   ✅ Closed ${action.percent}% at ${currentPrice.toFixed(6)} (P&L: ${pnl.netPnlPct.toFixed(2)}%)`);
+    console.log(`   📊 Remaining: ${(newRemaining * 100).toFixed(0)}%`);
+    
+    return {
+      success: true,
+      action: 'close_partial',
+      reason: action.reason,
+      closePercent: action.percent,
+      newRemaining: newRemaining * 100,
+      pnl: pnl
+    };
   }
-
-  return { needsAction: false, reason: 'No checkpoint reached' };
+  
+  throw new Error(`Unknown action type: ${action.type}`);
 }
 
-/**
- * Calculate new stop loss based on target specification
- * FIXED: Properly handles SHORT trades - "entry+X" means tighter SL for shorts
- */
 function calculateNewSL(trade, target, currentPrice, atr, isBuy) {
   const entry = trade.entry;
 
