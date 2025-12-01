@@ -1,9 +1,11 @@
 // services/dynamicPositionManager.js
-// DYNAMIC POSITION MANAGEMENT - Adapts TP/SL to changing market conditions
+// DYNAMIC POSITION MANAGEMENT - FIXED: Use proper ATR/ADX calculations
 
 const { supabase } = require('./logsService');
 const { wsCache } = require('./dataService/cacheManager');
 const { sendTelegramNotification } = require('./notificationService');
+const { calculateIndicators } = require('./dataService/indicatorCalculator'); // ✅ ADD THIS
+const { getAssetConfig } = require('../config/assetConfig'); // ✅ ADD THIS
 
 // ============================================
 // CONFIGURATION
@@ -98,7 +100,7 @@ async function reviewAllPositions() {
     if (error) throw error;
     
     if (!openTrades || openTrades.length === 0) {
-      console.log('📭 No open DEFAULT positions to review');
+      console.log('🔭 No open DEFAULT positions to review');
       console.log('='.repeat(80) + '\n');
       isReviewRunning = false;
       return;
@@ -124,7 +126,7 @@ async function reviewAllPositions() {
 }
 
 // ============================================
-// SINGLE POSITION REVIEW
+// SINGLE POSITION REVIEW - FIXED
 // ============================================
 
 async function reviewSinglePosition(trade) {
@@ -142,14 +144,29 @@ async function reviewSinglePosition(trade) {
     const currentPrice = parseFloat(cache.currentPrice);
     const candles = cache.candles30m;
     
-    if (!candles || candles.length < 14) {
+    if (!candles || candles.length < 200) {
       console.log(`   ⚠️  ${symbol}: Insufficient candle data`);
       return;
     }
     
-    // Calculate current indicators
-    const currentATR = calculateCurrentATR(candles);
-    const currentADX = calculateCurrentADX(candles);
+    // ✅ FIX: Calculate proper indicators using the SAME method as entry
+    const assetConfig = getAssetConfig(symbol);
+    
+    const closes = candles.map(c => parseFloat(c.close)).filter(v => !isNaN(v));
+    const highs = candles.map(c => parseFloat(c.high)).filter(v => !isNaN(v));
+    const lows = candles.map(c => parseFloat(c.low)).filter(v => !isNaN(v));
+    const opens = candles.map(c => parseFloat(c.open)).filter(v => !isNaN(v));
+    const volumes = candles.map(c => parseFloat(c.volume)).filter(v => !isNaN(v));
+    
+    if (closes.length < 200) {
+      console.log(`   ⚠️  ${symbol}: Insufficient valid candle data`);
+      return;
+    }
+    
+    // ✅ Use proper indicator calculation (same as entry analysis)
+    const indicators = calculateIndicators(closes, highs, lows, opens, volumes, assetConfig);
+    const currentATR = indicators.atr;
+    const currentADX = indicators.adx;
     
     // Get entry conditions
     const entryATR = trade.entry_atr || currentATR;
@@ -203,11 +220,6 @@ async function reviewSinglePosition(trade) {
         updates.updated_sl = rec.newSL;
         actions.push(`SL tightened: ${trade.updated_sl || trade.sl} → ${rec.newSL}`);
       }
-      
-      if (rec.action === 'EXTEND_TP') {
-        // This case removed - we don't extend TPs anymore
-        continue;
-      }
     }
     
     // Add review metadata
@@ -239,7 +251,7 @@ async function reviewSinglePosition(trade) {
 }
 
 // ============================================
-// POSITION ASSESSMENT
+// POSITION ASSESSMENT (unchanged logic)
 // ============================================
 
 function assessPosition(trade, currentPrice, currentATR, currentADX, entryATR, entryADX) {
@@ -264,13 +276,10 @@ function assessPosition(trade, currentPrice, currentATR, currentADX, entryATR, e
   
   let status = 'MONITORING';
   
-  // ============================================
   // RULE 1: BREAKEVEN PROTECTION
-  // ============================================
   if (profitATR >= REVIEW_CONFIG.breakevenAfterATR) {
     const currentSLDistance = isBuy ? (currentSL - entry) : (entry - currentSL);
     
-    // Only if SL is still below/above entry
     if (currentSLDistance < 0) {
       const breakevenSL = isBuy 
         ? entry + (entry * REVIEW_CONFIG.breakevenBuffer)
@@ -287,15 +296,11 @@ function assessPosition(trade, currentPrice, currentATR, currentADX, entryATR, e
     }
   }
   
-  // ============================================
   // RULE 2: WEAKENING TREND - TIGHTEN TARGETS
-  // ============================================
   if (adxChange <= -REVIEW_CONFIG.adxSignificantDecrease) {
-    // Trend is weakening, take profit sooner
     const currentTP2Distance = isBuy ? (currentTP2 - entry) : (entry - currentTP2);
     const currentTP2ATR = currentTP2Distance / currentATR;
     
-    // If TP2 is still far out (>2.5 ATR), bring it closer
     if (currentTP2ATR > 2.5) {
       const newTP2Distance = currentATR * Math.max(2.0, currentTP2ATR - REVIEW_CONFIG.maxTPAdjustment);
       const newTP2 = isBuy ? entry + newTP2Distance : entry - newTP2Distance;
@@ -313,32 +318,20 @@ function assessPosition(trade, currentPrice, currentATR, currentADX, entryATR, e
     }
   }
   
-  // ============================================
-  // RULE 3: STRENGTHENING TREND - NO ACTION
-  // ============================================
-  // We DON'T extend TPs even if trend strengthens
-  // Just let the original TP targets work
+  // RULE 3: STRENGTHENING TREND - NO ACTION (just log)
   if (adxChange >= REVIEW_CONFIG.adxSignificantIncrease && currentADX > REVIEW_CONFIG.adxStrongTrend) {
-    // Log the strengthening but don't adjust
     console.log(`   📈 Trend strengthening (ADX +${adxChange.toFixed(1)}) - keeping original targets`);
   }
   
-  // ============================================
-  // RULE 4: CONTRACTING VOLATILITY - TIGHTEN STOP (only if in profit)
-  // ============================================
+  // RULE 4: CONTRACTING VOLATILITY - TIGHTEN STOP
   if (volatilityRegime === 'CONTRACTING' && profitATR > 0.5) {
-    // Volatility contracting = potential trend pause
-    // Tighten stop to lock in gains
-    
     const currentSLDistance = isBuy ? (currentPrice - currentSL) : (currentSL - currentPrice);
     const currentSLATR = currentSLDistance / currentATR;
     
-    // If stop is still far (>1.5 ATR away), bring it closer
     if (currentSLATR > 1.5) {
-      const newSLDistance = currentATR * 1.2; // Tighten to 1.2 ATR
+      const newSLDistance = currentATR * 1.2;
       const newSL = isBuy ? currentPrice - newSLDistance : currentPrice + newSLDistance;
       
-      // CRITICAL: Never widen stop
       const wouldWidenStop = isBuy ? (newSL < currentSL) : (newSL > currentSL);
       
       if (!wouldWidenStop) {
@@ -356,17 +349,12 @@ function assessPosition(trade, currentPrice, currentATR, currentADX, entryATR, e
     }
   }
   
-  // ============================================
   // RULE 5: EXPANDING VOLATILITY - CHECK STOP VALIDITY
-  // ============================================
   if (volatilityRegime === 'EXPANDING') {
-    // Volatility expanding = check if current stop is still adequate
     const currentSLDistance = isBuy ? (entry - currentSL) : (currentSL - entry);
     const currentSLATR = currentSLDistance / currentATR;
     
-    // If stop is now too tight (<0.8 ATR with new volatility)
     if (currentSLATR < REVIEW_CONFIG.minStopDistance) {
-      // DON'T widen it - just warn
       recommendations.push({
         action: 'WARNING',
         reason: `Stop is ${currentSLATR.toFixed(2)} ATR (tight due to volatility expansion) - watch closely`,
@@ -377,7 +365,6 @@ function assessPosition(trade, currentPrice, currentATR, currentADX, entryATR, e
     }
   }
   
-  // Sort recommendations by priority
   recommendations.sort((a, b) => a.priority - b.priority);
   
   return {
@@ -393,65 +380,6 @@ function assessPosition(trade, currentPrice, currentATR, currentADX, entryATR, e
 // ============================================
 // HELPER FUNCTIONS
 // ============================================
-
-function calculateCurrentATR(candles) {
-  // Get last 14 candles for ATR calculation
-  const recent = candles.slice(-14);
-  if (recent.length < 14) return 0;
-  
-  const trueRanges = [];
-  for (let i = 1; i < recent.length; i++) {
-    const high = parseFloat(recent[i].high);
-    const low = parseFloat(recent[i].low);
-    const prevClose = parseFloat(recent[i - 1].close);
-    
-    const tr = Math.max(
-      high - low,
-      Math.abs(high - prevClose),
-      Math.abs(low - prevClose)
-    );
-    
-    trueRanges.push(tr);
-  }
-  
-  const atr = trueRanges.reduce((sum, tr) => sum + tr, 0) / trueRanges.length;
-  return atr;
-}
-
-function calculateCurrentADX(candles) {
-  // Simplified ADX calculation from last 14 candles
-  const recent = candles.slice(-14);
-  if (recent.length < 14) return 0;
-  
-  let plusDM = 0, minusDM = 0, tr = 0;
-  
-  for (let i = 1; i < recent.length; i++) {
-    const high = parseFloat(recent[i].high);
-    const low = parseFloat(recent[i].low);
-    const prevHigh = parseFloat(recent[i - 1].high);
-    const prevLow = parseFloat(recent[i - 1].low);
-    const prevClose = parseFloat(recent[i - 1].close);
-    
-    const upMove = high - prevHigh;
-    const downMove = prevLow - low;
-    
-    if (upMove > downMove && upMove > 0) plusDM += upMove;
-    if (downMove > upMove && downMove > 0) minusDM += downMove;
-    
-    tr += Math.max(
-      high - low,
-      Math.abs(high - prevClose),
-      Math.abs(low - prevClose)
-    );
-  }
-  
-  const length = recent.length - 1;
-  const plusDI = (plusDM / tr) * 100;
-  const minusDI = (minusDM / tr) * 100;
-  
-  const dx = Math.abs(plusDI - minusDI) / (plusDI + minusDI) * 100;
-  return dx || 0;
-}
 
 function determineVolatilityRegime(atrRatio) {
   if (atrRatio >= REVIEW_CONFIG.atrExpansionRatio) {
@@ -517,14 +445,14 @@ async function sendAdjustmentNotification(trade, assessment, actions, currentPri
   message2 += `Next review: 2 hours\n`;
   
   try {
-    await sendTelegramNotification(message1, message2, trade.symbol, false); // ✅ false = chat only
+    await sendTelegramNotification(message1, message2, trade.symbol, false);
   } catch (error) {
     console.error('Failed to send adjustment notification:', error.message);
   }
 }
 
 // ============================================
-// MANUAL TRIGGER (for testing/debugging)
+// MANUAL TRIGGER
 // ============================================
 
 async function manualReview(tradeId) {

@@ -253,12 +253,27 @@ async function checkTradeManagement(trade, currentPrice, atr) {
 
 /**
  * Execute management actions for a checkpoint
+ * FIXED: Mark checkpoint as executed BEFORE processing to prevent duplicates
  */
 async function executeManagementActions(trade, checkpoint, currentPrice, atr, signalType) {
   const isBuy = trade.signal_type === 'Enter Long' || trade.signal_type === 'Buy';
+  
+  // ===== CRITICAL FIX: Mark as executed IMMEDIATELY =====
+  const executed = executedCheckpoints.get(trade.id) || new Set();
+  
+  // Check if already executed (race condition protection)
+  if (executed.has(checkpoint.name)) {
+    console.log(`⚠️  Checkpoint "${checkpoint.name}" already executed for ${trade.symbol} - skipping`);
+    return { success: false, reason: 'Already executed' };
+  }
+  
+  // Mark as executed BEFORE processing
+  executed.add(checkpoint.name);
+  executedCheckpoints.set(trade.id, executed);
+  // =====================================================
+  
   const results = [];
-
-  console.log(`\nEXECUTING CHECKPOINT: ${checkpoint.name} for ${trade.symbol}`);
+  console.log(`\n🎯 EXECUTING CHECKPOINT: ${checkpoint.name} for ${trade.symbol}`);
 
   for (const action of checkpoint.actions) {
     try {
@@ -269,107 +284,77 @@ async function executeManagementActions(trade, checkpoint, currentPrice, atr, si
       await logManagementAction(trade.id, checkpoint, action, result, currentPrice, atr);
 
     } catch (error) {
-      console.error(`Action failed:`, error.message);
+      console.error(`❌ Action failed:`, error.message);
       results.push({ success: false, error: error.message });
     }
   }
 
-  // Mark checkpoint as executed
-  const executed = executedCheckpoints.get(trade.id) || new Set();
-  executed.add(checkpoint.name);
-  executedCheckpoints.set(trade.id, executed);
-
   // Send notification
   await sendManagementNotification(trade, checkpoint, results, currentPrice, signalType);
 
-  console.log(`Checkpoint "${checkpoint.name}" completed for ${trade.symbol}\n`);
+  console.log(`✅ Checkpoint "${checkpoint.name}" completed for ${trade.symbol}\n`);
 
   return { success: true, results };
 }
 
 /**
- * Execute a single action (move_sl or close_partial)
+ * Check if a trade needs management action
+ * FIXED: Better logging to detect race conditions
  */
-async function executeAction(trade, action, currentPrice, atr, isBuy) {
-  if (action.type === 'move_sl') {
-    const newSL = calculateNewSL(trade, action.target, currentPrice, atr, isBuy);
-    
-    // Update database
-    await supabase
-      .from('signals')
-      .update({ updated_sl: newSL })
-      .eq('id', trade.id);
-
-    console.log(` Moved SL: ${trade.updated_sl || trade.sl} → ${newSL.toFixed(6)}`);
-
-    return {
-      success: true,
-      action: 'move_sl',
-      oldSL: trade.updated_sl || trade.sl,
-      newSL,
-      reason: action.reason
-    };
-
-  } else if (action.type === 'close_partial') {
-    const closePercent = action.percent;
-    const currentRemaining = trade.remaining_position || 1.0;
-    const newRemaining = currentRemaining - (closePercent / 100);
-
-    // Calculate partial P&L
-    const partialPnL = calculatePartialPnL(trade, currentPrice, closePercent / 100, isBuy);
-
-    // Update database
-    const updates = {
-      remaining_position: Math.max(0, newRemaining)
-    };
-
-    // If this was a partial close with accumulated P&L
-    if (trade.partial_raw_pnl_pct !== null) {
-      updates.partial_raw_pnl_pct = (trade.partial_raw_pnl_pct || 0) + partialPnL.rawPnlPct;
-      updates.partial_net_pnl_pct = (trade.partial_net_pnl_pct || 0) + partialPnL.netPnlPct;
-      updates.partial_custom_pnl = (trade.partial_custom_pnl || 0) + partialPnL.customPnl;
-    } else {
-      updates.partial_raw_pnl_pct = partialPnL.rawPnlPct;
-      updates.partial_net_pnl_pct = partialPnL.netPnlPct;
-      updates.partial_custom_pnl = partialPnL.customPnl;
-    }
-
-    // If fully closed
-    if (newRemaining <= 0) {
-      updates.status = 'closed';
-      updates.close_time = new Date().toISOString();
-      updates.exit_price = currentPrice;
-      
-      // Calculate final P&L
-      const finalPnL = calculateFinalPnL(trade, currentPrice, isBuy, updates);
-      updates.raw_pnl_percentage = finalPnL.rawPnlPct;
-      updates.pnl_percentage = finalPnL.netPnlPct;
-      updates.custom_pnl = finalPnL.customPnl;
-    }
-
-    await supabase
-      .from('signals')
-      .update(updates)
-      .eq('id', trade.id);
-
-    console.log(`Closed ${closePercent}%: Remaining ${(newRemaining * 100).toFixed(0)}%`);
-
-    return {
-      success: true,
-      action: 'close_partial',
-      closePercent,
-      newRemaining: newRemaining * 100,
-      pnl: partialPnL,
-      reason: action.reason,
-      fullyClosed: newRemaining <= 0
-    };
+async function checkTradeManagement(trade, currentPrice, atr) {
+  // Only manage DEFAULT system trades
+  if (trade.signal_source === 'fast') {
+    return { needsAction: false, reason: 'Fast signal - not managed' };
   }
 
-  return { success: false, error: 'Unknown action type' };
+  // Only manage opened trades
+  if (trade.status !== 'opened') {
+    return { needsAction: false, reason: 'Trade not opened' };
+  }
+
+  // Get signal type and rules
+  const signalType = getSignalType(trade);
+  const rules = MANAGEMENT_RULES[signalType] || DEFAULT_RULES;
+
+  // Calculate current profit in ATR
+  const isBuy = trade.signal_type === 'Enter Long' || trade.signal_type === 'Buy';
+  const profitATR = calculateProfitATR(trade.entry, currentPrice, atr, isBuy);
+
+  // Get executed checkpoints for this trade
+  if (!executedCheckpoints.has(trade.id)) {
+    await loadExecutedCheckpoints(trade.id);
+  }
+
+  const executed = executedCheckpoints.get(trade.id);
+
+  // Find the next checkpoint to execute
+  for (const checkpoint of rules.checkpoints) {
+    // Skip if already executed
+    if (executed.has(checkpoint.name)) {
+      continue;
+    }
+
+    // Check if checkpoint is reached
+    if (profitATR >= checkpoint.profitATR) {
+      console.log(`📊 ${trade.symbol}: Profit ${profitATR.toFixed(2)} ATR → Checkpoint "${checkpoint.name}" ready`);
+      
+      return {
+        needsAction: true,
+        checkpoint,
+        signalType,
+        profitATR,
+        currentPrice,
+        atr
+      };
+    }
+  }
+
+  return { needsAction: false, reason: 'No checkpoint reached' };
 }
 
 /**
  * Calculate new stop loss based on target specification
+ * FIXED: Properly handles SHORT trades - "entry+X" means tighter SL for shorts
  */
 function calculateNewSL(trade, target, currentPrice, atr, isBuy) {
   const entry = trade.entry;
@@ -386,14 +371,48 @@ function calculateNewSL(trade, target, currentPrice, atr, isBuy) {
 
   const operator = match[1];
   const atrMultiple = parseFloat(match[2]);
-
-  if (operator === '+') {
-    return entry + (atr * atrMultiple);
+  
+  // CRITICAL: For SHORT trades, the logic is INVERTED
+  // "entry+0.5" for a SHORT means SL moves DOWN (tighter), not up
+  // "entry+0.5" for a LONG means SL moves UP (tighter)
+  
+  if (isBuy) {
+    // LONG: + moves SL up (tighter), - moves SL down (looser)
+    if (operator === '+') {
+      return entry + (atr * atrMultiple);
+    } else {
+      return entry - (atr * atrMultiple);
+    }
   } else {
-    return entry - (atr * atrMultiple);
+    // SHORT: + moves SL down (tighter), - moves SL up (looser)
+    if (operator === '+') {
+      return entry - (atr * atrMultiple);  // INVERTED for shorts!
+    } else {
+      return entry + (atr * atrMultiple);  // INVERTED for shorts!
+    }
   }
 }
 
+/**
+ * Additional safeguard: Load checkpoints and verify before execution
+ */
+async function loadExecutedCheckpoints(tradeId) {
+  const { data, error } = await supabase
+    .from('trade_management_log')
+    .select('checkpoint_name')
+    .eq('trade_id', tradeId);
+
+  if (error) {
+    console.error('Error loading checkpoints:', error);
+    executedCheckpoints.set(tradeId, new Set());
+    return;
+  }
+
+  const executed = new Set(data.map(row => row.checkpoint_name));
+  executedCheckpoints.set(tradeId, executed);
+  
+  console.log(`📋 Loaded ${executed.size} executed checkpoints for trade ${tradeId}`);
+}
 /**
  * Calculate partial P&L for a position close
  */
