@@ -1156,7 +1156,7 @@ R:R → TP1: 1:${rrTP1} | TP2: 1:${rrTP2}
 ${slResult.wasAdjusted ? '⚠️ SL adjusted to max allowed\n' : ''}${signal.orderFlow ? `📊 Order Flow: ${signal.orderFlow.score.toFixed(1)} (${signal.orderFlow.strength})\n` : ''}${signal.sweepData ? `🎣 Sweep Quality: ${signal.sweepData.quality}% (${signal.sweepData.confidence || 'N/A'})\n` : ''}`;
 
   try {
-    await sendTelegramNotification(message1, message2, symbol);
+    await sendTelegramNotification(message1, message2, symbol, true);
     console.log(`✅ ${symbol}: Telegram sent`);
     
     alertedSignals.set(key, now);
