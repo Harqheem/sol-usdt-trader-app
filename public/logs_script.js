@@ -113,6 +113,25 @@ function getOutcome(signal) {
   return 'SL';
 }
 
+function getCurrentSL(signal) {
+  if (!signal.entry) return '-';
+  
+  // Use updated_sl if it exists and is different from original sl
+  const currentSL = signal.updated_sl || signal.sl;
+  
+  if (!currentSL) return '-';
+  
+  // Show if SL has been modified
+  const isModified = signal.updated_sl && signal.updated_sl !== signal.sl;
+  const decimals = signal.decimals || 4;
+  
+  return {
+    value: currentSL.toFixed(decimals),
+    isModified: isModified,
+    originalSL: signal.sl ? signal.sl.toFixed(decimals) : '-'
+  };
+}
+
 async function fetchSignals() {
   const systemLabel = currentSystem === 'all' ? 'ALL SYSTEMS' : currentSystem.toUpperCase() + ' SYSTEM';
   
@@ -244,8 +263,9 @@ function getSortValue(signal, column) {
       return signal.signal_type || '';
     case 'system':
       return signal.signal_source === 'fast' ? 1 : 0;
+    case 'current-sl':
+      return signal.updated_sl || signal.sl || 0;
     case 'outcome':
-      // ✅ UPDATED: Proper outcome ordering
       const outcomeOrder = { 
         'TP': 6, 
         'Trail Stop': 5,
@@ -348,45 +368,56 @@ function renderTableAndSummary() {
   const fragment = document.createDocumentFragment();
   
   currentData.forEach((signal) => {
-    const { customPnlDollars, customPnlPct } = calculateCustomPnL(signal);
-    const filledQty = calculateFilledQty(signal);
-    const outcomeTd = currentTab === 'results' ? `<td>${getOutcome(signal)}</td>` : '';
-    
-    const displayTime = currentTab === 'results' ? signal.close_time : signal.timestamp;
-    
-    const isPending = signal.status === 'pending';
-    const checkboxTd = (hasPendingTrades && currentTab === 'logs') 
-      ? `<td class="checkbox-cell" onclick="event.stopPropagation();">
-           ${isPending ? `<input type="checkbox" class="trade-checkbox" data-trade-id="${signal.id}">` : ''}
-         </td>` 
-      : '';
-    
-    const isLong = signal.signal_type === 'Enter Long' || signal.signal_type === 'Buy';
-    
-    const systemBadge = signal.signal_source === 'fast' 
-      ? '<span style="background: #fef3c7; color: #92400e; padding: 8px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">⚡ FAST</span>'
-      : '<span style="background: #e0e7ff; color: #4338ca; padding: 8px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">📊 DEFAULT</span>';
-    
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      ${checkboxTd}
-      <td>${formatTime(displayTime)}</td>
-      <td>${signal.symbol}</td>
-      <td class="${isLong ? 'signal-long' : 'signal-short'}">${signal.signal_type}</td>
-      <td>${systemBadge}</td>
-      ${outcomeTd}
-      <td class="${signal.raw_pnl_percentage > 0 ? 'pnl-positive' : signal.raw_pnl_percentage < 0 ? 'pnl-negative' : ''}">${signal.raw_pnl_percentage ? signal.raw_pnl_percentage.toFixed(2) + '%' : '-'}</td>
-      <td class="${customPnlPct > 0 ? 'pnl-positive' : customPnlPct < 0 ? 'pnl-negative' : ''}">${customPnlPct !== 0 ? customPnlPct.toFixed(2) + '%' : '-'}</td>
-      <td class="${customPnlDollars > 0 ? 'pnl-positive' : customPnlDollars < 0 ? 'pnl-negative' : ''}">${customPnlDollars !== 0 ? '$' + customPnlDollars.toFixed(2) : '-'}</td>
-      <td class="status-badge ${getStatusClass(signal.status)}">${signal.status.charAt(0).toUpperCase() + signal.status.slice(1)}</td>
-    `;
-    row.addEventListener('click', (e) => {
-      if (!e.target.classList.contains('trade-checkbox')) {
-        showDetails(signal);
-      }
-    });
-    fragment.appendChild(row);
+  const { customPnlDollars, customPnlPct } = calculateCustomPnL(signal);
+  const filledQty = calculateFilledQty(signal);
+  const outcomeTd = currentTab === 'results' ? `<td>${getOutcome(signal)}</td>` : '';
+  
+  const displayTime = currentTab === 'results' ? signal.close_time : signal.timestamp;
+  
+  const isPending = signal.status === 'pending';
+  const checkboxTd = (hasPendingTrades && currentTab === 'logs') 
+    ? `<td class="checkbox-cell" onclick="event.stopPropagation();">
+         ${isPending ? `<input type="checkbox" class="trade-checkbox" data-trade-id="${signal.id}">` : ''}
+       </td>` 
+    : '';
+  
+  const isLong = signal.signal_type === 'Enter Long' || signal.signal_type === 'Buy';
+  
+  const systemBadge = signal.signal_source === 'fast' 
+    ? '<span style="background: #fef3c7; color: #92400e; padding: 8px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">⚡ FAST</span>'
+    : '<span style="background: #e0e7ff; color: #4338ca; padding: 8px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">📊 DEFAULT</span>';
+  
+  // 🆕 Get Current SL data
+  const currentSLData = getCurrentSL(signal);
+  let currentSLDisplay = currentSLData.value;
+  
+  // Add indicator if SL has been modified
+  if (currentSLData.isModified) {
+    currentSLDisplay = `<span style="color: #059669; font-weight: 600;" title="Modified from ${currentSLData.originalSL}">${currentSLData.value} ✓</span>`;
+  }
+  
+  const row = document.createElement('tr');
+  row.innerHTML = `
+    ${checkboxTd}
+    <td>${formatTime(displayTime)}</td>
+    <td>${signal.symbol}</td>
+    <td class="${isLong ? 'signal-long' : 'signal-short'}">${signal.signal_type}</td>
+    <td>${systemBadge}</td>
+    <td>${currentSLDisplay}</td>
+    ${outcomeTd}
+    <td class="${signal.raw_pnl_percentage > 0 ? 'pnl-positive' : signal.raw_pnl_percentage < 0 ? 'pnl-negative' : ''}">${signal.raw_pnl_percentage ? signal.raw_pnl_percentage.toFixed(2) + '%' : '-'}</td>
+    <td class="${customPnlPct > 0 ? 'pnl-positive' : customPnlPct < 0 ? 'pnl-negative' : ''}">${customPnlPct !== 0 ? customPnlPct.toFixed(2) + '%' : '-'}</td>
+    <td class="${customPnlDollars > 0 ? 'pnl-positive' : customPnlDollars < 0 ? 'pnl-negative' : ''}">${customPnlDollars !== 0 ? '$' + customPnlDollars.toFixed(2) : '-'}</td>
+    <td class="status-badge ${getStatusClass(signal.status)}">${signal.status.charAt(0).toUpperCase() + signal.status.slice(1)}</td>
+  `;
+  row.addEventListener('click', (e) => {
+    if (!e.target.classList.contains('trade-checkbox')) {
+      showDetails(signal);
+    }
   });
+  fragment.appendChild(row);
+});
+
   
   tableBody.appendChild(fragment);
   
@@ -549,6 +580,7 @@ bulkTerminateBtn.addEventListener('click', async () => {
 function showDetails(signal) {
   const { customPnlDollars, customPnlPct } = calculateCustomPnL(signal);
   const filledQty = calculateFilledQty(signal);
+  const currentSLData = getCurrentSL(signal);
   
   let rawPnlHTML = '-';
   if (signal.raw_pnl_percentage !== null && signal.raw_pnl_percentage !== undefined) {
@@ -581,6 +613,15 @@ function showDetails(signal) {
     ? `<button id="terminate-trade-btn" class="btn btn-danger" style="margin-top: 20px; width: 100%;">🚫 Terminate This Trade</button>` 
     : '';
   
+  // 🆕 Add SL modification info
+  let slInfoHTML = `<p><strong>Original SL:</strong> ${signal.sl ? signal.sl.toFixed(4) : '-'}</p>`;
+  if (currentSLData.isModified) {
+    slInfoHTML += `<p><strong>Current SL:</strong> <span style="color: #059669; font-weight: 600;">${currentSLData.value} ✓ (Modified)</span></p>`;
+    slInfoHTML += `<p style="font-size: 0.9em; color: #666; margin-left: 20px;">Stop loss has been adjusted by trade management</p>`;
+  } else {
+    slInfoHTML += `<p><strong>Current SL:</strong> ${currentSLData.value}</p>`;
+  }
+  
   sheetContent.innerHTML = `
     <h3>Trade Details ${signalSourceBadge}</h3>
     <p><strong>Timestamp:</strong> ${formatTime(signal.timestamp)}</p>
@@ -591,7 +632,7 @@ function showDetails(signal) {
     <p><strong>Filled Qty:</strong> ${filledQty}</p>
     <p><strong>TP1:</strong> ${signal.tp1 ? signal.tp1.toFixed(4) : '-'}</p>
     <p><strong>TP2:</strong> ${signal.tp2 ? signal.tp2.toFixed(4) : '-'}</p>
-    <p><strong>SL:</strong> ${signal.sl ? signal.sl.toFixed(4) : '-'}</p>
+    ${slInfoHTML}
     <p><strong>Position Size:</strong> ${signal.position_size ? '$' + signal.position_size.toFixed(2) : '-'}</p>
     <p><strong>Leverage:</strong> ${signal.leverage || '-'}x</p>
     <p><strong>Remaining Position:</strong> ${signal.remaining_position !== null && signal.remaining_position !== undefined ? (signal.remaining_position * 100).toFixed(0) + '%' : '100%'}</p>
