@@ -117,11 +117,13 @@ async function loadTodayStats() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   
-  // ⭐ CRITICAL: Only load DEFAULT system trades
+  // ✅ CRITICAL: Only load DEFAULT system trades that were OPENED or CLOSED
+  // Pending/expired/terminated trades don't count
   const { data: trades, error } = await supabase
     .from('signals')
     .select('*')
-    .eq('signal_source', 'default')  // ⭐ FILTER: Only default trades
+    .eq('signal_source', 'default')  // Only default trades
+    .in('status', ['opened', 'closed'])  // ✅ FIX: Only count executed trades
     .gte('timestamp', today.toISOString())
     .order('timestamp', { ascending: true });
   
@@ -135,7 +137,7 @@ async function loadTodayStats() {
     return;
   }
   
-  console.log(`📊 Loading ${trades.length} DEFAULT trades from today...`);
+  console.log(`📊 Loading ${trades.length} DEFAULT trades from today (opened/closed only)...`);
   
   // Process each trade
   for (const trade of trades) {
@@ -151,14 +153,16 @@ async function loadTodayStats() {
       };
     }
     
-    // Count trade
+    // ✅ Count trade (only opened/closed count toward limits)
     riskState.dailyStats.tradesCount++;
     riskState.symbolStats[symbol].trades++;
-    riskState.symbolStats[symbol].lastTradeTime = new Date(trade.timestamp).getTime();
+    
+    // Use open_time for opened trades, timestamp for others
+    const tradeTime = trade.open_time || trade.timestamp;
+    riskState.symbolStats[symbol].lastTradeTime = new Date(tradeTime).getTime();
     
     // Count closed trades for P&L and consecutive losses
     if (trade.status === 'closed') {
-      // ⭐ USE PERCENTAGE P&L (already in database as pnl_percentage)
       const pnlPct = trade.pnl_percentage || 0;
       riskState.dailyStats.pnlPct += pnlPct;
       
@@ -169,7 +173,7 @@ async function loadTodayStats() {
     }
   }
   
-  // Recalculate consecutive losses from closed trades
+  // Recalculate consecutive losses from closed trades only
   const closedTrades = trades
     .filter(t => t.status === 'closed')
     .sort((a, b) => new Date(b.close_time) - new Date(a.close_time));
@@ -193,6 +197,37 @@ async function loadTodayStats() {
     symbols: Object.keys(riskState.symbolStats).length
   });
 }
+
+// ============================================
+// RECORD NEW TRADE (DEFAULT ONLY)
+// ============================================
+
+function recordNewTrade(symbol) {
+  // ✅ This is called when trade status changes to 'opened'
+  // NOT when it's first logged as 'pending'
+  
+  // Update daily stats
+  riskState.dailyStats.tradesCount++;
+  
+  // Initialize symbol stats if needed
+  if (!riskState.symbolStats[symbol]) {
+    riskState.symbolStats[symbol] = {
+      trades: 0,
+      losses: 0,
+      lastTradeTime: null,
+      lastLossTime: null
+    };
+  }
+  
+  // Update symbol stats
+  riskState.symbolStats[symbol].trades++;
+  riskState.symbolStats[symbol].lastTradeTime = Date.now();
+  
+  console.log(`📊 DEFAULT trade OPENED for ${symbol}`);
+  console.log(`   Daily: ${riskState.dailyStats.tradesCount}/${RISK_PARAMS.maxDailyTrades}`);
+  console.log(`   ${symbol}: ${riskState.symbolStats[symbol].trades}/${RISK_PARAMS.maxSymbolTradesPerDay}`);
+}
+
 
 // ============================================
 // CHECK PAUSE STATUS

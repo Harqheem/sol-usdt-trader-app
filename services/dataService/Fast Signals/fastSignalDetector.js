@@ -1132,7 +1132,7 @@ async function sendFastAlert(symbol, signal, currentPrice, atr, assetConfig) {
 
   const message1 = `⚡ URGENT ${symbol}
 ✅ ${signal.direction} - ${signal.urgency} URGENCY
-LEVERAGE: 20x
+LEVERAGE: 50x
 
 Entry: ${actualEntry.toFixed(decimals)}
 TP1: ${tp1.toFixed(decimals)}
@@ -1172,7 +1172,7 @@ ${slResult.wasAdjusted ? '⚠️ SL adjusted to max allowed\n' : ''}${signal.ord
       tp2: tp2,
       sl: finalSL,
       positionSize: positionSize,
-      leverage: 20,
+      leverage: 50,
       confidence: signal.confidence
     }, 'opened', null, 'fast');
     

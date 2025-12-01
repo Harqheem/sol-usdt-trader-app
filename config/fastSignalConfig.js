@@ -9,7 +9,7 @@ module.exports = {
   checkInterval: 2000, // 2 seconds
   
   // Cooldown between alerts (prevent overtrading same symbol)
-  alertCooldown: 7200000, // 2 hours
+  alertCooldown: 14400000, // 4 hours
   
   // Signal type settings
   signals: {
@@ -111,19 +111,19 @@ module.exports = {
   stopLoss: {
     liquiditySweep: {
       atrMultiplier: 0.8,           // Stop below/above sweep point (was 0.4)
-      maxStopPercent: 0.018,        // Max 1.8% stop loss (was 1.0%)
+      maxStopPercent: 0.01,        // Max 1.8% stop loss (was 1.0%)
       useSwipePoint: true,          // Use actual sweep level
       bufferATR: 0.2                // Additional buffer below sweep point
     },
     divergence: {
       atrMultiplier: 1.0,           // Stop below/above swing point (was 0.5)
-      maxStopPercent: 0.020,        // Max 2.0% stop for divergences (was 1.2%)
+      maxStopPercent: 0.01,        // Max 2.0% stop for divergences (was 1.2%)
       useSwingPoint: true,          // Use swing high/low
       bufferATR: 0.3                // Additional buffer below swing
     },
     cvdDivergence: {
       atrMultiplier: 1.0,           // Stop below/above swing point (same as RSI)
-      maxStopPercent: 0.020,        // Max 2.0% stop
+      maxStopPercent: 0.01,        // Max 2.0% stop
       useSwingPoint: true,          // Use swing high/low that created divergence
       bufferATR: 0.3                // Additional buffer
     }
@@ -133,7 +133,7 @@ module.exports = {
   // TAKE PROFIT TARGETS
   // ========================================
   takeProfit: {
-    tp1Multiplier: 1.0,             // 1R - risk $10 to make $10
+    tp1Multiplier: 0.7,             // 1R - risk $10 to make $10
     tp2Multiplier: 2.0,             // 2R - risk $10 to make $20
   },
   

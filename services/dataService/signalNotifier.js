@@ -6,7 +6,7 @@ const pauseService = require('../pauseService');
 
 // Tracks last notification time per symbol
 const lastNotificationTime = {};
-const NOTIFICATION_COOLDOWN = 2 * 60 * 60 * 1000; // 2 hours
+const NOTIFICATION_COOLDOWN = 6 * 60 * 60 * 1000; // 6 hours
 
 /**
  * Check if we should send a signal notification
@@ -93,28 +93,29 @@ async function checkAndSendSignal(symbol, analysisResult) {
     // ============================================
     
     console.log(`   💾 Logging signal to database...`);
-    
-    const signalData = {
-      signal: signal,
-      notes: analysisResult.signals.notes || 'No notes',
-      entry: parseFloat(entry),
-      tp1: parseFloat(tp1),
-      tp2: parseFloat(tp2),
-      sl: parseFloat(sl),
-      positionSize: parseFloat(positionSize),
-      leverage: 20,
-      entryATR: analysisResult.signals.entryATR || null,
-      entryADX: analysisResult.signals.entryADX || null,
-      entryRegime: analysisResult.signals.entryRegime || null
-    };
-    
+const signalData = {
+  signal: signal,
+  notes: analysisResult.signals.notes || 'No notes',
+  entry: parseFloat(entry),
+  tp1: parseFloat(tp1),
+  tp2: parseFloat(tp2),
+  sl: parseFloat(sl),
+  positionSize: parseFloat(positionSize),
+  leverage: 20,
+  entryATR: analysisResult.signals.entryATR || null,
+  entryADX: analysisResult.signals.entryADX || null,
+  entryRegime: analysisResult.signals.entryRegime || null
+};    
     try {
-      const tradeId = await logSignal(symbol, signalData, 'pending', null, signalSource);
-      console.log(`   ✅ Signal logged (ID: ${tradeId})`);
-    } catch (logError) {
-      console.error(`   ❌ Failed to log signal:`, logError.message);
-      // Continue to send notification even if logging fails
-    }
+  const tradeId = await logSignal(symbol, signalData, 'pending', null, signalSource);
+  console.log(`   ✅ Signal logged as PENDING (ID: ${tradeId})`);
+  
+  // ✅ DON'T call recordNewTrade here - pending trades don't count!
+  // It will be called when monitorService changes status to 'opened'
+  
+} catch (logError) {
+  console.error(`   ❌ Failed to log signal:`, logError.message);
+}
     
     // ============================================
     // STEP 7: SEND TELEGRAM NOTIFICATION

@@ -582,7 +582,7 @@ async function sendManagementNotification(trade, checkpoint, results, currentPri
   results.forEach((result, index) => {
     if (result.success) {
       if (result.action === 'move_sl') {
-        message1 += `Move SL from <strong> ${result.oldSL.toFixed(6)} to ${result.newSL.toFixed(6)}\n </strong>`;
+        message1 += `Move SL from ${result.oldSL.toFixed(6)} to ${result.newSL.toFixed(6)}\n`;
         message2 += `${index + 1}. ${result.reason}\n`;
       } else if (result.action === 'close_partial') {
         message1 += `Closed ${result.closePercent}% (${result.newRemaining.toFixed(0)}% remaining)\n`;

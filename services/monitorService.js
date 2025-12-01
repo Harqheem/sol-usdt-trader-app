@@ -298,6 +298,12 @@ async function handleEntryHit(trade, currentPrice, isBuy, isFastSignal) {
   await updateTrade(trade.id, updates);
   Object.assign(trade, updates);
   
+  // ✅ NEW: Record trade in risk management system
+  if (!isFastSignal) {
+    const { recordNewTrade } = require('./riskManager');
+    recordNewTrade(trade.symbol);
+  }
+  
   console.log(`✅ Opened ${trade.symbol} [${signalTag}] ${trade.signal_type} at ${currentPrice.toFixed(4)}`);
   
   setTimeout(() => {
