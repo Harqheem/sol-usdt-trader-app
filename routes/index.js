@@ -192,7 +192,7 @@ router.get('/api/management/active', async (req, res) => {
       
       // Calculate profit in ATR
       const isBuy = trade.signal_type.includes('Long');
-      const atr = cache?.atr || ((trade.tp1 - trade.entry) / 1.5); // Estimate ATR from TP1
+      const atr = cache?.atr || (Math.abs(trade.tp1 - trade.entry) / 1.5); // Estimate ATR from TP1
       const profitATR = isBuy 
         ? (currentPrice - trade.entry) / atr
         : (trade.entry - currentPrice) / atr;

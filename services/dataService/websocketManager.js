@@ -195,9 +195,9 @@ async function startSymbolStream(symbol) {
       
       if (candleClosed) {
         const closeTime = new Date(candle.closeTime).toLocaleTimeString();
-        console.log(`\n${'='.repeat(80)}`);
+        console.log(`\n_______________________`);
         console.log(`🕐 ${symbol}: 30m CANDLE CLOSED at ${closeTime}`);
-        console.log(`${'='.repeat(80)}`);
+        console.log(`_______________________`);
         
         // Trigger analysis
         const { triggerAnalysis } = require('./analysisScheduler');
@@ -215,7 +215,7 @@ async function startSymbolStream(symbol) {
           console.log(`⚠️ ${symbol}: Analysis unavailable - ${analysis?.error || 'Unknown error'}`);
         }
         
-        console.log(`${'='.repeat(80)}\n`);
+        console.log(`_______________________\n`);
       }
     });
     cleanupFunctions.push(kline30mCleanup);

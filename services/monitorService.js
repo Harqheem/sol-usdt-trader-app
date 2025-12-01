@@ -100,13 +100,13 @@ function subscribeToSymbol(symbol) {
     }
     
     const relevantTrades = openTradesCache.filter(t => t.symbol === symbol);
-    relevantTrades.forEach(trade => processPriceUpdate(trade, currentPrice));
+    // ✅ CHANGE: Use locked version
+    relevantTrades.forEach(trade => processPriceUpdateWithLock(trade, currentPrice));
   });
   
   subscriptions[symbol] = unsubscribe;
   console.log(`✅ Subscribed to ${symbol} futures ticker`);
 }
-
 // ========================================
 // MAIN PRICE UPDATE PROCESSOR
 // ========================================
@@ -151,37 +151,49 @@ async function processPriceUpdate(trade, currentPrice) {
 
     // OPENED TRADES
     if (trade.status === 'opened') {
-      // Calculate ATR for management
-      const atr = calculateATRForTrade(trade);
-      
-      // Check if management action is needed
-      const managementCheck = await checkTradeManagement(trade, currentPrice, atr);
-      
-      if (managementCheck.needsAction) {
-        console.log(`🎯 ${trade.symbol}: Management checkpoint reached - ${managementCheck.checkpoint.name}`);
+      // ✅ NEW: Check if management needs to act FIRST
+      if (!isFastSignal) {
+        const atr = calculateATRForTrade(trade);
+        const managementCheck = await checkTradeManagement(trade, currentPrice, atr);
         
-        // Execute the management actions
-        await executeManagementActions(
-          trade,
-          managementCheck.checkpoint,
-          currentPrice,
-          atr,
-          managementCheck.signalType
-        );
-        
-        // Refresh trade data after management
-        const { data: updatedTrade } = await supabase
-          .from('signals')
-          .select('*')
-          .eq('id', trade.id)
-          .single();
-        
-        if (updatedTrade) {
-          Object.assign(trade, updatedTrade);
+        if (managementCheck.needsAction) {
+          console.log(`🎯 ${trade.symbol}: Management checkpoint reached - ${managementCheck.checkpoint.name}`);
+          
+          // Execute management actions
+          await executeManagementActions(
+            trade,
+            managementCheck.checkpoint,
+            currentPrice,
+            atr,
+            managementCheck.signalType
+          );
+          
+          // ✅ CRITICAL: Refresh trade data AND skip monitor's own checks
+          const { data: updatedTrade } = await supabase
+            .from('signals')
+            .select('*')
+            .eq('id', trade.id)
+            .single();
+          
+          if (updatedTrade) {
+            Object.assign(trade, updatedTrade);
+            
+            // ✅ NEW: If management closed position, stop processing
+            if (updatedTrade.remaining_position === 0) {
+              console.log(`✅ Trade fully closed by management, skipping monitor checks`);
+              openTradesCache = openTradesCache.filter(t => t.id !== trade.id);
+              return;
+            }
+            
+            // ✅ NEW: If management just acted, skip this tick's TP/SL checks
+            // This prevents double-processing the same price level
+            console.log(`⏭️  Skipping monitor checks this tick (management just acted)`);
+            return;
+          }
         }
       }
       
-      // Continue with normal TP/SL checks
+      // ✅ MONITOR'S CHECKS (only if management didn't act above)
       let updates = {};
 
       // Check TP1 (partial close)
@@ -217,16 +229,12 @@ async function processPriceUpdate(trade, currentPrice) {
           
           if (stopHit) {
             const isActualLoss = isBuy ? (currentPrice < trade.entry) : (currentPrice > trade.entry);
-            
-            // ✅ FIX: Use proper terminology based on whether it's a loss or trailing stop
-            if (isActualLoss || currentSl === trade.entry) {
-              updates = await handleStopHit(trade, currentSl, isBuy, positionSize, leverage, remainingFraction, isFastSignal, isActualLoss);
-            }
+            updates = await handleStopHit(trade, currentSl, isBuy, positionSize, leverage, remainingFraction, isFastSignal, isActualLoss);
           }
         }
       }
 
-      // Apply updates
+      // Apply updates (only if monitor found something)
       if (Object.keys(updates).length > 0) {
         await updateTrade(trade.id, updates);
         Object.assign(trade, updates);
@@ -239,6 +247,30 @@ async function processPriceUpdate(trade, currentPrice) {
     }
   } catch (err) {
     console.error(`Processing error for ${trade.symbol}:`, err);
+  }
+}
+
+// ============================================
+// ADDITIONAL SAFEGUARD: Lock mechanism
+// ============================================
+
+const tradeProcessingLocks = new Set();
+
+async function processPriceUpdateWithLock(trade, currentPrice) {
+  // Check if trade is already being processed
+  if (tradeProcessingLocks.has(trade.id)) {
+    console.log(`⏸️  ${trade.symbol}: Already processing, skipping this tick`);
+    return;
+  }
+  
+  // Acquire lock
+  tradeProcessingLocks.add(trade.id);
+  
+  try {
+    await processPriceUpdate(trade, currentPrice);
+  } finally {
+    // Always release lock
+    tradeProcessingLocks.delete(trade.id);
   }
 }
 
