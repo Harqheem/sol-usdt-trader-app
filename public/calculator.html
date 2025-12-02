@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trade Calculator</title>
+  <link rel="stylesheet" href="shared-styles.css">
+  <style>
+    .calculator-container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .calculator-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--spacing-lg);
+      margin-bottom: var(--spacing-lg);
+    }
+
+    .input-card {
+      background: white;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-md);
+      padding: var(--spacing-xl);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .results-card {
+      background: #667eea;
+      color: white;
+      border-radius: var(--border-radius-md);
+      padding: var(--spacing-xl);
+      box-shadow: var(--shadow-lg);
+    }
+
+    .form-group {
+      margin-bottom: var(--spacing-lg);
+    }
+
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--gray-700);
+      margin-bottom: var(--spacing-sm);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 12px 16px;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-sm);
+      font-size: 15px;
+      font-family: var(--font-mono);
+      transition: all var(--transition-base);
+      background: white;
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .form-select {
+      width: 100%;
+      padding: 12px 16px;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-sm);
+      font-size: 15px;
+      font-weight: 500;
+      background: white;
+      cursor: pointer;
+      transition: all var(--transition-base);
+    }
+
+    .form-select:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .quick-paste-section {
+      background: var(--gray-50);
+      padding: var(--spacing-lg);
+      border-radius: var(--border-radius-sm);
+      margin-bottom: var(--spacing-lg);
+      border: 1px solid var(--gray-200);
+    }
+
+    .quick-paste-textarea {
+      width: 100%;
+      min-height: 120px;
+      padding: 12px 16px;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-sm);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      resize: vertical;
+      background: white;
+    }
+
+    .quick-paste-textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .parse-btn {
+      margin-top: var(--spacing-md);
+    }
+
+    .result-section {
+      margin-bottom: var(--spacing-xl);
+    }
+
+    .result-section:last-child {
+      margin-bottom: 0;
+    }
+
+    .result-title {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      opacity: 0.9;
+      margin-bottom: var(--spacing-md);
+    }
+
+    .result-value {
+      font-size: 32px;
+      font-weight: 700;
+      margin-bottom: var(--spacing-sm);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .result-subtitle {
+      font-size: 14px;
+      opacity: 0.8;
+    }
+
+    .result-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: var(--spacing-lg);
+      margin-top: var(--spacing-lg);
+    }
+
+    .result-item {
+      background: rgba(255, 255, 255, 0.1);
+      padding: var(--spacing-lg);
+      border-radius: var(--border-radius-sm);
+      backdrop-filter: blur(10px);
+    }
+
+    .result-item-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      opacity: 0.8;
+      margin-bottom: var(--spacing-sm);
+    }
+
+    .result-item-value {
+      font-size: 20px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .breakdown-card {
+      background: white;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--border-radius-md);
+      padding: var(--spacing-xl);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .breakdown-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .breakdown-table th {
+      text-align: left;
+      padding: var(--spacing-md);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--gray-500);
+      border-bottom: 2px solid var(--gray-200);
+    }
+
+    .breakdown-table td {
+      padding: var(--spacing-md);
+      font-size: 14px;
+      border-bottom: 1px solid var(--gray-100);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .breakdown-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .breakdown-table .label-col {
+      font-weight: 600;
+      color: var(--gray-700);
+    }
+
+    .breakdown-table .price-col {
+      font-family: var(--font-mono);
+      color: var(--gray-900);
+    }
+
+    .breakdown-table .pnl-col {
+      font-weight: 600;
+      text-align: right;
+    }
+
+    .pnl-positive {
+      color: var(--success);
+    }
+
+    .pnl-negative {
+      color: var(--danger);
+    }
+
+    .info-banner {
+      background: var(--info-light);
+      border: 1px solid var(--info);
+      border-left: 4px solid var(--info);
+      padding: var(--spacing-lg);
+      border-radius: var(--border-radius-sm);
+      margin-bottom: var(--spacing-lg);
+      display: flex;
+      gap: var(--spacing-md);
+    }
+
+    .info-icon {
+      font-size: 20px;
+      color: var(--info);
+      flex-shrink: 0;
+    }
+
+    .info-content {
+      flex: 1;
+    }
+
+    .info-title {
+      font-weight: 600;
+      color: var(--info);
+      margin-bottom: var(--spacing-xs);
+      font-size: 14px;
+    }
+
+    .info-text {
+      font-size: 13px;
+      color: var(--gray-700);
+      line-height: 1.6;
+    }
+
+    .error-message {
+      background: var(--danger-light);
+      border: 1px solid var(--danger);
+      border-left: 4px solid var(--danger);
+      color: var(--danger);
+      padding: var(--spacing-lg);
+      border-radius: var(--border-radius-sm);
+      margin-bottom: var(--spacing-lg);
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .position-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: var(--border-radius-sm);
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .position-long {
+      background: var(--success-light);
+      color: var(--success);
+      border: 1px solid var(--success);
+    }
+
+    .position-short {
+      background: var(--danger-light);
+      color: var(--danger);
+      border: 1px solid var(--danger);
+    }
+
+    @media (max-width: 768px) {
+      .calculator-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .result-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .result-value {
+        font-size: 24px;
+      }
+
+      .result-item-value {
+        font-size: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-header">
+    <div class="header-content">
+      <div class="header-brand">
+        <h1>Trade Calculator</h1>
+        <div class="header-subtitle">Calculate position sizes, risk/reward, and potential P&L</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="calculator-container">
+    <div class="info-banner">
+      <div class="info-icon">💡</div>
+      <div class="info-content">
+        <div class="info-title">Quick Paste Format</div>
+        <div class="info-text">
+          You can paste your trade setup in this format to auto-fill all fields:<br>
+          <code style="background: white; padding: 2px 6px; border-radius: 3px; font-family: var(--font-mono); font-size: 12px;">
+            ADAUSDT<br>
+            LEVERAGE: 20x<br>
+            Entry: 0.3918<br>
+            TP1: 0.4034<br>
+            TP2: 0.4150<br>
+            SL: 0.3841
+          </code>
+        </div>
+      </div>
+    </div>
+
+    <div class="card quick-paste-section">
+      <div class="form-label">Quick Paste Trade Setup</div>
+      <textarea 
+        id="quick-paste" 
+        class="quick-paste-textarea" 
+        placeholder="Paste your trade setup here (format shown above)..."
+      ></textarea>
+      <button id="parse-btn" class="btn btn-primary parse-btn">
+        📋 Parse & Calculate
+      </button>
+    </div>
+
+    <div id="error-container"></div>
+
+    <div class="calculator-grid">
+      <div class="input-card">
+        <div class="card-header">Trade Parameters</div>
+        
+        <div class="form-group">
+          <label class="form-label">Symbol</label>
+          <select id="symbol" class="form-select">
+            <option value="SOLUSDT">SOL/USDT</option>
+            <option value="ETHUSDT">ETH/USDT</option>
+            <option value="SUIUSDT">SUI/USDT</option>
+            <option value="ADAUSDT">ADA/USDT</option>
+            <option value="BNBUSDT">BNB/USDT</option>
+            <option value="XRPUSDT">XRP/USDT</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Position Type</label>
+          <select id="position-type" class="form-select">
+            <option value="long">Long</option>
+            <option value="short">Short</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Leverage</label>
+          <input type="number" id="leverage" class="form-input" value="20" min="1" max="125" step="1">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Entry Price</label>
+          <input type="number" id="entry" class="form-input" placeholder="0.0000" step="any">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Take Profit 1 (50%)</label>
+          <input type="number" id="tp1" class="form-input" placeholder="0.0000" step="any">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Take Profit 2 (50%)</label>
+          <input type="number" id="tp2" class="form-input" placeholder="0.0000" step="any">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Stop Loss</label>
+          <input type="number" id="sl" class="form-input" placeholder="0.0000" step="any">
+        </div>
+
+        <button id="calculate-btn" class="btn btn-primary" style="width: relative;">
+          🧮 Calculate Results
+        </button>
+      </div>
+
+      <div class="results-card" id="results-card">
+        <div class="result-section">
+          <div class="result-title">Expected Return</div>
+          <div class="result-value" id="avg-return">-</div>
+          <div class="result-subtitle">Average return from both TPs</div>
+        </div>
+
+        <div class="result-grid">
+          <div class="result-item">
+            <div class="result-item-label">Risk Amount</div>
+            <div class="result-item-value" id="risk-amount">-</div>
+          </div>
+          <div class="result-item">
+            <div class="result-item-label">Risk:Reward</div>
+            <div class="result-item-value" id="risk-reward">-</div>
+          </div>
+          <div class="result-item">
+            <div class="result-item-label">TP1 Return</div>
+            <div class="result-item-value" id="tp1-return">-</div>
+          </div>
+          <div class="result-item">
+            <div class="result-item-label">TP2 Return</div>
+            <div class="result-item-value" id="tp2-return">-</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="breakdown-card" id="breakdown-card" style="display: none;">
+      <div class="card-header">Detailed Breakdown</div>
+      <table class="breakdown-table">
+        <thead>
+          <tr>
+            <th>Level</th>
+            <th>Price</th>
+            <th>Move %</th>
+            <th>Position %</th>
+            <th>P&L %</th>
+          </tr>
+        </thead>
+        <tbody id="breakdown-tbody">
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="navigation.js"></script>
+  <script>
+    // Symbol decimal configurations
+    const SYMBOL_CONFIG = {
+      'SOLUSDT': { decimals: 2, minMove: 0.01 },
+      'ETHUSDT': { decimals: 2, minMove: 0.01 },
+      'SUIUSDT': { decimals: 4, minMove: 0.0001 },
+      'ADAUSDT': { decimals: 4, minMove: 0.0001 },
+      'BNBUSDT': { decimals: 2, minMove: 0.01 },
+      'XRPUSDT': { decimals: 4, minMove: 0.0001 }
+    };
+
+    function formatPrice(price, symbol) {
+      const config = SYMBOL_CONFIG[symbol];
+      return parseFloat(price).toFixed(config.decimals);
+    }
+
+    function formatPercent(value) {
+      return (value >= 0 ? '+' : '') + value.toFixed(2) + '%';
+    }
+
+    function showError(message) {
+      const errorContainer = document.getElementById('error-container');
+      errorContainer.innerHTML = `<div class="error-message">❌ ${message}</div>`;
+      setTimeout(() => {
+        errorContainer.innerHTML = '';
+      }, 5000);
+    }
+
+    function parseQuickPaste() {
+      const text = document.getElementById('quick-paste').value.trim();
+      
+      if (!text) {
+        showError('Please paste your trade setup first');
+        return;
+      }
+
+      try {
+        const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+        
+        // Parse symbol
+        const symbol = lines[0].toUpperCase();
+        if (!SYMBOL_CONFIG[symbol]) {
+          throw new Error(`Unsupported symbol: ${symbol}`);
+        }
+        document.getElementById('symbol').value = symbol;
+
+        // Parse leverage
+        const leverageLine = lines.find(l => l.toLowerCase().includes('leverage'));
+        if (leverageLine) {
+          const leverage = parseInt(leverageLine.match(/\d+/)[0]);
+          document.getElementById('leverage').value = leverage;
+        }
+
+        // Parse entry
+        const entryLine = lines.find(l => l.toLowerCase().startsWith('entry'));
+        if (entryLine) {
+          const entry = parseFloat(entryLine.split(':')[1].trim());
+          document.getElementById('entry').value = entry;
+        }
+
+        // Parse TP1
+        const tp1Line = lines.find(l => l.toLowerCase().includes('tp1'));
+        if (tp1Line) {
+          const tp1 = parseFloat(tp1Line.split(':')[1].trim());
+          document.getElementById('tp1').value = tp1;
+        }
+
+        // Parse TP2
+        const tp2Line = lines.find(l => l.toLowerCase().includes('tp2'));
+        if (tp2Line) {
+          const tp2 = parseFloat(tp2Line.split(':')[1].trim());
+          document.getElementById('tp2').value = tp2;
+        }
+
+        // Parse SL
+        const slLine = lines.find(l => l.toLowerCase().startsWith('sl'));
+        if (slLine) {
+          const sl = parseFloat(slLine.split(':')[1].trim());
+          document.getElementById('sl').value = sl;
+        }
+
+        // Detect position type
+        const entry = parseFloat(document.getElementById('entry').value);
+        const tp1 = parseFloat(document.getElementById('tp1').value);
+        
+        if (entry && tp1) {
+          const isLong = tp1 > entry;
+          document.getElementById('position-type').value = isLong ? 'long' : 'short';
+        }
+
+        // Auto calculate
+        calculateResults();
+
+      } catch (error) {
+        showError('Failed to parse trade setup: ' + error.message);
+      }
+    }
+
+    function calculateResults() {
+      // Get inputs
+      const symbol = document.getElementById('symbol').value;
+      const positionType = document.getElementById('position-type').value;
+      const leverage = parseFloat(document.getElementById('leverage').value);
+      const entry = parseFloat(document.getElementById('entry').value);
+      const tp1 = parseFloat(document.getElementById('tp1').value);
+      const tp2 = parseFloat(document.getElementById('tp2').value);
+      const sl = parseFloat(document.getElementById('sl').value);
+
+      // Validate
+      if (!entry || !tp1 || !tp2 || !sl || !leverage) {
+        showError('Please fill in all fields');
+        return;
+      }
+
+      const isLong = positionType === 'long';
+
+      // Validate logic
+      if (isLong) {
+        if (tp1 <= entry || tp2 <= entry || sl >= entry) {
+          showError('For LONG: TP1 and TP2 must be > Entry, SL must be < Entry');
+          return;
+        }
+      } else {
+        if (tp1 >= entry || tp2 >= entry || sl <= entry) {
+          showError('For SHORT: TP1 and TP2 must be < Entry, SL must be > Entry');
+          return;
+        }
+      }
+
+      // Calculate price moves (%)
+      const tp1Move = isLong ? ((tp1 - entry) / entry * 100) : ((entry - tp1) / entry * 100);
+      const tp2Move = isLong ? ((tp2 - entry) / entry * 100) : ((entry - tp2) / entry * 100);
+      const slMove = isLong ? ((sl - entry) / entry * 100) : ((entry - sl) / entry * 100);
+
+      // Calculate leveraged P&L
+      const tp1PnL = tp1Move * leverage * 0.5; // 50% position
+      const tp2PnL = tp2Move * leverage * 0.5; // 50% position
+      const slPnL = slMove * leverage; // 100% position
+
+      const avgReturn = tp1PnL + tp2PnL;
+      const riskAmount = Math.abs(slPnL);
+      const riskReward = avgReturn / riskAmount;
+
+      // Update results
+      document.getElementById('avg-return').textContent = formatPercent(avgReturn);
+      document.getElementById('risk-amount').textContent = formatPercent(riskAmount);
+      document.getElementById('risk-reward').textContent = riskReward.toFixed(2) + ':1';
+      document.getElementById('tp1-return').textContent = formatPercent(tp1PnL);
+      document.getElementById('tp2-return').textContent = formatPercent(tp2PnL);
+
+      // Build breakdown table
+      const tbody = document.getElementById('breakdown-tbody');
+      tbody.innerHTML = `
+        <tr>
+          <td class="label-col">Entry</td>
+          <td class="price-col">${formatPrice(entry, symbol)}</td>
+          <td>-</td>
+          <td>100%</td>
+          <td class="pnl-col">0.00%</td>
+        </tr>
+        <tr>
+          <td class="label-col">Take Profit 1</td>
+          <td class="price-col">${formatPrice(tp1, symbol)}</td>
+          <td>${formatPercent(tp1Move)}</td>
+          <td>50%</td>
+          <td class="pnl-col pnl-positive">${formatPercent(tp1PnL)}</td>
+        </tr>
+        <tr>
+          <td class="label-col">Take Profit 2</td>
+          <td class="price-col">${formatPrice(tp2, symbol)}</td>
+          <td>${formatPercent(tp2Move)}</td>
+          <td>50%</td>
+          <td class="pnl-col pnl-positive">${formatPercent(tp2PnL)}</td>
+        </tr>
+        <tr>
+          <td class="label-col">Stop Loss</td>
+          <td class="price-col">${formatPrice(sl, symbol)}</td>
+          <td>${formatPercent(slMove)}</td>
+          <td>100%</td>
+          <td class="pnl-col pnl-negative">${formatPercent(slPnL)}</td>
+        </tr>
+        <tr style="background: var(--gray-50); font-weight: 700;">
+          <td class="label-col">Average Return</td>
+          <td colspan="3">Both TPs Hit</td>
+          <td class="pnl-col ${avgReturn >= 0 ? 'pnl-positive' : 'pnl-negative'}">
+            ${formatPercent(avgReturn)}
+          </td>
+        </tr>
+      `;
+
+      document.getElementById('breakdown-card').style.display = 'block';
+    }
+
+    // Event listeners
+    document.getElementById('parse-btn').addEventListener('click', parseQuickPaste);
+    document.getElementById('calculate-btn').addEventListener('click', calculateResults);
+
+    // Auto-calculate on input change
+    const inputs = ['symbol', 'position-type', 'leverage', 'entry', 'tp1', 'tp2', 'sl'];
+    inputs.forEach(id => {
+      document.getElementById(id).addEventListener('input', () => {
+        const entry = document.getElementById('entry').value;
+        if (entry) {
+          calculateResults();
+        }
+      });
+    });
+  </script>
+</body>
+</html>

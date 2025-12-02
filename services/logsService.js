@@ -1,4 +1,4 @@
-// services/logsService.js - PROPERLY FIXED WITH DEBUG LOGGING
+// services/logsService.js - FIXED: Save entry conditions for dynamic management
 
 const { createClient } = require('@supabase/supabase-js');
 
@@ -8,7 +8,21 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 async function logSignal(symbol, signalData, status = 'pending', errorMessage = null, signalSource = 'default') {
   try {
-    const { signal, notes, entry, tp1, tp2, sl, positionSize, leverage = 20 } = signalData;
+    const { 
+      signal, 
+      notes, 
+      entry, 
+      tp1, 
+      tp2, 
+      sl, 
+      positionSize, 
+      leverage = 20,
+      // ✅ NEW: Extract entry conditions
+      entryATR,
+      entryADX,
+      entryRegime
+    } = signalData;
+    
     const timestamp = new Date().toISOString();
     
     let signalType = signal || 'Unknown';
@@ -33,7 +47,11 @@ async function logSignal(symbol, signalData, status = 'pending', errorMessage = 
       partial_pnl_percentage: null,
       signal_source: signalSource,
       last_review_time: null,
-      review_count: 0
+      review_count: 0,
+      // ✅ NEW: Save entry conditions for dynamic management
+      entry_atr: entryATR || null,
+      entry_adx: entryADX || null,
+      entry_regime: entryRegime || null
     };
     
     if (status === 'opened') {
@@ -52,16 +70,19 @@ async function logSignal(symbol, signalData, status = 'pending', errorMessage = 
     
     console.log(`✅ Signal logged for ${symbol} (ID: ${data[0].id}, Status: ${status}, Source: ${signalSource})`);
     
-    // ✅ NEW: Log entry conditions if present
-    if (signalData.entryATR && signalData.entryADX) {
-      console.log(`   📊 Entry conditions: ATR ${signalData.entryATR.toFixed(2)}, ADX ${signalData.entryADX.toFixed(1)}, Regime ${signalData.entryRegime || 'N/A'}`);
+    // ✅ IMPROVED: Log entry conditions if present
+    if (entryATR && entryADX) {
+      console.log(`   📊 Entry conditions: ATR ${entryATR.toFixed(2)}, ADX ${entryADX.toFixed(1)}${entryRegime ? `, Regime: ${entryRegime}` : ''}`);
+    } else {
+      console.log(`   ⚠️  Entry conditions not captured (won't be available for dynamic management)`);
     }
     
     return data[0].id;
   } catch (err) {
     console.error(`Log error for ${symbol}:`, err.message);
     throw err;
-  }}
+  }
+}
 
 async function getSignals(options = {}) {
   const { symbol, limit = 50, fromDate, toDate, status, signalSource } = options;
@@ -105,10 +126,6 @@ async function getSignals(options = {}) {
   return data;
 }
 
-/**
- * Get all open positions (for position tracking)
- * FIXED: Now uses Supabase instead of undefined pool
- */
 async function getOpenPositions() {
   try {
     const { data, error } = await supabase
@@ -129,10 +146,6 @@ async function getOpenPositions() {
   }
 }
 
-/**
- * Get trades that were closed since a given timestamp
- * Used for position tracking synchronization
- */
 async function getClosedTradesSince(sinceTimestamp) {
   try {
     const { data, error } = await supabase

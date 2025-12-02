@@ -11,7 +11,7 @@ const SYSTEM_CONFIG = {
   riskPerTrade: 0.02,
   leverage: 20,
   minRR: 1.5,
-  maxStopPct: 0.03,
+  maxStopPct: 0.025,
   
   // Signal requirements
   minADXForSMC: 20,           // Minimum ADX for SMC signals

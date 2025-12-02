@@ -54,6 +54,10 @@ function initializeNavigation() {
             <span class="nav-icon">📚</span>
             <span class="nav-text">Learning Center</span>
           </a>
+          <a href="/calculator.html" class="nav-item" data-page="calculator">
+            <span class="nav-icon">🧮</span>
+            <span class="nav-text">Trade Calculator</span>
+          </a>
         </div>
         
         <!-- System Info -->
