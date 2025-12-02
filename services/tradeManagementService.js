@@ -305,33 +305,29 @@ async function executeAction(trade, action, currentPrice, atr, isBuy) {
   if (action.type === 'move_sl') {
     const newSL = calculateNewSL(trade, action.target, currentPrice, atr, isBuy);
     
-    // Ensure we never widen stops
     const currentSL = trade.updated_sl || trade.sl;
     const wouldWiden = isBuy ? (newSL < currentSL) : (newSL > currentSL);
     
     if (wouldWiden) {
-      console.log(`   ⚠️  Stop widening rejected: ${currentSL.toFixed(6)} -> ${newSL.toFixed(6)}`);
       return { 
         success: false, 
         action: 'move_sl',
-        reason: 'Would widen stop - rejected',
-        oldSL: currentSL,
-        newSL: newSL
+        reason: 'Would widen stop - rejected'
       };
     }
     
-    // ✅ NEW: Check if this is a breakeven move
     const isBreakeven = Math.abs(newSL - trade.entry) / trade.entry < 0.001;
     
-    // Update database
+    // ✅ NEW: Track when SL is updated
     const { error } = await supabase
       .from('signals')
-      .update({ updated_sl: newSL })
+      .update({ 
+        updated_sl: newSL,
+        last_sl_update: new Date().toISOString() // ✅ Track update time
+      })
       .eq('id', trade.id);
     
     if (error) throw error;
-    
-    console.log(`   ✅ SL moved: ${currentSL.toFixed(6)} -> ${newSL.toFixed(6)}${isBreakeven ? ' (BREAKEVEN)' : ''}`);
     
     return { 
       success: true, 
@@ -339,9 +335,9 @@ async function executeAction(trade, action, currentPrice, atr, isBuy) {
       reason: action.reason,
       oldSL: currentSL,
       newSL: newSL,
-      isBreakeven: isBreakeven // ✅ NEW: Track for logging
+      isBreakeven: isBreakeven
     };
-    
+      
   } else if (action.type === 'close_partial') {
     const fraction = action.percent / 100;
     const pnl = calculatePartialPnL(trade, currentPrice, fraction, isBuy);

@@ -259,7 +259,7 @@ const tradeProcessingLocks = new Set();
 async function processPriceUpdateWithLock(trade, currentPrice) {
   // Check if trade is already being processed
   if (tradeProcessingLocks.has(trade.id)) {
-    console.log(`⏸️  ${trade.symbol}: Already processing, skipping this tick`);
+
     return;
   }
   

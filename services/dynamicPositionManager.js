@@ -1,41 +1,41 @@
 // services/dynamicPositionManager.js
-// DYNAMIC POSITION MANAGEMENT - FIXED: Use proper ATR/ADX calculations
+// DYNAMIC POSITION MANAGEMENT - FIXED: Per-trade review schedule
 
 const { supabase } = require('./logsService');
 const { wsCache } = require('./dataService/cacheManager');
 const { sendTelegramNotification } = require('./notificationService');
-const { calculateIndicators } = require('./dataService/indicatorCalculator'); // ✅ ADD THIS
-const { getAssetConfig } = require('../config/assetConfig'); // ✅ ADD THIS
+const { calculateIndicators } = require('./dataService/indicatorCalculator');
+const { getAssetConfig } = require('../config/assetConfig');
 
 // ============================================
 // CONFIGURATION
 // ============================================
 
 const REVIEW_CONFIG = {
-  reviewInterval: 2 * 60 * 60 * 1000,  // 2 hours
+  reviewInterval: 2 * 60 * 60 * 1000,  // 2 hours between reviews
   
   // ADX thresholds (realistic changes)
-  adxSignificantIncrease: 3,   // 3 points increase = strengthening trend
-  adxSignificantDecrease: 3,   // 3 points decrease = weakening trend
-  adxStrongTrend: 30,          // Above 30 = very strong trend
-  adxWeakTrend: 20,            // Below 20 = weak/choppy
+  adxSignificantIncrease: 3,
+  adxSignificantDecrease: 3,
+  adxStrongTrend: 30,
+  adxWeakTrend: 20,
   
   // ATR thresholds
-  atrExpansionRatio: 1.3,      // 30% increase = expanding volatility
-  atrContractionRatio: 0.7,    // 30% decrease = contracting volatility
+  atrExpansionRatio: 1.3,
+  atrContractionRatio: 0.7,
   
   // Adjustment limits
-  maxTPAdjustment: 0.5,        // Max 0.5x ATR adjustment per review
-  minProfitATR: 1.0,           // Never take profit below 1.0 ATR
-  maxProfitATR: 3.5,           // Never extend beyond 3.5 ATR
+  maxTPAdjustment: 0.5,
+  minProfitATR: 1.0,
+  maxProfitATR: 3.5,
   
   // Stop loss rules
-  neverWidenStops: true,       // CRITICAL: Never move SL away from entry
-  minStopDistance: 0.8,        // Minimum 0.8 ATR for stop
+  neverWidenStops: true,
+  minStopDistance: 0.8,
   
   // Breakeven triggers
-  breakevenAfterATR: 1.0,      // Move to BE after 1.0 ATR profit
-  breakevenBuffer: 0.1         // Small buffer above/below entry
+  breakevenAfterATR: 1.0,
+  breakevenBuffer: 0.1
 };
 
 // ============================================
@@ -43,7 +43,7 @@ const REVIEW_CONFIG = {
 // ============================================
 
 let reviewTimer = null;
-let isReviewRunning = false;
+let isShuttingDown = false;
 
 // ============================================
 // INITIALIZATION
@@ -52,44 +52,103 @@ let isReviewRunning = false;
 function initializeDynamicManager() {
   console.log('🔄 Initializing Dynamic Position Manager...');
   
-  // Start 2-hour review timer
+  // Start periodic check (every 5 minutes)
   if (reviewTimer) {
     clearInterval(reviewTimer);
   }
   
+  // ✅ NEW: Check every 10 minutes which trades need review
   reviewTimer = setInterval(async () => {
-    if (!isReviewRunning) {
-      await reviewAllPositions();
+    if (!isShuttingDown) {
+      await checkForDueReviews();
     }
-  }, REVIEW_CONFIG.reviewInterval);
+  }, 10 * 60 * 1000); // Check every 5 minutes
   
-  console.log(`✅ Dynamic manager initialized - reviewing every 2 hours`);
+  console.log(`✅ Dynamic manager initialized - checking every 10 minutes`);
+  console.log(`📊 Each trade reviewed 2 hours after opening and every 2 hours thereafter`);
   
-  // Run initial review after 5 minutes (let first trades settle)
+  // Run initial check after 1 minute
   setTimeout(async () => {
-    await reviewAllPositions();
-  }, 5 * 60 * 1000);
+    await checkForDueReviews();
+  }, 60 * 1000);
   
   return { success: true };
 }
 
 // ============================================
-// MAIN REVIEW FUNCTION
+// CHECK FOR DUE REVIEWS
+// ============================================
+
+async function checkForDueReviews() {
+  try {
+    // Fetch all open DEFAULT trades
+    const { data: openTrades, error } = await supabase
+      .from('signals')
+      .select('*')
+      .eq('status', 'opened')
+      .eq('signal_source', 'default')
+      .order('open_time', { ascending: true });
+    
+    if (error) throw error;
+    if (!openTrades || openTrades.length === 0) return;
+    
+    const now = Date.now();
+    const tradesDueForReview = [];
+    
+    for (const trade of openTrades) {
+      const openTime = new Date(trade.open_time).getTime();
+      const lastReviewTime = trade.last_review_time 
+        ? new Date(trade.last_review_time).getTime() 
+        : openTime;
+      
+      const timeSinceLastReview = now - lastReviewTime;
+      
+      // ✅ NEW: Check if 2 hours have passed since last review (or opening)
+      if (timeSinceLastReview >= REVIEW_CONFIG.reviewInterval) {
+        const hoursSince = (timeSinceLastReview / 3600000).toFixed(1);
+        tradesDueForReview.push({
+          trade,
+          hoursSinceLastReview: hoursSince
+        });
+      }
+    }
+    
+    if (tradesDueForReview.length === 0) {
+      console.log('🔍 No trades due for review yet');
+      return;
+    }
+    
+    console.log('\n' + '='.repeat(80));
+    console.log(`🔍 DYNAMIC POSITION REVIEW - ${tradesDueForReview.length} trade(s) due`);
+    console.log('='.repeat(80));
+    
+    for (const { trade, hoursSinceLastReview } of tradesDueForReview) {
+      console.log(`\n📊 ${trade.symbol} - ${hoursSinceLastReview}h since last review`);
+      await reviewSinglePosition(trade);
+      
+      // Small delay between reviews
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
+    console.log('='.repeat(80));
+    console.log('✅ Review cycle complete');
+    console.log('='.repeat(80) + '\n');
+    
+  } catch (error) {
+    console.error('❌ Check for due reviews error:', error.message);
+  }
+}
+
+// ============================================
+// REVIEW ALL POSITIONS (Manual Trigger)
 // ============================================
 
 async function reviewAllPositions() {
-  if (isReviewRunning) {
-    console.log('⏳ Review already in progress, skipping...');
-    return;
-  }
-  
-  isReviewRunning = true;
   console.log('\n' + '='.repeat(80));
-  console.log('🔍 DYNAMIC POSITION REVIEW - Starting 2-hour check');
+  console.log('🔍 MANUAL REVIEW - Checking ALL open positions');
   console.log('='.repeat(80));
   
   try {
-    // Fetch all open trades (DEFAULT system only)
     const { data: openTrades, error } = await supabase
       .from('signals')
       .select('*')
@@ -102,31 +161,27 @@ async function reviewAllPositions() {
     if (!openTrades || openTrades.length === 0) {
       console.log('🔭 No open DEFAULT positions to review');
       console.log('='.repeat(80) + '\n');
-      isReviewRunning = false;
       return;
     }
     
-    console.log(`📊 Reviewing ${openTrades.length} open DEFAULT position(s)...\n`);
+    console.log(`📊 Reviewing ${openTrades.length} position(s)...\n`);
     
     for (const trade of openTrades) {
       await reviewSinglePosition(trade);
-      // Small delay between reviews
       await new Promise(resolve => setTimeout(resolve, 500));
     }
     
     console.log('='.repeat(80));
-    console.log('✅ Position review complete');
+    console.log('✅ Manual review complete');
     console.log('='.repeat(80) + '\n');
     
   } catch (error) {
-    console.error('❌ Position review error:', error.message);
-  } finally {
-    isReviewRunning = false;
+    console.error('❌ Manual review error:', error.message);
   }
 }
 
 // ============================================
-// SINGLE POSITION REVIEW - FIXED
+// SINGLE POSITION REVIEW
 // ============================================
 
 async function reviewSinglePosition(trade) {
@@ -149,7 +204,7 @@ async function reviewSinglePosition(trade) {
       return;
     }
     
-    // ✅ FIX: Calculate proper indicators using the SAME method as entry
+    // Calculate proper indicators
     const assetConfig = getAssetConfig(symbol);
     
     const closes = candles.map(c => parseFloat(c.close)).filter(v => !isNaN(v));
@@ -163,7 +218,6 @@ async function reviewSinglePosition(trade) {
       return;
     }
     
-    // ✅ Use proper indicator calculation (same as entry analysis)
     const indicators = calculateIndicators(closes, highs, lows, opens, volumes, assetConfig);
     const currentATR = indicators.atr;
     const currentADX = indicators.adx;
@@ -182,50 +236,29 @@ async function reviewSinglePosition(trade) {
     
     console.log(`   Assessment: ${assessment.status}`);
     
-    if (assessment.recommendations.length === 0) {
-      console.log(`   ✅ No changes needed`);
-      
-      // Update last review time
-      await supabase
-        .from('signals')
-        .update({
-          last_review_time: new Date().toISOString(),
-          review_count: (trade.review_count || 0) + 1
-        })
-        .eq('id', trade.id);
-      
-      return;
-    }
+    // ✅ ALWAYS update last_review_time, even if no changes
+    const baseUpdates = {
+      last_review_time: new Date().toISOString(),
+      review_count: (trade.review_count || 0) + 1
+    };
     
-    // Apply recommendations
-    console.log(`   📋 Applying ${assessment.recommendations.length} recommendation(s):`);
-    
-    const updates = {};
+    if (assessment.recommendations.length > 0) {
+    const updates = { ...baseUpdates };
     const actions = [];
     
     for (const rec of assessment.recommendations) {
-      console.log(`      ${rec.action}: ${rec.reason}`);
-      
-      if (rec.action === 'TIGHTEN_TP') {
+      if (rec.action === 'TIGHTEN_TP' || rec.action === 'EXTEND_TP') {
         updates.tp2 = rec.newTP2;
         actions.push(`TP2 adjusted: ${trade.tp2} → ${rec.newTP2}`);
       }
       
-      if (rec.action === 'MOVE_TO_BREAKEVEN') {
+      if (rec.action === 'MOVE_TO_BREAKEVEN' || rec.action === 'TIGHTEN_STOP') {
         updates.updated_sl = rec.newSL;
-        actions.push(`SL moved to breakeven: ${rec.newSL}`);
-      }
-      
-      if (rec.action === 'TIGHTEN_STOP') {
-        updates.updated_sl = rec.newSL;
-        actions.push(`SL tightened: ${trade.updated_sl || trade.sl} → ${rec.newSL}`);
+        updates.last_sl_update = new Date().toISOString(); // ✅ NEW: Track update time
+        actions.push(`SL ${rec.action === 'MOVE_TO_BREAKEVEN' ? 'moved to breakeven' : 'tightened'}: ${rec.newSL}`);
       }
     }
-    
-    // Add review metadata
-    updates.last_review_time = new Date().toISOString();
-    updates.review_count = (trade.review_count || 0) + 1;
-    
+  }
     // Update database
     const { error: updateError } = await supabase
       .from('signals')
@@ -251,7 +284,7 @@ async function reviewSinglePosition(trade) {
 }
 
 // ============================================
-// POSITION ASSESSMENT (unchanged logic)
+// POSITION ASSESSMENT
 // ============================================
 
 function assessPosition(trade, currentPrice, currentATR, currentADX, entryATR, entryADX) {
@@ -276,27 +309,42 @@ function assessPosition(trade, currentPrice, currentATR, currentADX, entryATR, e
   
   let status = 'MONITORING';
   
+  // ✅ NEW: Check if Trade Management has already handled this level
+  const hasExecutedCheckpoint = trade.review_count > 0; // Has had at least one review
+  
+  // ============================================
   // RULE 1: BREAKEVEN PROTECTION
+  // ✅ SKIP if Trade Management already moved SL
+  // ============================================
   if (profitATR >= REVIEW_CONFIG.breakevenAfterATR) {
     const currentSLDistance = isBuy ? (currentSL - entry) : (entry - currentSL);
     
-    if (currentSLDistance < 0) {
+    // ✅ CHECK: Has Trade Management already moved SL?
+    const slAlreadyMoved = trade.updated_sl && trade.updated_sl !== trade.sl;
+    
+    if (!slAlreadyMoved && currentSLDistance < 0) {
+      // Only act if Trade Management hasn't done so yet
       const breakevenSL = isBuy 
         ? entry + (entry * REVIEW_CONFIG.breakevenBuffer)
         : entry - (entry * REVIEW_CONFIG.breakevenBuffer);
       
       recommendations.push({
         action: 'MOVE_TO_BREAKEVEN',
-        reason: `${profitATR.toFixed(2)} ATR profit - protect capital`,
+        reason: `${profitATR.toFixed(2)} ATR profit - protect capital (backup trigger)`,
         newSL: breakevenSL.toFixed(trade.decimals || 4),
         priority: 1
       });
       
       status = 'BREAKEVEN_TRIGGERED';
+    } else if (slAlreadyMoved) {
+      console.log(`   ⏭️  Breakeven already handled by Trade Management, skipping`);
     }
   }
   
+  // ============================================
   // RULE 2: WEAKENING TREND - TIGHTEN TARGETS
+  // ✅ THIS IS DYNAMIC MANAGER'S PRIMARY ROLE
+  // ============================================
   if (adxChange <= -REVIEW_CONFIG.adxSignificantDecrease) {
     const currentTP2Distance = isBuy ? (currentTP2 - entry) : (entry - currentTP2);
     const currentTP2ATR = currentTP2Distance / currentATR;
@@ -318,17 +366,57 @@ function assessPosition(trade, currentPrice, currentATR, currentADX, entryATR, e
     }
   }
   
-  // RULE 3: STRENGTHENING TREND - NO ACTION (just log)
+  // ============================================
+  // RULE 3: STRENGTHENING TREND - EXTEND TARGETS
+  // ✅ THIS IS DYNAMIC MANAGER'S UNIQUE CAPABILITY
+  // ============================================
   if (adxChange >= REVIEW_CONFIG.adxSignificantIncrease && currentADX > REVIEW_CONFIG.adxStrongTrend) {
-    console.log(`   📈 Trend strengthening (ADX +${adxChange.toFixed(1)}) - keeping original targets`);
+    const currentTP2Distance = isBuy ? (currentTP2 - entry) : (entry - currentTP2);
+    const currentTP2ATR = currentTP2Distance / currentATR;
+    
+    // Only extend if not too far already
+    if (currentTP2ATR < REVIEW_CONFIG.maxProfitATR) {
+      const newTP2Distance = currentATR * Math.min(
+        REVIEW_CONFIG.maxProfitATR, 
+        currentTP2ATR + REVIEW_CONFIG.maxTPAdjustment
+      );
+      const newTP2 = isBuy ? entry + newTP2Distance : entry - newTP2Distance;
+      
+      recommendations.push({
+        action: 'EXTEND_TP',
+        reason: `ADX strengthened by ${adxChange.toFixed(1)} points - let winner run`,
+        newTP2: newTP2.toFixed(trade.decimals || 4),
+        oldTP2ATR: currentTP2ATR.toFixed(2),
+        newTP2ATR: (newTP2Distance / currentATR).toFixed(2),
+        priority: 2
+      });
+      
+      status = 'EXTENDING';
+    } else {
+      console.log(`   📈 Trend strengthening but TP2 already at max (${currentTP2ATR.toFixed(2)} ATR)`);
+    }
   }
   
+  // ============================================
   // RULE 4: CONTRACTING VOLATILITY - TIGHTEN STOP
+  // ✅ ONLY if Trade Management hasn't recently acted
+  // ============================================
   if (volatilityRegime === 'CONTRACTING' && profitATR > 0.5) {
     const currentSLDistance = isBuy ? (currentPrice - currentSL) : (currentSL - currentPrice);
     const currentSLATR = currentSLDistance / currentATR;
     
-    if (currentSLATR > 1.5) {
+    // ✅ CHECK: When was SL last updated?
+    const lastSLUpdate = trade.last_sl_update 
+      ? new Date(trade.last_sl_update).getTime() 
+      : new Date(trade.open_time).getTime();
+    
+    const timeSinceLastSLUpdate = Date.now() - lastSLUpdate;
+    const hoursSinceLastUpdate = timeSinceLastSLUpdate / 3600000;
+    
+    // Only tighten if:
+    // 1. SL is wide (>1.5 ATR)
+    // 2. Last update was >1 hour ago (avoid conflicting with Trade Management)
+    if (currentSLATR > 1.5 && hoursSinceLastUpdate > 1) {
       const newSLDistance = currentATR * 1.2;
       const newSL = isBuy ? currentPrice - newSLDistance : currentPrice + newSLDistance;
       
@@ -346,10 +434,15 @@ function assessPosition(trade, currentPrice, currentATR, currentADX, entryATR, e
         
         status = 'TRAILING';
       }
+    } else if (hoursSinceLastUpdate <= 1) {
+      console.log(`   ⏭️  SL recently updated (${hoursSinceLastUpdate.toFixed(1)}h ago), skipping to avoid conflict`);
     }
   }
   
-  // RULE 5: EXPANDING VOLATILITY - CHECK STOP VALIDITY
+  // ============================================
+  // RULE 5: EXPANDING VOLATILITY - WARNING ONLY
+  // ✅ NEVER MOVES SL (just alerts)
+  // ============================================
   if (volatilityRegime === 'EXPANDING') {
     const currentSLDistance = isBuy ? (entry - currentSL) : (currentSL - entry);
     const currentSLATR = currentSLDistance / currentATR;
@@ -482,6 +575,8 @@ async function manualReview(tradeId) {
 // ============================================
 
 function cleanup() {
+  isShuttingDown = true;
+  
   if (reviewTimer) {
     clearInterval(reviewTimer);
     reviewTimer = null;
