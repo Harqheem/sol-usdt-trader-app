@@ -66,7 +66,7 @@ function initializeDynamicManager() {
     }
   }, 20 * 60 * 1000); // Check every 20 minutes
   
-  console.log(`✅ Dynamic manager initialized - checking every 5 minutes`);
+  console.log(`✅ Dynamic manager initialized - checking every 20 minutes`);
   console.log(`📊 Each trade reviewed 2 hours after opening and every 2 hours thereafter`);
   console.log(`🛡️  Conflict prevention: Waits ${REVIEW_CONFIG.minHoursSinceLastSLUpdate}h after Trade Management acts`);
   
