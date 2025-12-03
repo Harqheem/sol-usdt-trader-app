@@ -1,4 +1,4 @@
-// management.js - Trade Management Frontend Logic
+// management.js - UPDATED: Display both DEFAULT and FAST rules
 
 let activeTab = 'active';
 let activeTrades = [];
@@ -35,6 +35,7 @@ function setupEventListeners() {
   // History filters
   document.getElementById('history-symbol-filter')?.addEventListener('change', loadHistory);
   document.getElementById('history-signal-filter')?.addEventListener('change', loadHistory);
+  document.getElementById('history-source-filter')?.addEventListener('change', loadHistory);
   document.getElementById('history-from-date')?.addEventListener('change', loadHistory);
   document.getElementById('history-to-date')?.addEventListener('change', loadHistory);
 }
@@ -68,13 +69,11 @@ async function loadAllData() {
   console.log('📊 Loading all management data...');
   
   try {
-    // Load stats and active trades in parallel
     await Promise.all([
       loadStats(),
       loadActiveTrades()
     ]);
 
-    // Load current tab data
     if (activeTab === 'history') {
       await loadHistory();
     } else if (activeTab === 'rules') {
@@ -118,7 +117,6 @@ async function loadActiveTrades() {
   }
 }
 
-// Update loadHistory function to include source filter
 async function loadHistory() {
   const container = document.getElementById('history-container');
   container.innerHTML = '<div class="loading-state"><div class="loading-spinner"></div><p>Loading history...</p></div>';
@@ -126,14 +124,14 @@ async function loadHistory() {
   try {
     const symbol = document.getElementById('history-symbol-filter').value;
     const signalType = document.getElementById('history-signal-filter').value;
-    const signalSource = document.getElementById('history-source-filter')?.value; // NEW
+    const signalSource = document.getElementById('history-source-filter')?.value;
     const fromDate = document.getElementById('history-from-date').value;
     const toDate = document.getElementById('history-to-date').value;
 
     let url = '/api/management/history?';
     if (symbol) url += `symbol=${symbol}&`;
     if (signalType) url += `signalType=${signalType}&`;
-    if (signalSource) url += `signalSource=${signalSource}&`; // NEW
+    if (signalSource) url += `signalSource=${signalSource}&`;
     if (fromDate) url += `fromDate=${fromDate}&`;
     if (toDate) url += `toDate=${toDate}&`;
 
@@ -148,20 +146,53 @@ async function loadHistory() {
   }
 }
 
-// Add event listener for new filter
-document.getElementById('history-source-filter')?.addEventListener('change', loadHistory);
 function loadRules() {
   const container = document.getElementById('rules-grid');
-  container.innerHTML = '';
+  container.innerHTML = '<div class="loading-state"><div class="loading-spinner"></div><p>Loading rules...</p></div>';
 
-  // Fetch rules from backend
+  // Fetch rules from backend (both systems)
   fetch('/api/management/rules')
     .then(res => res.json())
-    .then(rules => {
-      Object.entries(rules).forEach(([key, rule]) => {
-        const card = createRuleCard(key, rule);
-        container.appendChild(card);
-      });
+    .then(data => {
+      container.innerHTML = '';
+      
+      // Add system headers and rules
+      
+      // DEFAULT SYSTEM
+      if (data.default && data.default.rules) {
+        const defaultHeader = document.createElement('div');
+        defaultHeader.style.gridColumn = '1 / -1';
+        defaultHeader.innerHTML = `
+          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+            <h2 style="color: white; margin: 0 0 8px 0; font-size: 20px;">📊 DEFAULT SYSTEM</h2>
+            <p style="color: rgba(255,255,255,0.9); margin: 0; font-size: 14px;">${data.default.description}</p>
+          </div>
+        `;
+        container.appendChild(defaultHeader);
+        
+        Object.entries(data.default.rules).forEach(([key, rule]) => {
+          const card = createRuleCard(key, rule, 'default');
+          container.appendChild(card);
+        });
+      }
+      
+      // FAST SYSTEM
+      if (data.fast && data.fast.rules) {
+        const fastHeader = document.createElement('div');
+        fastHeader.style.gridColumn = '1 / -1';
+        fastHeader.innerHTML = `
+          <div style="background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%); padding: 20px; border-radius: 8px; margin: 24px 0 20px 0;">
+            <h2 style="color: white; margin: 0 0 8px 0; font-size: 20px;">⚡ FAST SIGNAL SYSTEM</h2>
+            <p style="color: rgba(255,255,255,0.9); margin: 0; font-size: 14px;">${data.fast.description}</p>
+          </div>
+        `;
+        container.appendChild(fastHeader);
+        
+        Object.entries(data.fast.rules).forEach(([key, rule]) => {
+          const card = createRuleCard(key, rule, 'fast');
+          container.appendChild(card);
+        });
+      }
     })
     .catch(error => {
       console.error('Rules load error:', error);
@@ -214,15 +245,17 @@ function renderActiveTrades() {
   });
 }
 
-// Fixed createTradeCard and renderTimeline functions for management.js
-
 function createTradeCard(trade) {
   const card = document.createElement('div');
   card.className = 'trade-card';
 
-  const direction = trade.signal_type.includes('Long') ? 'LONG' : 'SHORT';
+  const direction = trade.signal_type.includes('Long') || trade.signal_type === 'Buy' ? 'LONG' : 'SHORT';
   const signalType = getSignalTypeFromTrade(trade);
   const signalClass = signalType.toLowerCase().replace('_', '');
+  
+  // Determine if Fast or Default
+  const isFast = trade.signal_source === 'fast';
+  const systemTag = isFast ? '⚡' : '📊';
   
   // Calculate profit
   const isBuy = direction === 'LONG';
@@ -230,8 +263,9 @@ function createTradeCard(trade) {
     ? ((trade.current_price - trade.entry) / trade.entry) * 100
     : ((trade.entry - trade.current_price) / trade.entry) * 100;
   
-  // ✅ FIX: Calculate ATR correctly considering direction
-  const atr = Math.abs(trade.tp1 - trade.entry) / 1.5;
+  // Calculate ATR correctly considering direction and system
+  const atrMultiplier = isFast ? 1.0 : 1.5;
+  const atr = Math.abs(trade.tp1 - trade.entry) / atrMultiplier;
   const profitDistance = isBuy ? (trade.current_price - trade.entry) : (trade.entry - trade.current_price);
   const profitATR = profitDistance / atr;
   
@@ -240,7 +274,7 @@ function createTradeCard(trade) {
 
   card.innerHTML = `
     <div class="trade-header">
-      <span class="trade-symbol">${trade.symbol} ${direction}</span>
+      <span class="trade-symbol">${systemTag} ${trade.symbol} ${direction}</span>
       <span class="trade-badge ${signalClass}">${formatSignalType(signalType)}</span>
       <span class="trade-profit ${profitClass}">${profitSign}${profitATR.toFixed(2)} ATR (${profitPct.toFixed(2)}%)</span>
     </div>
@@ -280,20 +314,22 @@ function renderTimeline(trade, calculatedProfitATR) {
   const signalType = getSignalTypeFromTrade(trade);
   const executedCheckpoints = trade.executed_checkpoints || [];
   
-  // ✅ FIX: Use calculated profit ATR (can be negative for losses)
   const currentProfitATR = calculatedProfitATR || 0;
   
+  // Determine which system to use
+  const isFast = trade.signal_source === 'fast';
+  const apiUrl = isFast ? '/api/management/rules?system=fast' : '/api/management/rules?system=default';
+  
   // Get rules for this signal type
-  fetch('/api/management/rules')
+  fetch(apiUrl)
     .then(res => res.json())
-    .then(rules => {
+    .then(data => {
+      const rules = isFast ? data.rules : data.rules;
       const rule = rules[signalType];
       if (!rule) return;
 
       const timelineHTML = rule.checkpoints.map(checkpoint => {
         const isExecuted = executedCheckpoints.includes(checkpoint.name);
-        
-        // ✅ FIX: Only check against positive profit for triggering checkpoints
         const isPending = currentProfitATR >= checkpoint.profitATR && !isExecuted;
         const isUpcoming = currentProfitATR < checkpoint.profitATR;
 
@@ -321,7 +357,6 @@ function renderTimeline(trade, calculatedProfitATR) {
             </div>
           `;
         } else if (isUpcoming) {
-          // ✅ FIX: Calculate distance correctly (can show negative if in loss)
           const distance = checkpoint.profitATR - currentProfitATR;
           return `
             <div class="checkpoint upcoming">
@@ -388,10 +423,14 @@ function createHistoryCard(group) {
   const direction = trade.signal_type.includes('Long') ? 'LONG' : 'SHORT';
   const signalType = getSignalTypeFromTrade(trade);
   const signalClass = signalType.toLowerCase().replace('_', '');
+  
+  // System tag
+  const isFast = trade.signal_source === 'fast';
+  const systemTag = isFast ? '⚡' : '📊';
 
   card.innerHTML = `
     <div class="trade-header">
-      <span class="trade-symbol">${trade.symbol} ${direction}</span>
+      <span class="trade-symbol">${systemTag} ${trade.symbol} ${direction}</span>
       <span class="trade-badge ${signalClass}">${formatSignalType(signalType)}</span>
       <span class="trade-profit ${trade.pnl_percentage >= 0 ? '' : 'negative'}">
         ${trade.pnl_percentage >= 0 ? '+' : ''}${trade.pnl_percentage?.toFixed(2) || '0.00'}%
@@ -436,7 +475,7 @@ function createHistoryCard(group) {
   return card;
 }
 
-function createRuleCard(key, rule) {
+function createRuleCard(key, rule, system) {
   const card = document.createElement('div');
   card.className = 'rule-card';
 
@@ -444,12 +483,22 @@ function createRuleCard(key, rule) {
     'BOS': '#3b82f6',
     'LIQUIDITY_GRAB': '#8b5cf6',
     'CHOCH': '#ec4899',
-    'SR_BOUNCE': '#10b981'
+    'SR_BOUNCE': '#10b981',
+    'RSI_BULLISH_DIVERGENCE': '#10b981',
+    'RSI_BEARISH_DIVERGENCE': '#ef4444',
+    'CVD_BULLISH_DIVERGENCE': '#10b981',
+    'CVD_BEARISH_DIVERGENCE': '#ef4444',
+    'LIQUIDITY_SWEEP_BULLISH': '#10b981',
+    'LIQUIDITY_SWEEP_BEARISH': '#ef4444'
   };
+
+  const systemBadge = system === 'fast' 
+    ? '<span style="background: #f59e0b; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; margin-left: 8px;">⚡ FAST</span>'
+    : '<span style="background: #667eea; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; margin-left: 8px;">📊 DEFAULT</span>';
 
   card.innerHTML = `
     <div class="rule-header" style="border-left: 4px solid ${colorMap[key] || '#6b7280'};">
-      <div class="rule-title">${rule.name}</div>
+      <div class="rule-title">${rule.name} ${systemBadge}</div>
       <div class="rule-subtitle">${rule.checkpoints.length} checkpoints configured</div>
     </div>
 
@@ -475,14 +524,16 @@ function createRuleCard(key, rule) {
 }
 
 function renderAnalytics(analytics) {
-  // Action Breakdown
+  // Action Breakdown (Combined)
   const actionContainer = document.getElementById('action-breakdown');
   actionContainer.innerHTML = '';
 
-  if (analytics.actionBreakdown && Object.keys(analytics.actionBreakdown).length > 0) {
-    const maxValue = Math.max(...Object.values(analytics.actionBreakdown));
+  const actionBreakdown = analytics.combined?.actionBreakdown || {};
+  
+  if (Object.keys(actionBreakdown).length > 0) {
+    const maxValue = Math.max(...Object.values(actionBreakdown));
     
-    Object.entries(analytics.actionBreakdown).forEach(([action, count]) => {
+    Object.entries(actionBreakdown).forEach(([action, count]) => {
       const percentage = (count / maxValue) * 100;
       const bar = document.createElement('div');
       bar.className = 'chart-bar';
@@ -499,14 +550,16 @@ function renderAnalytics(analytics) {
     actionContainer.innerHTML = '<div class="empty-state" style="padding: 40px;">No data yet</div>';
   }
 
-  // Checkpoint Breakdown
+  // Checkpoint Breakdown (Combined)
   const checkpointContainer = document.getElementById('checkpoint-breakdown');
   checkpointContainer.innerHTML = '';
 
-  if (analytics.checkpointBreakdown && Object.keys(analytics.checkpointBreakdown).length > 0) {
-    const maxValue = Math.max(...Object.values(analytics.checkpointBreakdown));
+  const checkpointBreakdown = analytics.combined?.checkpointBreakdown || {};
+  
+  if (Object.keys(checkpointBreakdown).length > 0) {
+    const maxValue = Math.max(...Object.values(checkpointBreakdown));
     
-    Object.entries(analytics.checkpointBreakdown)
+    Object.entries(checkpointBreakdown)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
       .forEach(([checkpoint, count]) => {
@@ -526,20 +579,20 @@ function renderAnalytics(analytics) {
     checkpointContainer.innerHTML = '<div class="empty-state" style="padding: 40px;">No data yet</div>';
   }
 
-  // Management Impact
+  // Management Impact (showing both systems)
   const impactContainer = document.getElementById('management-impact');
   impactContainer.innerHTML = `
     <div class="impact-metric">
       <div class="impact-value">${managementStats.totalManaged || 0}</div>
-      <div class="impact-label">Trades Managed</div>
+      <div class="impact-label">Total Trades Managed</div>
     </div>
     <div class="impact-metric">
-      <div class="impact-value">${managementStats.managementRate || 0}%</div>
-      <div class="impact-label">Management Rate</div>
+      <div class="impact-value">${managementStats.default?.totalManaged || 0}</div>
+      <div class="impact-label">📊 Default Managed</div>
     </div>
     <div class="impact-metric">
-      <div class="impact-value">${managementStats.avgActionsPerTrade || 0}</div>
-      <div class="impact-label">Avg Actions/Trade</div>
+      <div class="impact-value">${managementStats.fast?.totalManaged || 0}</div>
+      <div class="impact-label">⚡ Fast Managed</div>
     </div>
     <div class="impact-metric">
       <div class="impact-value">${managementStats.totalActions || 0}</div>
@@ -555,6 +608,15 @@ function renderAnalytics(analytics) {
 function getSignalTypeFromTrade(trade) {
   const notes = trade.notes || '';
   
+  // Fast signals
+  if (notes.includes('RSI_BULLISH_DIVERGENCE') || notes.includes('RSI BULLISH')) return 'RSI_BULLISH_DIVERGENCE';
+  if (notes.includes('RSI_BEARISH_DIVERGENCE') || notes.includes('RSI BEARISH')) return 'RSI_BEARISH_DIVERGENCE';
+  if (notes.includes('CVD_BULLISH_DIVERGENCE') || notes.includes('CVD BULLISH')) return 'CVD_BULLISH_DIVERGENCE';
+  if (notes.includes('CVD_BEARISH_DIVERGENCE') || notes.includes('CVD BEARISH')) return 'CVD_BEARISH_DIVERGENCE';
+  if (notes.includes('LIQUIDITY_SWEEP_BULLISH') || notes.includes('SWEEP REVERSAL - BULLISH')) return 'LIQUIDITY_SWEEP_BULLISH';
+  if (notes.includes('LIQUIDITY_SWEEP_BEARISH') || notes.includes('SWEEP REVERSAL - BEARISH')) return 'LIQUIDITY_SWEEP_BEARISH';
+  
+  // Default signals
   if (notes.includes('BOS') || notes.includes('Break of Structure')) return 'BOS';
   if (notes.includes('LIQUIDITY_GRAB') || notes.includes('Liquidity Grab')) return 'LIQUIDITY_GRAB';
   if (notes.includes('CHOCH') || notes.includes('Change of Character')) return 'CHOCH';
@@ -568,7 +630,13 @@ function formatSignalType(type) {
     'BOS': 'BOS',
     'LIQUIDITY_GRAB': 'Liquidity Grab',
     'CHOCH': 'ChoCH',
-    'SR_BOUNCE': 'S/R Bounce'
+    'SR_BOUNCE': 'S/R Bounce',
+    'RSI_BULLISH_DIVERGENCE': '⚡ RSI Bull Div',
+    'RSI_BEARISH_DIVERGENCE': '⚡ RSI Bear Div',
+    'CVD_BULLISH_DIVERGENCE': '⚡ CVD Bull Div',
+    'CVD_BEARISH_DIVERGENCE': '⚡ CVD Bear Div',
+    'LIQUIDITY_SWEEP_BULLISH': '⚡ Sweep Bull',
+    'LIQUIDITY_SWEEP_BEARISH': '⚡ Sweep Bear'
   };
   return map[type] || type;
 }
@@ -614,8 +682,6 @@ function getTimeInTrade(trade) {
 }
 
 function getTimeSince(trade, checkpoint) {
-  // This would need to query the management log for exact time
-  // For now, return placeholder
   return 'Recently';
 }
 
@@ -631,7 +697,6 @@ function formatTimestamp(timestamp) {
 
 function showError(message) {
   console.error(message);
-  // Could show a toast notification here
 }
 
 // ========================================
@@ -639,15 +704,14 @@ function showError(message) {
 // ========================================
 
 function startAutoRefresh() {
-  // Refresh every 10 seconds
   autoRefreshInterval = setInterval(() => {
     if (activeTab === 'active') {
       loadActiveTrades();
       loadStats();
     }
-  }, 10000);
+  }, 60000);
 
-  console.log('🔄 Auto-refresh started (10s interval)');
+  console.log('🔄 Auto-refresh started (60s interval)');
 }
 
 function stopAutoRefresh() {
@@ -658,7 +722,6 @@ function stopAutoRefresh() {
   }
 }
 
-// Stop auto-refresh when page is hidden
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     stopAutoRefresh();

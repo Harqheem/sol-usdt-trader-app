@@ -1130,10 +1130,10 @@ async function sendFastAlert(symbol, signal, currentPrice, atr, assetConfig) {
   const rrTP1 = (Math.abs(tp1 - actualEntry) / riskAmount).toFixed(2);
   const rrTP2 = (Math.abs(tp2 - actualEntry) / riskAmount).toFixed(2);
 
-  const message1 = `⚡ URGENT ${symbol}
-✅ ${signal.direction} - ${signal.urgency} URGENCY
-LEVERAGE: 50x
+  const message1 = `⚡ ENTER ✅ ${signal.direction} - ${signal.urgency} URGENCY
 
+${symbol}
+LEVERAGE: 50x
 Entry: ${actualEntry.toFixed(decimals)}
 TP1: ${tp1.toFixed(decimals)}
 TP2: ${tp2.toFixed(decimals)}

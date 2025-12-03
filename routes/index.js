@@ -1,3 +1,5 @@
+// routes/index.js - UPDATED: Add Fast Signal Management APIs
+
 const express = require('express');
 const router = express.Router();
 
@@ -16,7 +18,7 @@ const {
 
 // Rate limiting for price endpoint
 const priceRateLimiter = new Map();
-const PRICE_RATE_LIMIT_MS = 5000; // 5 seconds minimum between requests per IP
+const PRICE_RATE_LIMIT_MS = 5000;
 
 router.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -63,8 +65,6 @@ router.get('/data', async (req, res) => {
       return res.status(400).json({ error: 'Invalid symbol' });
     }
     
-       
-    // Use getData which calls analyzeSymbol - returns full analysis with proper structure
     const data = await getData(symbol);
     
     if (data.error) {
@@ -81,14 +81,11 @@ router.get('/data', async (req, res) => {
   }
 });
 
-// DEPRECATED: This endpoint should not be used by frontend anymore (use WebSocket instead)
-// Kept only for backward compatibility with rate limiting
 router.get('/price', async (req, res) => {
   const symbol = req.query.symbol || 'SOLUSDT';
   const clientIp = req.ip || req.connection.remoteAddress;
   const rateLimitKey = `${clientIp}-${symbol}`;
   
-  // Check rate limit
   const lastRequest = priceRateLimiter.get(rateLimitKey);
   const now = Date.now();
   
@@ -106,17 +103,14 @@ router.get('/price', async (req, res) => {
   }
   
   try {
-    // Update rate limiter
     priceRateLimiter.set(rateLimitKey, now);
     
-    // Clean up old entries (older than 1 minute)
     for (const [key, timestamp] of priceRateLimiter.entries()) {
       if (now - timestamp > 60000) {
         priceRateLimiter.delete(key);
       }
     }
     
-    // Check if we have cached price from WebSocket
     const cache = wsCache[symbol];
     if (cache && cache.currentPrice) {
       const decimals = getDecimalPlaces(symbol);
@@ -130,7 +124,6 @@ router.get('/price', async (req, res) => {
       });
     }
     
-    // Fallback to API if cache not available
     const prices = await withTimeout(client.futuresPrices({ symbol }), 5000);
     const decimals = getDecimalPlaces(symbol);
     
@@ -149,7 +142,6 @@ router.get('/price', async (req, res) => {
   } catch (error) {
     console.error(`Price fetch error ${symbol}:`, error.message);
     
-    // Check if it's a rate limit error from Binance
     if (error.message && error.message.includes('429')) {
       return res.status(429).json({ 
         error: 'Binance API rate limit exceeded. Use WebSocket instead.',
@@ -164,8 +156,9 @@ router.get('/price', async (req, res) => {
   }
 });
 
-
-// routes/index.js - ADD THESE ROUTES
+// ========================================
+// TRADE MANAGEMENT API ENDPOINTS
+// ========================================
 
 const { 
   getActiveManagedTrades, 
@@ -174,31 +167,49 @@ const {
   MANAGEMENT_RULES 
 } = require('../services/tradeManagementService');
 
-// ========================================
-// TRADE MANAGEMENT API ENDPOINTS
-// ========================================
+// ⚡ NEW: Import Fast Management Rules
+const { FAST_MANAGEMENT_RULES } = require('../services/fastTradeManagementService');
 
-// Get active managed trades
+// Get active managed trades (both DEFAULT and FAST)
 router.get('/api/management/active', async (req, res) => {
   try {
-    const trades = await getActiveManagedTrades();
+    // Get DEFAULT system trades
+    const defaultTrades = await getActiveManagedTrades();
+    
+    // Get FAST system trades
+    const { supabase } = require('../services/logsService');
+    const { data: fastTrades, error: fastError } = await supabase
+      .from('signals')
+      .select('*')
+      .eq('status', 'opened')
+      .eq('signal_source', 'fast')
+      .order('timestamp', { ascending: false });
+    
+    if (fastError) throw fastError;
+    
+    // Combine both
+    const allTrades = [...defaultTrades, ...(fastTrades || [])];
     
     // Enrich with current price and profit calculation
-    const enrichedTrades = await Promise.all(trades.map(async (trade) => {
-      // Get current price from cache or API
+    const enrichedTrades = await Promise.all(allTrades.map(async (trade) => {
       const { wsCache } = require('../services/dataService');
       const cache = wsCache[trade.symbol];
       const currentPrice = cache?.currentPrice || trade.entry;
       
       // Calculate profit in ATR
-      const isBuy = trade.signal_type.includes('Long');
-      const atr = cache?.atr || (Math.abs(trade.tp1 - trade.entry) / 1.5); // Estimate ATR from TP1
+      const isBuy = trade.signal_type.includes('Long') || trade.signal_type === 'Buy';
+      
+      // Different ATR calculation for Fast vs Default
+      const isFast = trade.signal_source === 'fast';
+      const atrMultiplier = isFast ? 1.0 : 1.5;
+      const atr = cache?.atr || (Math.abs(trade.tp1 - trade.entry) / atrMultiplier);
+      
       const profitATR = isBuy 
         ? (currentPrice - trade.entry) / atr
         : (trade.entry - currentPrice) / atr;
       
       // Get executed checkpoints
-      const { data: executed } = await require('../services/logsService').supabase
+      const { data: executed } = await supabase
         .from('trade_management_log')
         .select('checkpoint_name')
         .eq('trade_id', trade.id);
@@ -218,8 +229,7 @@ router.get('/api/management/active', async (req, res) => {
   }
 });
 
-// Get management history
-// Update the /api/management/history endpoint
+// Get management history (both DEFAULT and FAST)
 router.get('/api/management/history', async (req, res) => {
   try {
     const { symbol, signalType, signalSource, fromDate, toDate } = req.query;
@@ -252,7 +262,6 @@ router.get('/api/management/history', async (req, res) => {
     
     if (error) throw error;
     
-    // Filter by criteria
     let filtered = data || [];
     
     if (symbol) {
@@ -288,36 +297,164 @@ router.get('/api/management/history', async (req, res) => {
   }
 });
 
-// Get management statistics
+// Get management statistics (combined DEFAULT + FAST)
 router.get('/api/management/stats', async (req, res) => {
   try {
-    const stats = await getManagementStats();
-    res.json(stats);
+    const defaultStats = await getManagementStats();
+    
+    // Get FAST stats
+    const { supabase } = require('../services/logsService');
+    
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    // Fast closed trades
+    const { data: fastClosedTrades, error: fastClosedError } = await supabase
+      .from('signals')
+      .select('id, symbol, pnl_percentage, status')
+      .eq('signal_source', 'fast')
+      .eq('status', 'closed')
+      .gte('timestamp', thirtyDaysAgo.toISOString());
+    
+    if (fastClosedError) throw fastClosedError;
+    
+    // Fast management actions
+    const { data: fastActions, error: fastActionsError } = await supabase
+      .from('trade_management_log')
+      .select('trade_id, checkpoint_name, action_type')
+      .in('trade_id', (fastClosedTrades || []).map(t => t.id));
+    
+    if (fastActionsError) throw fastActionsError;
+    
+    const fastTotalManaged = (fastClosedTrades || []).length;
+    const fastTotalActions = (fastActions || []).length;
+    const fastAvgActions = fastTotalManaged > 0 ? fastTotalActions / fastTotalManaged : 0;
+    
+    const fastTradesWithManagement = new Set((fastActions || []).map(a => a.trade_id)).size;
+    const fastManagementRate = fastTotalManaged > 0 ? (fastTradesWithManagement / fastTotalManaged) * 100 : 0;
+    
+    // Combined stats
+    res.json({
+      // Overall
+      totalManaged: defaultStats.totalManaged + fastTotalManaged,
+      totalActions: defaultStats.totalActions + fastTotalActions,
+      avgActionsPerTrade: ((defaultStats.totalActions + fastTotalActions) / (defaultStats.totalManaged + fastTotalManaged || 1)).toFixed(2),
+      managementRate: (((defaultStats.totalManaged + fastTradesWithManagement) / (defaultStats.totalManaged + fastTotalManaged || 1)) * 100).toFixed(1),
+      
+      // DEFAULT system
+      default: {
+        totalManaged: defaultStats.totalManaged,
+        totalActions: defaultStats.totalActions,
+        avgActionsPerTrade: defaultStats.avgActionsPerTrade,
+        managementRate: defaultStats.managementRate,
+        actionBreakdown: defaultStats.actionBreakdown,
+        checkpointBreakdown: defaultStats.checkpointBreakdown
+      },
+      
+      // FAST system
+      fast: {
+        totalManaged: fastTotalManaged,
+        totalActions: fastTotalActions,
+        avgActionsPerTrade: fastAvgActions.toFixed(2),
+        managementRate: fastManagementRate.toFixed(1),
+        actionBreakdown: (fastActions || []).reduce((acc, action) => {
+          acc[action.action_type] = (acc[action.action_type] || 0) + 1;
+          return acc;
+        }, {}),
+        checkpointBreakdown: (fastActions || []).reduce((acc, action) => {
+          acc[action.checkpoint_name] = (acc[action.checkpoint_name] || 0) + 1;
+          return acc;
+        }, {})
+      }
+    });
   } catch (error) {
     console.error('❌ Stats API error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Get management rules
+// ⚡ NEW: Get management rules (both DEFAULT and FAST)
 router.get('/api/management/rules', (req, res) => {
   try {
-    res.json(MANAGEMENT_RULES);
+    const { system } = req.query; // ?system=default or ?system=fast or both
+    
+    if (system === 'default') {
+      res.json({
+        system: 'DEFAULT',
+        rules: MANAGEMENT_RULES
+      });
+    } else if (system === 'fast') {
+      res.json({
+        system: 'FAST',
+        rules: FAST_MANAGEMENT_RULES
+      });
+    } else {
+      // Return both systems
+      res.json({
+        default: {
+          system: 'DEFAULT',
+          description: 'Smart Money Concepts - Structured management for BOS, Liquidity Grabs, ChoCH, S/R Bounces',
+          rules: MANAGEMENT_RULES
+        },
+        fast: {
+          system: 'FAST',
+          description: 'Quick Reversals - Aggressive management for RSI/CVD Divergences and Liquidity Sweeps',
+          rules: FAST_MANAGEMENT_RULES
+        }
+      });
+    }
   } catch (error) {
     console.error('❌ Rules API error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Get analytics data
+// Get analytics data (combined)
 router.get('/api/management/analytics', async (req, res) => {
   try {
     const stats = await getManagementStats();
+    
+    // Get FAST analytics
+    const { supabase } = require('../services/logsService');
+    
+    const { data: fastActions } = await supabase
+      .from('trade_management_log')
+      .select('action_type, checkpoint_name, trade_id')
+      .limit(1000);
+    
+    const fastActionBreakdown = (fastActions || []).reduce((acc, a) => {
+      acc[a.action_type] = (acc[a.action_type] || 0) + 1;
+      return acc;
+    }, {});
+    
+    const fastCheckpointBreakdown = (fastActions || []).reduce((acc, a) => {
+      acc[a.checkpoint_name] = (acc[a.checkpoint_name] || 0) + 1;
+      return acc;
+    }, {});
+    
     res.json({
-      actionBreakdown: stats.actionBreakdown || {},
-      checkpointBreakdown: stats.checkpointBreakdown || {},
-      totalManaged: stats.totalManaged || 0,
-      totalActions: stats.totalActions || 0
+      combined: {
+        actionBreakdown: {
+          ...stats.actionBreakdown,
+          ...fastActionBreakdown
+        },
+        checkpointBreakdown: {
+          ...stats.checkpointBreakdown,
+          ...fastCheckpointBreakdown
+        }
+      },
+      default: {
+        actionBreakdown: stats.actionBreakdown || {},
+        checkpointBreakdown: stats.checkpointBreakdown || {},
+        totalManaged: stats.totalManaged || 0,
+        totalActions: stats.totalActions || 0
+      },
+      fast: {
+        actionBreakdown: fastActionBreakdown,
+        checkpointBreakdown: fastCheckpointBreakdown,
+        totalManaged: new Set((fastActions || []).map(a => a.trade_id)).size,
+        totalActions: (fastActions || []).length
+      }
     });
   } catch (error) {
     console.error('❌ Analytics API error:', error);
@@ -325,7 +462,7 @@ router.get('/api/management/analytics', async (req, res) => {
   }
 });
 
-
+// Learning data endpoints
 router.get('/api/learning-data', async (req, res) => {
   try {
     const { type, symbol, signalSource, limit } = req.query;
@@ -335,9 +472,9 @@ router.get('/api/learning-data', async (req, res) => {
     if (symbol) filters.symbol = symbol;
     if (signalSource) filters.signalSource = signalSource;
     if (limit) filters.limit = parseInt(limit) || 100;
-    else filters.limit = 100; // Default limit
+    else filters.limit = 100;
     
-    const learningService = require('../services/Trade Learning/learningService');
+    const learningService = require('./Trade Learning/learningService');
     const data = await learningService.getLearningData(filters);
     
     res.json(data);
@@ -352,7 +489,7 @@ router.post('/api/learning-data/:id/outcome', async (req, res) => {
     const { id } = req.params;
     const { wasCorrectDecision, actualOutcome } = req.body;
     
-    const learningService = require('../services/Trade Learning/learningService');
+    const learningService = require('./Trade Learning/learningService');
     const updated = await learningService.updateNearMissOutcome(
       id, 
       wasCorrectDecision, 
@@ -369,22 +506,18 @@ router.post('/api/learning-data/:id/outcome', async (req, res) => {
 router.get('/signals', async (req, res) => {
   try {
     const { symbol, limit, fromDate, toDate, status, signalSource } = req.query;
-  
     
     const options = {
       symbol: symbol || undefined,
       limit: parseInt(limit) || 50,
       fromDate: fromDate || undefined,
-      toDate: toDate || undefined,  // ← ADDED: Was missing!
-      signalSource: signalSource || undefined  // ← ADDED: Was missing!
+      toDate: toDate || undefined,
+      signalSource: signalSource || undefined
     };
     
-    // Handle comma-separated status values
     if (status) {
-      // If status contains comma, it's multiple statuses
       if (status.includes(',')) {
         const statuses = status.split(',').map(s => s.trim());
-        // Fetch all and filter in memory for multiple statuses
         const allSignals = await getSignals(options);
         const filtered = allSignals.filter(s => statuses.includes(s.status));
         return res.json(filtered);
@@ -401,11 +534,11 @@ router.get('/signals', async (req, res) => {
   }
 });
 
-// Get dynamic management configuration
+// Dynamic position management endpoints
 router.get('/api/dynamic-config', (req, res) => {
   try {
     res.json({
-      reviewInterval: REVIEW_CONFIG.reviewInterval / 3600000, // Convert to hours
+      reviewInterval: REVIEW_CONFIG.reviewInterval / 3600000,
       adxThresholds: {
         significantIncrease: REVIEW_CONFIG.adxSignificantIncrease,
         significantDecrease: REVIEW_CONFIG.adxSignificantDecrease,
@@ -434,7 +567,6 @@ router.get('/api/dynamic-config', (req, res) => {
   }
 });
 
-// Manually trigger position review for specific trade
 router.post('/api/review-position/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -452,12 +584,10 @@ router.post('/api/review-position/:id', async (req, res) => {
   }
 });
 
-// Manually trigger review of ALL open positions
 router.post('/api/review-all-positions', async (req, res) => {
   try {
     console.log('🔍 Manual review of all positions requested');
     
-    // Run review in background, respond immediately
     reviewAllPositions().catch(err => {
       console.error('❌ Background review error:', err);
     });
@@ -472,138 +602,6 @@ router.post('/api/review-all-positions', async (req, res) => {
       success: false, 
       error: error.message 
     });
-  }
-});
-
-// Get position adjustment history
-router.get('/api/adjustment-history', async (req, res) => {
-  try {
-    const { symbol, tradeId, limit } = req.query;
-    
-    let query = supabase
-      .from('position_adjustments_log')
-      .select(`
-        *,
-        trade:trade_id (
-          id,
-          symbol,
-          signal_type,
-          entry,
-          status,
-          open_time
-        )
-      `)
-      .order('timestamp', { ascending: false });
-    
-    if (limit) {
-      query = query.limit(parseInt(limit));
-    } else {
-      query = query.limit(50);
-    }
-    
-    const { data, error } = await query;
-    
-    if (error) throw error;
-    
-    // Filter by symbol or trade ID if provided
-    let filtered = data || [];
-    
-    if (symbol) {
-      filtered = filtered.filter(entry => entry.trade?.symbol === symbol);
-    }
-    
-    if (tradeId) {
-      filtered = filtered.filter(entry => entry.trade_id === parseInt(tradeId));
-    }
-    
-    res.json(filtered);
-  } catch (error) {
-    console.error('❌ Adjustment history error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get adjustment statistics
-router.get('/api/adjustment-stats', async (req, res) => {
-  try {
-    // Get all adjustments from last 30 days
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
-    const { data: adjustments, error } = await supabase
-      .from('position_adjustments_log')
-      .select('*')
-      .gte('timestamp', thirtyDaysAgo.toISOString());
-    
-    if (error) throw error;
-    
-    // Calculate statistics
-    const totalAdjustments = adjustments.length;
-    
-    const statusBreakdown = adjustments.reduce((acc, adj) => {
-      acc[adj.status] = (acc[adj.status] || 0) + 1;
-      return acc;
-    }, {});
-    
-    const avgProfitATR = adjustments.length > 0
-      ? (adjustments.reduce((sum, adj) => sum + (parseFloat(adj.profit_atr) || 0), 0) / adjustments.length).toFixed(2)
-      : 0;
-    
-    const avgADXChange = adjustments.length > 0
-      ? (adjustments.reduce((sum, adj) => sum + (parseFloat(adj.adx_change) || 0), 0) / adjustments.length).toFixed(2)
-      : 0;
-    
-    const regimeBreakdown = adjustments.reduce((acc, adj) => {
-      acc[adj.volatility_regime] = (acc[adj.volatility_regime] || 0) + 1;
-      return acc;
-    }, {});
-    
-    // Count unique trades adjusted
-    const uniqueTrades = new Set(adjustments.map(adj => adj.trade_id)).size;
-    
-    res.json({
-      totalAdjustments,
-      uniqueTradesAdjusted: uniqueTrades,
-      avgAdjustmentsPerTrade: uniqueTrades > 0 ? (totalAdjustments / uniqueTrades).toFixed(2) : 0,
-      statusBreakdown,
-      regimeBreakdown,
-      averages: {
-        profitATR: avgProfitATR,
-        adxChange: avgADXChange
-      },
-      period: '30 days'
-    });
-  } catch (error) {
-    console.error('❌ Adjustment stats error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get trades with entry conditions (for monitoring)
-router.get('/api/trades-with-conditions', async (req, res) => {
-  try {
-    const { status } = req.query;
-    
-    let query = supabase
-      .from('signals')
-      .select('id, symbol, signal_type, entry, entry_atr, entry_adx, entry_regime, status, open_time, last_review_time, review_count')
-      .eq('signal_source', 'default')
-      .not('entry_atr', 'is', null)
-      .order('open_time', { ascending: false })
-      .limit(100);
-    
-    if (status) {
-      query = query.eq('status', status);
-    }
-    
-    const { data, error } = await query;
-    
-    if (error) throw error;
-    
-    res.json(data || []);
-  } catch (error) {
-    console.error('❌ Trades with conditions error:', error);
-    res.status(500).json({ error: error.message });
   }
 });
 
