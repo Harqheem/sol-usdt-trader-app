@@ -159,6 +159,27 @@ function getCurrentSL(signal) {
   };
 }
 
+// 🆕 NEW: Get current TP2 (similar to SL tracking)
+function getCurrentTP2(signal) {
+  if (!signal.entry) return '-';
+  
+  // Use updated_tp2 if it exists and is different from original tp2
+  const currentTP2 = signal.updated_tp2 || signal.tp2;
+  
+  if (!currentTP2) return '-';
+  
+  // Show if TP2 has been modified
+  const isModified = signal.updated_tp2 && signal.updated_tp2 !== signal.tp2;
+  const decimals = signal.decimals || 4;
+  
+  return {
+    value: currentTP2.toFixed(decimals),
+    isModified: isModified,
+    originalTP2: signal.tp2 ? signal.tp2.toFixed(decimals) : '-',
+    adjustmentCount: signal.tp2_adjustment_count || 0
+  };
+}
+
 async function fetchSignals() {
   const systemLabel = currentSystem === 'all' ? 'ALL SYSTEMS' : currentSystem.toUpperCase() + ' SYSTEM';
   
@@ -647,6 +668,27 @@ function showDetails(signal) {
   } else {
     slInfoHTML += `<p><strong>Current SL:</strong> ${currentSLData.value}</p>`;
   }
+
+  let tp2InfoHTML = `<p><strong>Original TP2:</strong> ${signal.tp2?.toFixed(4) || '-'}</p>`;
+
+if (currentTP2Data.isModified) {
+  const adjustText = currentTP2Data.adjustmentCount > 1 
+    ? ` (${currentTP2Data.adjustmentCount} adjustments)` 
+    : ' (Modified)';
+    
+  tp2InfoHTML += `<p><strong>Current TP2:</strong> 
+      <span style="color: #059669; font-weight: 600;">
+        ${currentTP2Data.value} ✓${adjustText}
+      </span>
+    </p>
+    <p style="font-size: 0.9em; color: #666; margin-left: 20px;">
+      Target has been ${signal.updated_tp2 > signal.tp2 ? 'extended' : 'tightened'} 
+      by dynamic management
+    </p>
+  `;
+} else {
+  tp2InfoHTML += `<p><strong>Current TP2:</strong> ${currentTP2Data.value}</p>`;
+}
   
   sheetContent.innerHTML = `
     <h3>Trade Details ${signalSourceBadge}</h3>
@@ -657,7 +699,7 @@ function showDetails(signal) {
     <p><strong>Entry:</strong> ${signal.entry ? signal.entry.toFixed(4) : '-'}</p>
     <p><strong>Filled Qty:</strong> ${filledQty}</p>
     <p><strong>TP1:</strong> ${signal.tp1 ? signal.tp1.toFixed(4) : '-'}</p>
-    <p><strong>TP2:</strong> ${signal.tp2 ? signal.tp2.toFixed(4) : '-'}</p>
+    ${tp2InfoHTML}
     ${slInfoHTML}
     <p><strong>Position Size:</strong> ${signal.position_size ? '$' + signal.position_size.toFixed(2) : '-'}</p>
     <p><strong>Leverage:</strong> ${signal.leverage || '-'}x</p>

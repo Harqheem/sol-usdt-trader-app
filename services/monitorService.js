@@ -284,12 +284,15 @@ async function processPriceUpdate(trade, currentPrice) {
 
       // Check TP2 (full close)
       if (remainingFraction < 1.0 && Object.keys(updates).length === 0) {
+        // ✅ USE UPDATED TP2 if it exists (from dynamic management)
+        const currentTP2 = trade.updated_tp2 || trade.tp2;
+        
         const tp2Hit = isBuy 
-          ? currentPrice >= trade.tp2 * 0.9997
-          : currentPrice <= trade.tp2 * 1.0003;
+          ? currentPrice >= currentTP2 * 0.9997
+          : currentPrice <= currentTP2 * 1.0003;
         
         if (tp2Hit) {
-          updates = await handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, isFastSignal);
+          updates = await handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, isFastSignal, currentTP2);
         }
       }
 

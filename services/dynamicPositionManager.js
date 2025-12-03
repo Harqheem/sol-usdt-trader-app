@@ -256,21 +256,39 @@ async function reviewSinglePosition(trade) {
     
     const updates = { ...baseUpdates };
     const actions = [];
+    const logData = {}; // ✅ NEW: Track old/new values for logging
     
     for (const rec of assessment.recommendations) {
       console.log(`      ${rec.action}: ${rec.reason}`);
       
       if (rec.action === 'TIGHTEN_TP' || rec.action === 'EXTEND_TP') {
-        updates.tp2 = parseFloat(rec.newTP2);
-        actions.push(`TP2 adjusted: ${trade.tp2} → ${rec.newTP2}`);
+        const newTP2 = parseFloat(rec.newTP2);
+        
+        // ✅ Store old TP2 for logging
+        logData.old_tp2 = trade.updated_tp2 || trade.tp2;
+        logData.new_tp2 = newTP2;
+        
+        // ✅ UPDATE: Actually save to database
+        updates.updated_tp2 = newTP2;
+        updates.last_tp2_update = new Date().toISOString();
+        updates.tp2_adjustment_count = (trade.tp2_adjustment_count || 0) + 1;
+        
+        const actionType = rec.action === 'TIGHTEN_TP' ? 'tightened' : 'extended';
+        actions.push(`TP2 ${actionType}: ${(trade.updated_tp2 || trade.tp2).toFixed(4)} → ${rec.newTP2}`);
       }
       
       if (rec.action === 'MOVE_TO_BREAKEVEN' || rec.action === 'TIGHTEN_STOP') {
-        updates.updated_sl = parseFloat(rec.newSL);
+        const newSL = parseFloat(rec.newSL);
+        
+        // ✅ Store old SL for logging
+        logData.old_sl = trade.updated_sl || trade.sl;
+        logData.new_sl = newSL;
+        
+        updates.updated_sl = newSL;
         updates.last_sl_update = new Date().toISOString();
         
         const actionType = rec.action === 'MOVE_TO_BREAKEVEN' ? 'moved to breakeven' : 'tightened';
-        actions.push(`SL ${actionType}: ${trade.updated_sl || trade.sl} → ${rec.newSL}`);
+        actions.push(`SL ${actionType}: ${(trade.updated_sl || trade.sl).toFixed(4)} → ${rec.newSL}`);
       }
       
       // WARNING action doesn't update database
@@ -296,7 +314,7 @@ async function reviewSinglePosition(trade) {
       // Log adjustment (only for non-warning actions)
       const nonWarningActions = actions.filter(a => !a.startsWith('⚠️'));
       if (nonWarningActions.length > 0) {
-        await logAdjustment(trade.id, assessment, nonWarningActions);
+        await logAdjustment(trade.id, assessment, nonWarningActions, logData); // ✅ Pass logData
         await sendAdjustmentNotification(trade, assessment, nonWarningActions, currentPrice, currentATR, currentADX);
       }
     } else {
