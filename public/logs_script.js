@@ -659,6 +659,19 @@ function showDetails(signal) {
   const terminateButton = signal.status === 'pending' 
     ? `<button id="terminate-trade-btn" class="btn btn-danger" style="margin-top: 20px; width: 100%;">🚫 Terminate This Trade</button>` 
     : '';
+    const currentTP2Data = getCurrentTP2(signal);
+let currentTP2Display = currentTP2Data.value;
+
+// Show modification indicator
+if (currentTP2Data.isModified) {
+  const adjustCount = currentTP2Data.adjustmentCount > 1 
+    ? ` (${currentTP2Data.adjustmentCount}x)` 
+    : '';
+  currentTP2Display = `<span style="color: #059669; font-weight: 600;" 
+    title="Modified from ${currentTP2Data.originalTP2}${adjustCount}">
+    ${currentTP2Data.value} ✓
+  </span>`;
+}
   
   // 🆕 Add SL modification info
   let slInfoHTML = `<p><strong>Original SL:</strong> ${signal.sl ? signal.sl.toFixed(4) : '-'}</p>`;
