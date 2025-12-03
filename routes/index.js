@@ -219,9 +219,10 @@ router.get('/api/management/active', async (req, res) => {
 });
 
 // Get management history
+// Update the /api/management/history endpoint
 router.get('/api/management/history', async (req, res) => {
   try {
-    const { symbol, signalType, fromDate, toDate } = req.query;
+    const { symbol, signalType, signalSource, fromDate, toDate } = req.query;
     
     let query = require('../services/logsService').supabase
       .from('trade_management_log')
@@ -231,6 +232,7 @@ router.get('/api/management/history', async (req, res) => {
           id,
           symbol,
           signal_type,
+          signal_source,
           entry,
           exit_price,
           sl,
@@ -250,11 +252,15 @@ router.get('/api/management/history', async (req, res) => {
     
     if (error) throw error;
     
-    // Filter by additional criteria
+    // Filter by criteria
     let filtered = data || [];
     
     if (symbol) {
       filtered = filtered.filter(entry => entry.trade?.symbol === symbol);
+    }
+    
+    if (signalSource) {
+      filtered = filtered.filter(entry => entry.trade?.signal_source === signalSource);
     }
     
     if (signalType) {

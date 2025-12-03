@@ -1,10 +1,11 @@
-// services/monitorService.js - FIXED: P&L calculations and terminology
+// services/monitorService.js - UPDATED: Includes Fast Signal Management
 
 const Binance = require('binance-api-node').default;
 const { supabase } = require('./logsService');
 const { sendTelegramNotification } = require('./notificationService');
 const { symbols } = require('../config');
 const { checkTradeManagement, executeManagementActions } = require('./tradeManagementService');
+const { checkFastTradeManagement, executeFastManagementActions } = require('./fastTradeManagementService');
 const { handleTradeClose } = require('./dataService/Fast Signals/positionTracker');
 const { recordTradeClose: recordDefaultTradeClose } = require('./riskManager');
 const learningService = require('./Trade Learning/learningService');
@@ -26,8 +27,11 @@ const recentlyTransitioned = new Set();
 let refreshInterval = null;
 let isInitialized = false;
 
+// Processing locks
+const tradeProcessingLocks = new Set();
+
 // ========================================
-// PNL CALCULATION (unchanged)
+// PNL CALCULATION
 // ========================================
 
 function calculatePnL(entryPrice, exitPrice, isBuy, positionSize, leverage, fraction = 1.0) {
@@ -53,7 +57,19 @@ function calculatePnL(entryPrice, exitPrice, isBuy, positionSize, leverage, frac
 }
 
 // ========================================
-// TRADE REFRESH & SUBSCRIPTIONS (unchanged)
+// ATR ESTIMATION
+// ========================================
+
+function calculateATRForTrade(trade) {
+  // Estimate ATR from trade levels (TP1 is 1.5 ATR for DEFAULT, 1.0 ATR for FAST)
+  const isFast = trade.signal_source === 'fast';
+  const atrMultiplier = isFast ? 1.0 : 1.5;
+  const atr = Math.abs(trade.tp1 - trade.entry) / atrMultiplier;
+  return atr;
+}
+
+// ========================================
+// TRADE REFRESH & SUBSCRIPTIONS
 // ========================================
 
 async function refreshOpenTrades() {
@@ -100,23 +116,34 @@ function subscribeToSymbol(symbol) {
     }
     
     const relevantTrades = openTradesCache.filter(t => t.symbol === symbol);
-    // ✅ CHANGE: Use locked version
     relevantTrades.forEach(trade => processPriceUpdateWithLock(trade, currentPrice));
   });
   
   subscriptions[symbol] = unsubscribe;
   console.log(`✅ Subscribed to ${symbol} futures ticker`);
 }
+
+// ========================================
+// LOCK MECHANISM
+// ========================================
+
+async function processPriceUpdateWithLock(trade, currentPrice) {
+  if (tradeProcessingLocks.has(trade.id)) {
+    return;
+  }
+  
+  tradeProcessingLocks.add(trade.id);
+  
+  try {
+    await processPriceUpdate(trade, currentPrice);
+  } finally {
+    tradeProcessingLocks.delete(trade.id);
+  }
+}
+
 // ========================================
 // MAIN PRICE UPDATE PROCESSOR
 // ========================================
-
-function calculateATRForTrade(trade) {
-  // Estimate ATR from trade levels
-  // TP1 is 1.5 ATR away from entry, so:
-  const atr = Math.abs(trade.tp1 - trade.entry) / 1.5;
-  return atr;
-}
 
 async function processPriceUpdate(trade, currentPrice) {
   try {
@@ -129,7 +156,9 @@ async function processPriceUpdate(trade, currentPrice) {
     const currentSl = trade.updated_sl || trade.sl;
     const isFastSignal = trade.signal_source === 'fast';
 
+    // ========================================
     // PENDING TRADES
+    // ========================================
     if (trade.status === 'pending') {
       const timeSincePlaced = Date.now() - new Date(trade.timestamp).getTime();
       
@@ -149,11 +178,54 @@ async function processPriceUpdate(trade, currentPrice) {
       return;
     }
 
-    // OPENED TRADES
+    // ========================================
+    // OPENED TRADES - MANAGEMENT SYSTEMS
+    // ========================================
     if (trade.status === 'opened') {
-      // ✅ NEW: Check if management needs to act FIRST
+      const atr = calculateATRForTrade(trade);
+      
+      // ⚡ PRIORITY 1: FAST SIGNAL MANAGEMENT
+      if (isFastSignal) {
+        const fastCheck = await checkFastTradeManagement(trade, currentPrice, atr);
+        
+        if (fastCheck.needsAction) {
+          console.log(`⚡ ${trade.symbol}: Fast checkpoint reached - ${fastCheck.checkpoint.name}`);
+          
+          // Execute fast management actions
+          await executeFastManagementActions(
+            trade,
+            fastCheck.checkpoint,
+            currentPrice,
+            atr,
+            fastCheck.signalType
+          );
+          
+          // Refresh trade data
+          const { data: updatedTrade } = await supabase
+            .from('signals')
+            .select('*')
+            .eq('id', trade.id)
+            .single();
+          
+          if (updatedTrade) {
+            Object.assign(trade, updatedTrade);
+            
+            // If fully closed, remove from cache
+            if (updatedTrade.remaining_position === 0) {
+              console.log(`✅ Fast trade fully closed by management`);
+              openTradesCache = openTradesCache.filter(t => t.id !== trade.id);
+              return;
+            }
+            
+            // Skip monitor's checks this tick
+            console.log(`⏭️ Skipping monitor checks (fast management just acted)`);
+            return;
+          }
+        }
+      }
+      
+      // 🎯 PRIORITY 2: DEFAULT SYSTEM MANAGEMENT
       if (!isFastSignal) {
-        const atr = calculateATRForTrade(trade);
         const managementCheck = await checkTradeManagement(trade, currentPrice, atr);
         
         if (managementCheck.needsAction) {
@@ -168,7 +240,7 @@ async function processPriceUpdate(trade, currentPrice) {
             managementCheck.signalType
           );
           
-          // ✅ CRITICAL: Refresh trade data AND skip monitor's own checks
+          // Refresh trade data
           const { data: updatedTrade } = await supabase
             .from('signals')
             .select('*')
@@ -178,22 +250,25 @@ async function processPriceUpdate(trade, currentPrice) {
           if (updatedTrade) {
             Object.assign(trade, updatedTrade);
             
-            // ✅ NEW: If management closed position, stop processing
+            // If fully closed, remove from cache
             if (updatedTrade.remaining_position === 0) {
-              console.log(`✅ Trade fully closed by management, skipping monitor checks`);
+              console.log(`✅ Trade fully closed by management`);
               openTradesCache = openTradesCache.filter(t => t.id !== trade.id);
               return;
             }
             
-            // ✅ NEW: If management just acted, skip this tick's TP/SL checks
-            // This prevents double-processing the same price level
-            console.log(`⏭️  Skipping monitor checks this tick (management just acted)`);
+            // Skip monitor's checks this tick
+            console.log(`⏭️ Skipping monitor checks (management just acted)`);
             return;
           }
         }
       }
       
-      // ✅ MONITOR'S CHECKS (only if management didn't act above)
+      // ========================================
+      // PRIORITY 3: MONITOR'S BACKUP CHECKS
+      // Only if management didn't act above
+      // ========================================
+      
       let updates = {};
 
       // Check TP1 (partial close)
@@ -250,32 +325,8 @@ async function processPriceUpdate(trade, currentPrice) {
   }
 }
 
-// ============================================
-// ADDITIONAL SAFEGUARD: Lock mechanism
-// ============================================
-
-const tradeProcessingLocks = new Set();
-
-async function processPriceUpdateWithLock(trade, currentPrice) {
-  // Check if trade is already being processed
-  if (tradeProcessingLocks.has(trade.id)) {
-
-    return;
-  }
-  
-  // Acquire lock
-  tradeProcessingLocks.add(trade.id);
-  
-  try {
-    await processPriceUpdate(trade, currentPrice);
-  } finally {
-    // Always release lock
-    tradeProcessingLocks.delete(trade.id);
-  }
-}
-
 // ========================================
-// TRADE EVENT HANDLERS - UPDATED
+// TRADE EVENT HANDLERS
 // ========================================
 
 async function handleExpiredTrade(trade, timeSincePlaced, isBuy, isFastSignal) {
@@ -310,7 +361,7 @@ async function handleExpiredTrade(trade, timeSincePlaced, isBuy, isFastSignal) {
     `⏰ **TRADE EXPIRED** [${signalTag}]\n\n${trade.symbol} ${trade.signal_type}\nEntry: ${trade.entry?.toFixed(4) || 'N/A'}\n\n**Action Required:** Entry not reached within 4 hours.`,
     `⏰ ${trade.symbol} - EXPIRED DETAILS\n\nOpened at: ${openTimeFormatted}\nTime elapsed: ${hours} hours\nSignal Type: ${isFastSignal ? 'FAST' : 'DEFAULT'}\n\nThis pending trade has been automatically expired because the entry level was not reached within the 4-hour window.`,
     trade.symbol,
-    false // ✅ FIX: Don't forward to channel
+    false
   ).catch(err => console.error(`Failed to send expiry notification:`, err.message));
 }
 
@@ -330,7 +381,7 @@ async function handleEntryHit(trade, currentPrice, isBuy, isFastSignal) {
   await updateTrade(trade.id, updates);
   Object.assign(trade, updates);
   
-  // ✅ NEW: Record trade in risk management system
+  // Record trade in risk management system
   if (!isFastSignal) {
     const { recordNewTrade } = require('./riskManager');
     recordNewTrade(trade.symbol);
@@ -365,7 +416,6 @@ async function handleTP1Hit(trade, currentPrice, isBuy, positionSize, leverage) 
 async function handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, isFastSignal) {
   const remainingPnl = calculatePnL(trade.entry, trade.tp2, isBuy, positionSize, leverage, 0.5);
   
-  // ✅ FIX: Don't multiply by 0.5 again - both values already represent their fraction of total position
   const totalRawPnlPct = (trade.partial_raw_pnl_pct || 0) + remainingPnl.rawPnlPct;
   const totalNetPnlPct = (trade.partial_net_pnl_pct || 0) + remainingPnl.netPnlPct;
   const totalCustomPnl = (trade.partial_custom_pnl || 0) + remainingPnl.customPnl;
@@ -420,26 +470,21 @@ async function handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, 
   };
 }
 
-// ✅ FIX: Renamed from handleSLHit to handleStopHit, added isActualLoss parameter
 async function handleStopHit(trade, exitPrice, isBuy, positionSize, leverage, remainingFraction, isFastSignal, isActualLoss) {
   const signalTag = isFastSignal ? '⚡FAST' : '📊DEFAULT';
   
-  // ✅ FIX: Check if SL was moved (indicating management occurred)
   const slWasMoved = trade.updated_sl && trade.updated_sl !== trade.sl;
   
-  // ✅ FIX: For moved SL, check if it's at or above entry (breakeven+)
   let adjustedStopType = 'SL';
   if (slWasMoved) {
     const isBreakevenOrBetter = isBuy 
-      ? (trade.updated_sl >= trade.entry * 0.999) // Allow tiny buffer
+      ? (trade.updated_sl >= trade.entry * 0.999)
       : (trade.updated_sl <= trade.entry * 1.001);
     
     if (isBreakevenOrBetter) {
-      adjustedStopType = 'BE/TRAIL'; // Breakeven or trailing stop
-      // Override isActualLoss since we protected capital
+      adjustedStopType = 'BE/TRAIL';
       isActualLoss = false;
     } else {
-      // SL was moved but still below entry
       const isProfitable = isBuy ? (exitPrice > trade.entry) : (exitPrice < trade.entry);
       adjustedStopType = isProfitable ? 'TRAIL' : 'SL';
     }
@@ -451,7 +496,6 @@ async function handleStopHit(trade, exitPrice, isBuy, positionSize, leverage, re
     
     console.log(`${isActualLoss ? '❌' : '✅'} Closed full at ${adjustedStopType} for ${trade.symbol} [${signalTag}] at ${exitPrice.toFixed(4)} (P&L: ${fullLoss.netPnlPct.toFixed(2)}%)`);
     
-    // ✅ Log with correct reason
     if (isFastSignal) {
       await handleTradeClose({
         symbol: trade.symbol,
@@ -465,7 +509,7 @@ async function handleStopHit(trade, exitPrice, isBuy, positionSize, leverage, re
       recordDefaultTradeClose(trade.symbol, fullLoss.netPnlPct);
     }
     
-    // ✅ Log to learning system with correct categorization
+    // Log to learning system
     try {
       if (adjustedStopType === 'SL') {
         await learningService.logFailedTrade({
@@ -484,7 +528,6 @@ async function handleStopHit(trade, exitPrice, isBuy, positionSize, leverage, re
           indicators: null
         });
       } else {
-        // BE/TRAIL or TRAIL = successful capital protection
         await learningService.logSuccessfulTrade({
           symbol: trade.symbol,
           direction: isBuy ? 'LONG' : 'SHORT',
@@ -514,7 +557,7 @@ async function handleStopHit(trade, exitPrice, isBuy, positionSize, leverage, re
       pnl_percentage: fullLoss.netPnlPct,
       custom_pnl: fullLoss.customPnl,
       remaining_position: 0.0,
-      close_reason: adjustedStopType // ✅ Store the actual close reason
+      close_reason: adjustedStopType
     };
   } else {
     // Partial position stopped (after TP1)
@@ -588,12 +631,13 @@ async function handleStopHit(trade, exitPrice, isBuy, positionSize, leverage, re
       pnl_percentage: totalNetPnlPct,
       custom_pnl: totalCustomPnl,
       remaining_position: 0.0,
-      close_reason: adjustedStopType // ✅ Store the actual close reason
+      close_reason: adjustedStopType
     };
   }
 }
+
 // ========================================
-// DATABASE UPDATE (unchanged)
+// DATABASE UPDATE
 // ========================================
 
 async function updateTrade(id, updates) {
@@ -626,7 +670,7 @@ async function initializeMonitorService() {
     }, 300000);
     
     isInitialized = true;
-    console.log('✅ Monitor service initialized');
+    console.log('✅ Monitor service initialized (includes Fast & Default management)');
   } catch (err) {
     console.error('❌ Monitor service initialization failed:', err);
     throw err;

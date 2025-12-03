@@ -118,6 +118,7 @@ async function loadActiveTrades() {
   }
 }
 
+// Update loadHistory function to include source filter
 async function loadHistory() {
   const container = document.getElementById('history-container');
   container.innerHTML = '<div class="loading-state"><div class="loading-spinner"></div><p>Loading history...</p></div>';
@@ -125,12 +126,14 @@ async function loadHistory() {
   try {
     const symbol = document.getElementById('history-symbol-filter').value;
     const signalType = document.getElementById('history-signal-filter').value;
+    const signalSource = document.getElementById('history-source-filter')?.value; // NEW
     const fromDate = document.getElementById('history-from-date').value;
     const toDate = document.getElementById('history-to-date').value;
 
     let url = '/api/management/history?';
     if (symbol) url += `symbol=${symbol}&`;
     if (signalType) url += `signalType=${signalType}&`;
+    if (signalSource) url += `signalSource=${signalSource}&`; // NEW
     if (fromDate) url += `fromDate=${fromDate}&`;
     if (toDate) url += `toDate=${toDate}&`;
 
@@ -145,6 +148,8 @@ async function loadHistory() {
   }
 }
 
+// Add event listener for new filter
+document.getElementById('history-source-filter')?.addEventListener('change', loadHistory);
 function loadRules() {
   const container = document.getElementById('rules-grid');
   container.innerHTML = '';

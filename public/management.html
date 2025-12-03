@@ -504,26 +504,39 @@
     </div>
   </div>
 
-  <div id="tab-history" class="tab-content">
-    <div class="filters-bar">
-      <select id="history-symbol-filter" class="filter-select">
-        <option value="">All Symbols</option>
-        <option value="SOLUSDT">SOLUSDT</option>
-        <option value="SUIUSDT">SUIUSDT</option>
-        <option value="ADAUSDT">ADAUSDT</option>
-        <option value="BNBUSDT">BNBUSDT</option>
-        <option value="XRPUSDT">XRPUSDT</option>
-      </select>
-      <select id="history-signal-filter" class="filter-select">
-        <option value="">All Signal Types</option>
-        <option value="BOS">BOS</option>
-        <option value="LIQUIDITY_GRAB">Liquidity Grab</option>
-        <option value="CHOCH">ChoCH</option>
-        <option value="SR_BOUNCE">S/R Bounce</option>
-      </select>
-      <input type="date" id="history-from-date" class="filter-input">
-      <input type="date" id="history-to-date" class="filter-input">
-    </div>
+  <div class="filters-bar">
+  <select id="history-symbol-filter" class="filter-select">
+    <option value="">All Symbols</option>
+    <option value="SOLUSDT">SOLUSDT</option>
+    <option value="SUIUSDT">SUIUSDT</option>
+    <option value="ADAUSDT">ADAUSDT</option>
+    <option value="BNBUSDT">BNBUSDT</option>
+    <option value="XRPUSDT">XRPUSDT</option>
+  </select>
+  
+  <!-- ADD THIS NEW FILTER -->
+  <select id="history-source-filter" class="filter-select">
+    <option value="">All Sources</option>
+    <option value="default">Default System</option>
+    <option value="fast">⚡ Fast Signals</option>
+  </select>
+  
+  <select id="history-signal-filter" class="filter-select">
+    <option value="">All Signal Types</option>
+    <option value="BOS">BOS</option>
+    <option value="LIQUIDITY_GRAB">Liquidity Grab</option>
+    <option value="CHOCH">ChoCH</option>
+    <option value="SR_BOUNCE">S/R Bounce</option>
+    <!-- ADD FAST SIGNAL TYPES -->
+    <option value="RSI_DIVERGENCE">⚡ RSI Divergence</option>
+    <option value="CVD_DIVERGENCE">⚡ CVD Divergence</option>
+    <option value="LIQUIDITY_SWEEP">⚡ Liquidity Sweep</option>
+  </select>
+  
+  <input type="date" id="history-from-date" class="filter-input">
+  <input type="date" id="history-to-date" class="filter-input">
+</div>
+
     <div id="history-container">
       <div class="loading-state">
         <div class="loading-spinner"></div>
