@@ -20,8 +20,8 @@ module.exports = {
       enabled: true,
       
       // Quality thresholds
-      minSweepQuality: 75,          // Min sweep quality score (75-100)
-      minOrderFlowScore: 50,        // Min order flow score (50 = strong pressure)
+      minSweepQuality: 70,          // Min sweep quality score (75-100)
+      minOrderFlowScore: 40,        // Min order flow score (50 = strong pressure)
       minVolumeRatio: 1.6,          // Min volume spike on reversal
       
       // CVD confirmation
@@ -57,7 +57,7 @@ module.exports = {
       
       // Confirmation requirements
       requireVolumeConfirmation: true,  // Need volume surge
-      minVolumeRatio: 1.5,          // Min 1.5x volume on divergence
+      minVolumeRatio: 1.3,          // Min 1.5x volume on divergence
       
       // OPTIONAL: Require liquidity sweep for extra confirmation
       requireLiquiditySweep: false, // Set to true for stricter filtering
@@ -83,7 +83,7 @@ module.exports = {
       
       // Divergence detection thresholds
       extremeCVDThreshold: 0.7,     // CVD percentile threshold (top/bottom 30%)
-      minCVDDifference: 0.1,        // Min 10% CVD difference between pivots
+      minCVDDifference: 0.08,        // Min 10% CVD difference between pivots
       
       // Pivot detection (same as RSI)
       pivotLeftBars: 2,             // Bars that must be higher/lower on left
@@ -92,9 +92,9 @@ module.exports = {
       
       // Confirmation requirements
       requireOrderFlowConfirmation: true,  // Need order flow to agree
-      minOrderFlowScore: 45,        // Min order flow score
+      minOrderFlowScore: 35,        // Min order flow score
       requireVolumeConfirmation: true,     // Need volume surge
-      minVolumeRatio: 1.5,          // Min 1.5x volume on divergence
+      minVolumeRatio: 1.3,          // Min 1.5x volume on divergence
       
       // Optional: Require RSI also shows divergence (triple confluence)
       requireRSIConfirmation: false, // Set to true for stricter filtering
@@ -142,8 +142,8 @@ module.exports = {
   // ========================================
   riskManagement: {
     // Daily limits (reduced for quality)
-    maxDailyFastSignals: 6,         // Max 6 signals per day (was 12)
-    maxPerSymbolPerDay: 2,          // Max 2 signals per symbol (was 4)
+    maxDailyFastSignals: 10,         // Max 6 signals per day (was 12)
+    maxPerSymbolPerDay: 3,          // Max 2 signals per symbol (was 4)
     
     // Concurrent positions
     maxConcurrentSignals: 3,        // Max 3 open positions at once
@@ -171,9 +171,9 @@ module.exports = {
     enabled: true,                  // Enable order flow analysis
     
     // Buying/selling pressure requirements
-    minBuyingPressure: 40,          // Need +40 score for LONG (was 30)
-    minSellingPressure: -40,        // Need -40 score for SHORT (was -30)
-    strongPressureThreshold: 60,    // +60 or -60 = strong (was 50)
+    minBuyingPressure: 35,          // Need +40 score for LONG (was 30)
+    minSellingPressure: -35,        // Need -40 score for SHORT (was -30)
+    strongPressureThreshold: 50,    // +60 or -60 = strong (was 50)
     
     // Confidence adjustments
     normalBoost: 5,                 // +5% confidence for normal pressure
