@@ -210,7 +210,7 @@ function initializePauseButton() {
   updatePauseStatus();
   
   // Update periodically
-  setInterval(updatePauseStatus, 30000); // Every 30 seconds
+  setInterval(updatePauseStatus, 60000); // Every1 minute
 }
 
 async function updateRiskBadge() {
@@ -241,38 +241,125 @@ async function updateRiskBadge() {
 async function updatePauseStatus() {
   try {
     const res = await fetch('/trading-status');
+    
+    if (!res.ok) {
+      console.warn(`Trading status returned ${res.status}: ${res.statusText}`);
+      return;
+    }
+    
+    const status = await res.json();
+    const pauseBtn = document.getElementById('pause-btn');
+    
+    if (!pauseBtn) return;
+    
+    if (status.isPaused) {
+      pauseBtn.textContent = '▶️ Resume Trading';
+      pauseBtn.classList.add('paused');
+      
+      // Show countdown if available
+      if (status.timeUntilAutoResume && status.timeUntilAutoResume > 0) {
+        const minutes = Math.ceil(status.timeUntilAutoResume / 60000);
+        pauseBtn.textContent = `▶️ Resume (${minutes}m)`;
+      }
+    } else {
+      pauseBtn.textContent = '⏸️ Pause Trading';
+      pauseBtn.classList.remove('paused');
+    }
+  } catch (err) {
+    console.warn('Status fetch error:', err.message);
+    // Don't spam console with fetch errors - fail silently after warning
+  }
+}
+
+async function toggleTrading() {
+  const pauseBtn = document.getElementById('pause-btn');
+  if (!pauseBtn) {
+    console.error('Pause button not found');
+    return;
+  }
+  
+  pauseBtn.disabled = true;
+  const originalText = pauseBtn.textContent;
+  pauseBtn.textContent = '⏳ Processing...';
+  
+  try {
+    const res = await fetch('/toggle-trading', { method: 'POST' });
+    
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     }
-    const status = await res.json();
     
-    const pauseBtn = document.getElementById('sidebar-pause-btn');
-    const pauseStatusText = document.getElementById('sidebar-pause-status');
+    const data = await res.json();
     
-    if (!pauseBtn || !pauseStatusText) return;
-    
-    if (status.isPaused) {
-      pauseBtn.classList.remove('active');
-      pauseBtn.classList.add('paused');
-      pauseBtn.innerHTML = '<span class="pause-icon">▶️</span><span class="pause-text">Resume Trading</span>';
+    if (data.success) {
+      // Update button immediately
+      if (data.isPaused) {
+        pauseBtn.textContent = '▶️ Resume Trading';
+        pauseBtn.classList.add('paused');
+        showNotification('Trading paused successfully', 'success');
+      } else {
+        pauseBtn.textContent = '⏸️ Pause Trading';
+        pauseBtn.classList.remove('paused');
+        showNotification('Trading resumed successfully', 'success');
+      }
       
-      const elapsed = Math.floor(status.pauseDuration / 60000);
-      const remaining = Math.floor(status.timeUntilAutoResume / 60000);
-      pauseStatusText.textContent = `Paused ${elapsed}m (Resume in ${remaining}m)`;
-      pauseStatusText.style.color = '#ef4444';
+      // Refresh status after 1 second
+      setTimeout(updatePauseStatus, 1000);
     } else {
-      pauseBtn.classList.remove('paused');
-      pauseBtn.classList.add('active');
-      pauseBtn.innerHTML = '<span class="pause-icon">⏸️</span><span class="pause-text">Pause Trading</span>';
-      pauseStatusText.textContent = 'Trading Active';
-      pauseStatusText.style.color = '#22c55e';
+      throw new Error(data.error || 'Unknown error');
     }
-    
-    // Also update risk badge
-    updateRiskBadge();
   } catch (err) {
-    console.error('Status fetch error:', err);
+    console.error('Toggle error:', err);
+    showNotification('Failed to toggle trading: ' + err.message, 'error');
+    pauseBtn.textContent = originalText;
+  } finally {
+    pauseBtn.disabled = false;
   }
+}
+
+function showNotification(message, type = 'info') {
+  // Create notification element
+  const notification = document.createElement('div');
+  notification.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 16px 24px;
+    background: ${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#3b82f6'};
+    color: white;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 10000;
+    animation: slideIn 0.3s ease;
+  `;
+  notification.textContent = message;
+  
+  document.body.appendChild(notification);
+  
+  // Auto-remove after 3 seconds
+  setTimeout(() => {
+    notification.style.animation = 'slideOut 0.3s ease';
+    setTimeout(() => notification.remove(), 300);
+  }, 3000);
+}
+
+// Add CSS for animations
+if (!document.getElementById('notification-styles')) {
+  const style = document.createElement('style');
+  style.id = 'notification-styles';
+  style.textContent = `
+    @keyframes slideIn {
+      from { transform: translateX(400px); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOut {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(400px); opacity: 0; }
+    }
+  `;
+  document.head.appendChild(style);
 }
 
 // Toggle trading pause

@@ -1,8 +1,20 @@
-// services/dataService/coreSMCSystem.js
-// CLEAN SMC SYSTEM - BOS, Liquidity Grabs, ChoCH + S/R Bounce
+// services/dataService/coreSMCSystem.js - COMPLETE INTEGRATION
+// Volume Profile + CVD + Enhanced S/R System
 
 const { identifySwingPoints, determineStructure, calculateStructureStrength } = require('./structureTracker');
 const { detectAllSMCSignals } = require('./smcDetection');
+const { 
+  analyzeHTFStructure, 
+  htfStructureFilter 
+} = require('./advancedIndicators');
+const {
+  calculateVolumeProfile,
+  calculateEnhancedCVD,
+  detectAdvancedCVDDivergence,
+  identifyVolumeSRLevels,
+  detectVolumeSRBounce,
+  analyzeVolumeProfileSignals
+} = require('./volumeProfileSystem');
 
 // Configuration
 const SYSTEM_CONFIG = {
@@ -14,38 +26,120 @@ const SYSTEM_CONFIG = {
   maxStopPct: 0.025,
   
   // Signal requirements
-  minADXForSMC: 20,           // Minimum ADX for SMC signals
-  minStructureConfidence: 40,  // Minimum structure confidence
-  choppyVolumeMultiplier: 2.0, // Volume needed in choppy markets
+  minADXForSMC: 20,
+  minStructureConfidence: 40,
+  choppyVolumeMultiplier: 2.0,
+  
+  // Volume Profile settings (NEW!)
+  volumeProfileBins: 24,
+  minLevelStrength: 60,
+  pocBonus: 10,
+  hvnBonus: 5,
+  
+  // CVD settings (NEW!)
+  minDivergenceStrength: 0.08,
+  cvdConfidenceBonus: 10,
   
   // Entry types
   atrMultiplier: {
-    momentum: 2.0,    // Wide stop for momentum (BOS)
-    reversal: 1.2,    // Tight stop for reversals (Liquidity Grab, ChoCH, S/R)
-    trend: 1.5        // Standard stop
+    momentum: 2.0,
+    reversal: 1.2,
+    trend: 1.5
   }
 };
 
 /**
- * MAIN ANALYSIS FUNCTION
- * Analyzes market and returns tradeable signals
+ * ========================================
+ * MAIN ANALYSIS FUNCTION - ENHANCED
+ * ========================================
  */
 async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, decimals) {
   try {
     const currentPrice = parseFloat(candles[candles.length - 1].close);
     
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`📊 ANALYZING ${symbol} @ $${currentPrice}`);
+        
     // ============================================
-    // STEP 1: ANALYZE MARKET STRUCTURE
+    // STEP 1: VOLUME PROFILE ANALYSIS (NEW!)
     // ============================================
+    console.log(`\n🎯 STEP 1: Volume Profile Analysis`);
+    
+    const volumeAnalysis = analyzeVolumeProfileSignals(
+      candles.slice(-100),
+      volumes.slice(-100),
+      indicators.atr,
+      null // regime not determined yet
+    );
+    
+    if (volumeAnalysis.volumeProfile) {
+      console.log(`   POC: $${volumeAnalysis.summary.poc.toFixed(2)}`);
+      console.log(`   VAH: $${volumeAnalysis.summary.vah.toFixed(2)}`);
+      console.log(`   VAL: $${volumeAnalysis.summary.val.toFixed(2)}`);
+      console.log(`   CVD Trend: ${volumeAnalysis.summary.cvdTrend}`);
+      
+      if (volumeAnalysis.srLevels.supports.length > 0) {
+        const sup = volumeAnalysis.srLevels.supports[0];
+        console.log(`   Nearest Support: $${sup.level.toFixed(2)} (${sup.isPOC ? 'POC' : 'HVN'}, ${sup.distanceATR.toFixed(2)} ATR away)`);
+      }
+      
+      if (volumeAnalysis.srLevels.resistances.length > 0) {
+        const res = volumeAnalysis.srLevels.resistances[0];
+        console.log(`   Nearest Resistance: $${res.level.toFixed(2)} (${res.isPOC ? 'POC' : 'HVN'}, ${res.distanceATR.toFixed(2)} ATR away)`);
+      }
+    }
+    
+    // ============================================
+    // STEP 2: HTF STRUCTURE ANALYSIS
+    // ============================================
+    console.log(`\n🏔️  STEP 2: HTF Structure`);
+    
+    const htfAnalysis = analyzeHTFStructure(
+      htfData.candles4h,
+      htfData.candles1d
+    );
+    
+    console.log(`   4H: ${htfAnalysis.structure4h} (${htfAnalysis.confidence4h}%)`);
+    console.log(`   1D: ${htfAnalysis.structure1d} (${htfAnalysis.confidence1d}%)`);
+    console.log(`   Bias: ${htfAnalysis.tradingBias}`);
+    
+    // ============================================
+    // STEP 3: CVD DIVERGENCE CHECK
+    // ============================================
+    console.log(`\n💎 STEP 3: CVD Analysis`);
+    
+    const cvdDivergence = detectAdvancedCVDDivergence(
+      candles.slice(-20),
+      volumes.slice(-20),
+      volumeAnalysis.volumeProfile
+    );
+    
+    if (cvdDivergence) {
+      console.log(`   🔥 ${cvdDivergence.type} detected!`);
+      console.log(`   Strength: ${cvdDivergence.strength}`);
+      console.log(`   Confidence: ${cvdDivergence.confidence}%`);
+      console.log(`   ${cvdDivergence.reason}`);
+    } else {
+      console.log(`   No divergences detected`);
+    }
+    
+    // ============================================
+    // STEP 4: MARKET STRUCTURE (existing)
+    // ============================================
+    console.log(`\n📈 STEP 4: Market Structure`);
+    
     const swingPoints = identifySwingPoints(candles.slice(-50), 3, 0.01);
     const marketStructure = determineStructure(swingPoints);
     const structureStrength = calculateStructureStrength(marketStructure, indicators.adx);
     
-    console.log(`${symbol} | Structure: ${marketStructure.structure} (${marketStructure.confidence}%) | Strength: ${structureStrength.strength}`);
+    console.log(`   Structure: ${marketStructure.structure} (${marketStructure.confidence}%)`);
+    console.log(`   Strength: ${structureStrength.strength} (score: ${structureStrength.score})`);
     
     // ============================================
-    // STEP 2: DETECT SMC SIGNALS
+    // STEP 5: SMC SIGNALS (existing)
     // ============================================
+    console.log(`\n🎯 STEP 5: SMC Signals`);
+    
     const smcSignals = detectAllSMCSignals(
       candles.slice(-10),
       swingPoints,
@@ -55,72 +149,125 @@ async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, dec
     );
     
     if (smcSignals.length > 0) {
-      console.log(`   🎯 SMC: ${smcSignals[0].type} ${smcSignals[0].direction} | ${smcSignals[0].reason}`);
+      console.log(`   ✅ ${smcSignals[0].type} ${smcSignals[0].direction}`);
+      console.log(`   ${smcSignals[0].reason}`);
+    } else {
+      console.log(`   No SMC signals`);
     }
     
     // ============================================
-    // STEP 3: DETECT S/R BOUNCE (fallback signal)
+    // STEP 6: VOLUME-BASED S/R BOUNCE (NEW!)
     // ============================================
-    const srBounce = detectSRBounce(candles, volumes);
+    console.log(`\n💪 STEP 6: Volume S/R Bounce`);
     
-    if (srBounce) {
-      console.log(`   💪 S/R: ${srBounce.direction} | ${srBounce.reason}`);
-    }
-    
-    // ============================================
-    // STEP 4: DETERMINE REGIME (for filtering)
-    // ============================================
     const regime = determineRegime(currentPrice, indicators);
-    console.log(`${symbol} | Regime: ${regime.type} | ADX: ${indicators.adx.toFixed(1)}`);
+    
+    const volumeSRBounce = detectVolumeSRBounce(
+      candles.slice(-100),
+      volumes.slice(-100),
+      indicators.atr,
+      regime
+    );
+    
+    if (volumeSRBounce) {
+      console.log(`   ✅ ${volumeSRBounce.direction} bounce detected`);
+      console.log(`   ${volumeSRBounce.reason}`);
+      console.log(`   Level Type: ${volumeSRBounce.levelType}`);
+      console.log(`   Strength: ${volumeSRBounce.levelStrength}%`);
+    } else {
+      console.log(`   No volume-based S/R bounces`);
+    }
     
     // ============================================
-    // STEP 5: SELECT BEST SIGNAL
+    // STEP 7: REGIME DETERMINATION
     // ============================================
+    console.log(`\n🌡️  STEP 7: Market Regime`);
+    console.log(`   Type: ${regime.type}`);
+    console.log(`   ADX: ${indicators.adx.toFixed(1)}`);
+    console.log(`   ${regime.description}`);
+    
+    // ============================================
+    // STEP 8: SELECT BEST SIGNAL
+    // ============================================
+    console.log(`\n🏆 STEP 8: Signal Selection`);
+    
     let selectedSignal = null;
     let signalSource = null;
     
-    // Priority 1: SMC signals (if structure is strong enough)
-    if (smcSignals.length > 0 && structureStrength.score >= SYSTEM_CONFIG.minStructureConfidence) {
+    // PRIORITY 1: CVD Divergence at HVN/POC (HIGHEST)
+    if (cvdDivergence && cvdDivergence.atHVN && structureStrength.score >= 30) {
+      selectedSignal = cvdDivergence;
+      signalSource = 'CVD_AT_HVN';
+      console.log(`   🔥 SELECTED: CVD Divergence at Volume Level (STRONGEST)`);
+    }
+    // PRIORITY 2: Volume-based S/R Bounce with CVD confirmation
+    else if (volumeSRBounce && volumeSRBounce.cvdDivergence) {
+      selectedSignal = volumeSRBounce;
+      signalSource = 'VOLUME_SR_CVD';
+      console.log(`   🔥 SELECTED: Volume S/R + CVD Divergence (VERY STRONG)`);
+    }
+    // PRIORITY 3: CVD Divergence alone
+    else if (cvdDivergence && structureStrength.score >= 30) {
+      selectedSignal = cvdDivergence;
+      signalSource = 'CVD_DIVERGENCE';
+      console.log(`   💎 SELECTED: CVD Divergence`);
+    }
+    // PRIORITY 4: Volume-based S/R Bounce
+    else if (volumeSRBounce) {
+      selectedSignal = volumeSRBounce;
+      signalSource = 'VOLUME_SR_BOUNCE';
+      console.log(`   💪 SELECTED: Volume-based S/R Bounce`);
+    }
+    // PRIORITY 5: SMC signals
+    else if (smcSignals.length > 0 && structureStrength.score >= SYSTEM_CONFIG.minStructureConfidence) {
       selectedSignal = smcSignals[0];
       signalSource = 'SMC';
-    }
-    // Priority 2: S/R Bounce (if no SMC)
-    else if (srBounce) {
-      // In choppy markets, require volume confirmation
-      if (regime.type === 'CHOPPY') {
-        const volumeOK = checkChoppyVolume(volumes);
-        if (!volumeOK.pass) {
-          console.log(`   ⏸ S/R bounce rejected: ${volumeOK.reason}`);
-          return {
-            signal: 'WAIT',
-            reason: `S/R bounce detected but ${volumeOK.reason}`,
-            regime: regime.type,
-            structure: marketStructure.structure
-          };
-        }
-        console.log(`   ✅ Choppy volume OK: ${volumeOK.reason}`);
-      }
-      
-      selectedSignal = srBounce;
-      signalSource = 'SR_BOUNCE';
+      console.log(`   🎯 SELECTED: SMC Signal (${smcSignals[0].type})`);
     }
     
     if (!selectedSignal) {
+      console.log(`   ❌ NO SIGNALS DETECTED`);
       return {
         signal: 'WAIT',
-        reason: 'No SMC or S/R signals detected',
+        reason: 'No trading signals detected',
         regime: regime.type,
         structure: marketStructure.structure,
-        structureConfidence: marketStructure.confidence
+        volumeProfile: volumeAnalysis.summary
       };
     }
     
     // ============================================
-    // STEP 6: VALIDATE SIGNAL WITH REGIME
+    // STEP 9: HTF FILTER
     // ============================================
+    console.log(`\n🚦 STEP 9: HTF Filter`);
+    
+    const htfFilter = htfStructureFilter(selectedSignal, htfAnalysis);
+    if (!htfFilter.allowed) {
+      console.log(`   🚫 BLOCKED: ${htfFilter.reason}`);
+      return {
+        signal: 'WAIT',
+        reason: htfFilter.reason,
+        regime: regime.type,
+        htfBias: htfAnalysis.tradingBias,
+        detectedSignal: selectedSignal.type
+      };
+    }
+    
+    console.log(`   ✅ PASSED: ${htfFilter.reason}`);
+    
+    // Apply HTF confidence boost
+    if (htfFilter.confidenceBoost > 0) {
+      selectedSignal.confidence = Math.min(100, selectedSignal.confidence + htfFilter.confidenceBoost);
+    }
+    
+    // ============================================
+    // STEP 10: VALIDATE WITH REGIME
+    // ============================================
+    console.log(`\n⚖️  STEP 10: Regime Validation`);
+    
     const regimeCheck = validateWithRegime(selectedSignal, regime);
     if (!regimeCheck.allowed) {
-      console.log(`   🚫 Regime blocks signal: ${regimeCheck.reason}`);
+      console.log(`   🚫 BLOCKED: ${regimeCheck.reason}`);
       return {
         signal: 'WAIT',
         reason: regimeCheck.reason,
@@ -129,25 +276,30 @@ async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, dec
       };
     }
     
+    console.log(`   ✅ PASSED`);
+    
     // ============================================
-    // STEP 7: CALCULATE ENTRY/STOP/TARGETS
+    // STEP 11: CALCULATE TRADE LEVELS
     // ============================================
+    console.log(`\n💰 STEP 11: Trade Calculation`);
+    
     const closes = candles.map(c => parseFloat(c.close));
     const highs = candles.map(c => parseFloat(c.high));
     const lows = candles.map(c => parseFloat(c.low));
     
-    const trade = calculateTrade(
+    const trade = calculateEnhancedTrade(
       selectedSignal,
       currentPrice,
       indicators.atr,
       highs,
       lows,
       decimals,
-      regime
+      regime,
+      volumeAnalysis
     );
     
     if (!trade.valid) {
-      console.log(`   ⏸ Entry rejected: ${trade.reason}`);
+      console.log(`   ❌ REJECTED: ${trade.reason}`);
       return {
         signal: 'WAIT',
         reason: trade.reason,
@@ -156,20 +308,50 @@ async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, dec
       };
     }
     
+    console.log(`   ✅ TRADE APPROVED`);
+    console.log(`   Entry: ${trade.entry}`);
+    console.log(`   SL: ${trade.sl}`);
+    console.log(`   TP1: ${trade.tp1}`);
+    console.log(`   TP2: ${trade.tp2}`);
+    console.log(`   Risk: ${trade.riskAmount}`);
+    
     // ============================================
-    // STEP 8: BUILD FINAL SIGNAL
+    // STEP 12: BUILD FINAL SIGNAL
     // ============================================
-    console.log(`   🎯 ${selectedSignal.direction} APPROVED (${signalSource})`);
+    console.log(`   � ${selectedSignal.direction} APPROVED (${signalSource})`);
     console.log(`   Entry: ${trade.entry} | SL: ${trade.sl} | TP1: ${trade.tp1} | TP2: ${trade.tp2}`);
     
     return {
       signal: selectedSignal.direction === 'LONG' ? 'Enter Long' : 'Enter Short',
       signalType: selectedSignal.type,
-      signalSource: 'default', // ✅ FIX: Always use 'default' for database constraint
+      signalSource: 'default',
       confidence: selectedSignal.confidence,
+      
+      // Regime & Structure
       regime: regime.type,
       structure: marketStructure.structure,
       structureConfidence: marketStructure.confidence,
+      
+      // HTF Analysis
+      htfBias: htfAnalysis.tradingBias,
+      htfStructure4h: htfAnalysis.structure4h,
+      htfStructure1d: htfAnalysis.structure1d,
+      htfConfidence: htfAnalysis.confidence,
+      
+      // Volume Profile (NEW!)
+      volumeProfile: {
+        poc: volumeAnalysis.summary.poc,
+        vah: volumeAnalysis.summary.vah,
+        val: volumeAnalysis.summary.val,
+        nearestSupport: volumeAnalysis.summary.nearestSupport,
+        nearestResistance: volumeAnalysis.summary.nearestResistance
+      },
+      
+      // CVD Data (NEW!)
+      cvdTrend: volumeAnalysis.summary.cvdTrend,
+      cvdDivergence: cvdDivergence ? cvdDivergence.type : null,
+      
+      // Trade details
       entry: trade.entry,
       sl: trade.sl,
       tp1: trade.tp1,
@@ -177,8 +359,18 @@ async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, dec
       positionSize: trade.positionSize,
       riskAmount: trade.riskAmount,
       strategy: selectedSignal.strategy.toUpperCase(),
-      strategyType: signalSource, // ✅ NEW: Keep strategy type for notes (SMC/SR_BOUNCE)
-      notes: buildNotes(selectedSignal, signalSource, regime, marketStructure, trade)
+      strategyType: signalSource,
+      
+      notes: buildComprehensiveNotes(
+        selectedSignal,
+        signalSource,
+        regime,
+        marketStructure,
+        trade,
+        htfAnalysis,
+        volumeAnalysis,
+        cvdDivergence
+      )
     };
     
   } catch (error) {
@@ -192,187 +384,41 @@ async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, dec
 }
 
 /**
- * DETECT S/R BOUNCE
- * Price respecting support/resistance levels
+ * ENHANCED TRADE CALCULATION
+ * Uses volume profile levels for better TP targets
  */
-function detectSRBounce(candles, volumes) {
-  if (candles.length < 30) return null;
-  
-  const closes = candles.map(c => parseFloat(c.close));
-  const highs = candles.map(c => parseFloat(c.high));
-  const lows = candles.map(c => parseFloat(c.low));
-  
-  const current = closes[closes.length - 1];
-  const prev = closes[closes.length - 2];
-  const currentLow = lows[lows.length - 1];
-  const currentHigh = highs[highs.length - 1];
-  
-  // Find support/resistance from last 30 candles
-  const support = Math.min(...lows.slice(-30));
-  const resistance = Math.max(...highs.slice(-30));
-  
-  // BULLISH BOUNCE from support
-  const distToSupport = (current - support) / current;
-  if (distToSupport < 0.015 && current > prev) {
-    const bounceStrength = (current - currentLow) / current;
-    if (bounceStrength > 0.005) {
-      // Calculate volume
-      const avgVolume = volumes.slice(-20, -1).reduce((a, b) => a + b) / 19;
-      const currentVolume = volumes[volumes.length - 1];
-      const volumeRatio = currentVolume / avgVolume;
-      
-      return {
-        type: 'SR_BOUNCE',
-        direction: 'LONG',
-        confidence: 75,
-        strength: 'strong',
-        strategy: 'reversal',
-        reason: `💪 Bounce from support ${support.toFixed(2)} (${(bounceStrength * 100).toFixed(2)}% wick)`,
-        level: support,
-        volumeRatio: volumeRatio.toFixed(1)
-      };
-    }
-  }
-  
-  // BEARISH REJECTION from resistance
-  const distToResistance = (resistance - current) / current;
-  if (distToResistance < 0.015 && current < prev) {
-    const rejectionStrength = (currentHigh - current) / current;
-    if (rejectionStrength > 0.005) {
-      const avgVolume = volumes.slice(-20, -1).reduce((a, b) => a + b) / 19;
-      const currentVolume = volumes[volumes.length - 1];
-      const volumeRatio = currentVolume / avgVolume;
-      
-      return {
-        type: 'SR_BOUNCE',
-        direction: 'SHORT',
-        confidence: 75,
-        strength: 'strong',
-        strategy: 'reversal',
-        reason: `🚫 Rejection from resistance ${resistance.toFixed(2)} (${(rejectionStrength * 100).toFixed(2)}% wick)`,
-        level: resistance,
-        volumeRatio: volumeRatio.toFixed(1)
-      };
-    }
-  }
-  
-  return null;
-}
-
-/**
- * CHECK CHOPPY VOLUME
- * In choppy markets, require 2x+ volume
- */
-function checkChoppyVolume(volumes) {
-  if (volumes.length < 20) {
-    return { pass: false, reason: 'insufficient volume data' };
-  }
-  
-  const recent5 = volumes.slice(-5).reduce((a, b) => a + b) / 5;
-  const baseline = volumes.slice(-20, -5).reduce((a, b) => a + b) / 15;
-  const ratio = recent5 / baseline;
-  
-  if (ratio >= SYSTEM_CONFIG.choppyVolumeMultiplier) {
-    return {
-      pass: true,
-      reason: `${ratio.toFixed(1)}x volume surge`,
-      volumeRatio: ratio
-    };
-  }
-  
-  return {
-    pass: false,
-    reason: `insufficient volume (${ratio.toFixed(1)}x, need ${SYSTEM_CONFIG.choppyVolumeMultiplier}x)`,
-    volumeRatio: ratio
-  };
-}
-
-/**
- * DETERMINE REGIME
- * Simple 3-state regime detection
- */
-function determineRegime(price, indicators) {
-  const { sma200, adx, ema7, ema25 } = indicators;
-  
-  // TRENDING BULL
-  if (price > sma200 && adx > 25 && ema7 > ema25) {
-    return {
-      type: 'TRENDING_BULL',
-      allowLongs: true,
-      allowShorts: false,
-      positionSize: 1.0,
-      description: '✅ Strong uptrend - LONGS ONLY'
-    };
-  }
-  
-  // TRENDING BEAR
-  if (price < sma200 && adx > 25 && ema7 < ema25) {
-    return {
-      type: 'TRENDING_BEAR',
-      allowLongs: false,
-      allowShorts: true,
-      positionSize: 1.0,
-      description: '✅ Strong downtrend - SHORTS ONLY'
-    };
-  }
-  
-  // CHOPPY
-  return {
-    type: 'CHOPPY',
-    allowLongs: true,
-    allowShorts: true,
-    positionSize: 0.5,
-    description: '⚠️ Choppy - REDUCE SIZE'
-  };
-}
-
-/**
- * VALIDATE SIGNAL WITH REGIME
- */
-function validateWithRegime(signal, regime) {
-  // In trending bull, reject shorts
-  if (regime.type === 'TRENDING_BULL' && signal.direction === 'SHORT') {
-    return {
-      allowed: false,
-      reason: 'Bearish signal rejected - strong uptrend active'
-    };
-  }
-  
-  // In trending bear, reject longs
-  if (regime.type === 'TRENDING_BEAR' && signal.direction === 'LONG') {
-    return {
-      allowed: false,
-      reason: 'Bullish signal rejected - strong downtrend active'
-    };
-  }
-  
-  return { allowed: true };
-}
-
-/**
- * CALCULATE TRADE LEVELS
- */
-function calculateTrade(signal, currentPrice, atr, highs, lows, decimals, regime) {
+function calculateEnhancedTrade(signal, currentPrice, atr, highs, lows, decimals, regime, volumeAnalysis) {
   let entry, sl, tp1, tp2;
   const strategy = signal.strategy;
   
-  if (signal.direction === 'LONG') {
-    // Entry logic
-    if (strategy === 'momentum' || signal.type === 'LIQUIDITY_GRAB') {
-      entry = currentPrice; // Immediate entry
+  // Use signal's suggested entry if available (from volume SR bounce)
+  if (signal.suggestedEntry) {
+    entry = signal.suggestedEntry;
+  } else {
+    // Standard entry logic
+    if (signal.direction === 'LONG') {
+      if (strategy === 'momentum' || signal.type === 'LIQUIDITY_GRAB') {
+        entry = currentPrice;
+      } else {
+        entry = signal.level ? signal.level * 1.001 : currentPrice - (atr * 0.3);
+      }
     } else {
-      // Wait for pullback
-      entry = signal.level ? signal.level * 1.001 : currentPrice - (atr * 0.3);
+      if (strategy === 'momentum' || signal.type === 'LIQUIDITY_GRAB') {
+        entry = currentPrice;
+      } else {
+        entry = signal.level ? signal.level * 0.999 : currentPrice + (atr * 0.3);
+      }
     }
-    
-    // Stop loss
-    const recentLow = Math.min(...lows.slice(-20));
-    const atrMult = SYSTEM_CONFIG.atrMultiplier[strategy];
-    sl = Math.min(recentLow - (atr * 0.3), entry - (atr * atrMult));
-    
-    // Validate
-    if (entry >= currentPrice && strategy !== 'momentum' && signal.type !== 'LIQUIDITY_GRAB') {
-      return { valid: false, reason: 'Entry >= current price, wait for pullback' };
+  }
+  
+  // Stop Loss
+  if (signal.direction === 'LONG') {
+    if (signal.suggestedSL) {
+      sl = signal.suggestedSL;
+    } else {
+      const recentLow = Math.min(...lows.slice(-20));
+      const atrMult = SYSTEM_CONFIG.atrMultiplier[strategy];
+      sl = Math.min(recentLow - (atr * 0.3), entry - (atr * atrMult));
     }
     
     const risk = entry - sl;
@@ -385,23 +431,38 @@ function calculateTrade(signal, currentPrice, atr, highs, lows, decimals, regime
       return { valid: false, reason: 'Stop too tight' };
     }
     
-    // Targets
-    tp1 = entry + (risk * SYSTEM_CONFIG.minRR);
-    tp2 = entry + (risk * 3.0);
-    
-  } else { // SHORT
-    if (strategy === 'momentum' || signal.type === 'LIQUIDITY_GRAB') {
-      entry = currentPrice;
+    // TP1 - Standard
+    if (signal.suggestedTP1) {
+      tp1 = signal.suggestedTP1;
     } else {
-      entry = signal.level ? signal.level * 0.999 : currentPrice + (atr * 0.3);
+      tp1 = entry + (risk * SYSTEM_CONFIG.minRR);
     }
     
-    const recentHigh = Math.max(...highs.slice(-20));
-    const atrMult = SYSTEM_CONFIG.atrMultiplier[strategy];
-    sl = Math.max(recentHigh + (atr * 0.3), entry + (atr * atrMult));
+    // TP2 - Use nearest resistance from volume profile if available
+    if (signal.suggestedTP2) {
+      tp2 = signal.suggestedTP2;
+    } else if (volumeAnalysis.srLevels.resistances.length > 0) {
+      const targetResistance = volumeAnalysis.srLevels.resistances[0].level;
+      const potentialGain = targetResistance - entry;
+      const rrRatio = potentialGain / risk;
+      
+      // Only use volume level if it's at least 2.5R
+      if (rrRatio >= 2.5) {
+        tp2 = targetResistance;
+      } else {
+        tp2 = entry + (risk * 3.5);
+      }
+    } else {
+      tp2 = entry + (risk * 3.5);
+    }
     
-    if (entry <= currentPrice && strategy !== 'momentum' && signal.type !== 'LIQUIDITY_GRAB') {
-      return { valid: false, reason: 'Entry <= current price, wait for rally' };
+  } else { // SHORT
+    if (signal.suggestedSL) {
+      sl = signal.suggestedSL;
+    } else {
+      const recentHigh = Math.max(...highs.slice(-20));
+      const atrMult = SYSTEM_CONFIG.atrMultiplier[strategy];
+      sl = Math.max(recentHigh + (atr * 0.3), entry + (atr * atrMult));
     }
     
     const risk = sl - entry;
@@ -414,11 +475,29 @@ function calculateTrade(signal, currentPrice, atr, highs, lows, decimals, regime
       return { valid: false, reason: 'Stop too tight' };
     }
     
-    tp1 = entry - (risk * SYSTEM_CONFIG.minRR);
-    tp2 = entry - (risk * 3.0);
+    if (signal.suggestedTP1) {
+      tp1 = signal.suggestedTP1;
+    } else {
+      tp1 = entry - (risk * SYSTEM_CONFIG.minRR);
+    }
+    
+    if (signal.suggestedTP2) {
+      tp2 = signal.suggestedTP2;
+    } else if (volumeAnalysis.srLevels.supports.length > 0) {
+      const targetSupport = volumeAnalysis.srLevels.supports[0].level;
+      const potentialGain = entry - targetSupport;
+      const rrRatio = potentialGain / risk;
+      
+      if (rrRatio >= 2.5) {
+        tp2 = targetSupport;
+      } else {
+        tp2 = entry - (risk * 3.5);
+      }
+    } else {
+      tp2 = entry - (risk * 3.5);
+    }
   }
   
-  // Position sizing
   const riskAmount = SYSTEM_CONFIG.accountBalance * SYSTEM_CONFIG.riskPerTrade * regime.positionSize;
   const notional = riskAmount * SYSTEM_CONFIG.leverage;
   const quantity = notional / entry;
@@ -437,39 +516,117 @@ function calculateTrade(signal, currentPrice, atr, highs, lows, decimals, regime
 }
 
 /**
- * BUILD NOTES
+ * BUILD COMPREHENSIVE NOTES
  */
-function buildNotes(signal, signalSource, regime, marketStructure, trade) {
+function buildComprehensiveNotes(signal, signalSource, regime, marketStructure, trade, htfAnalysis, volumeAnalysis, cvdDivergence) {
   let notes = `✅ SIGNAL APPROVED\n\n`;
   
-  if (signalSource === 'SMC') {
-    notes += `🎯 SMC SIGNAL: ${signal.type}\n`;
-    notes += `Confidence: ${signal.confidence}%\n`;
-    notes += `${signal.reason}\n\n`;
-  } else {
-    notes += `💪 S/R BOUNCE SIGNAL\n`;
-    notes += `Confidence: ${signal.confidence}%\n`;
-    notes += `${signal.reason}\n\n`;
-  }
+  // Signal Type
+  notes += `🎯 SIGNAL TYPE: ${signalSource}\n`;
+  notes += `Confidence: ${signal.confidence}%\n`;
+  notes += `${signal.reason}\n\n`;
   
-  notes += `📊 Market Context:\n`;
-  notes += `• Structure: ${marketStructure.structure} (${marketStructure.confidence}%)\n`;
+  // Volume Profile Context (NEW!)
+  notes += `📊 VOLUME PROFILE:\n`;
+  notes += `• POC (Point of Control): $${volumeAnalysis.summary.poc.toFixed(2)}\n`;
+  notes += `• Value Area High: $${volumeAnalysis.summary.vah.toFixed(2)}\n`;
+  notes += `• Value Area Low: $${volumeAnalysis.summary.val.toFixed(2)}\n`;
+  if (volumeAnalysis.summary.nearestSupport) {
+    notes += `• Nearest Support: $${volumeAnalysis.summary.nearestSupport.toFixed(2)}\n`;
+  }
+  if (volumeAnalysis.summary.nearestResistance) {
+    notes += `• Nearest Resistance: $${volumeAnalysis.summary.nearestResistance.toFixed(2)}\n`;
+  }
+  notes += `\n`;
+  
+  // CVD Analysis (NEW!)
+  notes += `💎 ORDER FLOW (CVD):\n`;
+  notes += `• CVD Trend: ${volumeAnalysis.summary.cvdTrend}\n`;
+  if (cvdDivergence) {
+    notes += `• Divergence: ${cvdDivergence.type} (${cvdDivergence.strength})\n`;
+    notes += `• Divergence Strength: ${(cvdDivergence.divergenceStrength * 100).toFixed(1)}%\n`;
+  } else {
+    notes += `• No divergence detected\n`;
+  }
+  notes += `\n`;
+  
+  // HTF Analysis
+  notes += `🏔️  HIGHER TIMEFRAME:\n`;
+  notes += `• 4H Structure: ${htfAnalysis.structure4h} (${htfAnalysis.confidence4h}%)\n`;
+  notes += `• 1D Structure: ${htfAnalysis.structure1d} (${htfAnalysis.confidence1d}%)\n`;
+  notes += `• Trading Bias: ${htfAnalysis.tradingBias}\n\n`;
+  
+  // Market Context
+  notes += `📈 MARKET CONTEXT:\n`;
+  notes += `• 30m Structure: ${marketStructure.structure} (${marketStructure.confidence}%)\n`;
   notes += `• Regime: ${regime.type}\n`;
   notes += `• Strategy: ${signal.strategy.toUpperCase()}\n\n`;
   
-  notes += `💰 Trade Details:\n`;
+  // Trade Details
+  notes += `💰 TRADE DETAILS:\n`;
   notes += `• Entry: ${trade.entry}\n`;
-  notes += `• SL: ${trade.sl}\n`;
+  notes += `• Stop Loss: ${trade.sl}\n`;
   notes += `• TP1: ${trade.tp1} (50% exit)\n`;
   notes += `• TP2: ${trade.tp2} (50% exit)\n`;
   notes += `• Risk: ${trade.riskAmount}\n`;
-  notes += `• R:R: 1:${SYSTEM_CONFIG.minRR} / 1:3.0\n`;
+  notes += `• Position Size: ${(regime.positionSize * 100).toFixed(0)}%\n`;
   
   if (regime.positionSize < 1.0) {
-    notes += `\n⚠️ CHOPPY MARKET - ${(regime.positionSize * 100).toFixed(0)}% POSITION SIZE`;
+    notes += `\n⚠️ CHOPPY MARKET - REDUCED POSITION SIZE`;
   }
   
   return notes;
+}
+
+// Keep existing helper functions...
+function determineRegime(price, indicators) {
+  const { sma200, adx, ema7, ema25 } = indicators;
+  
+  if (price > sma200 && adx > 25 && ema7 > ema25) {
+    return {
+      type: 'TRENDING_BULL',
+      allowLongs: true,
+      allowShorts: false,
+      positionSize: 1.0,
+      description: '✅ Strong uptrend - LONGS ONLY'
+    };
+  }
+  
+  if (price < sma200 && adx > 25 && ema7 < ema25) {
+    return {
+      type: 'TRENDING_BEAR',
+      allowLongs: false,
+      allowShorts: true,
+      positionSize: 1.0,
+      description: '✅ Strong downtrend - SHORTS ONLY'
+    };
+  }
+  
+  return {
+    type: 'CHOPPY',
+    allowLongs: true,
+    allowShorts: true,
+    positionSize: 0.5,
+    description: '⚠️ Choppy - REDUCE SIZE'
+  };
+}
+
+function validateWithRegime(signal, regime) {
+  if (regime.type === 'TRENDING_BULL' && signal.direction === 'SHORT') {
+    return {
+      allowed: false,
+      reason: 'Bearish signal rejected - strong uptrend active'
+    };
+  }
+  
+  if (regime.type === 'TRENDING_BEAR' && signal.direction === 'LONG') {
+    return {
+      allowed: false,
+      reason: 'Bullish signal rejected - strong downtrend active'
+    };
+  }
+  
+  return { allowed: true };
 }
 
 module.exports = {

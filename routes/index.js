@@ -474,7 +474,7 @@ router.get('/api/learning-data', async (req, res) => {
     if (limit) filters.limit = parseInt(limit) || 100;
     else filters.limit = 100;
     
-    const learningService = require('./Trade Learning/learningService');
+    const learningService = require('../services/Trade Learning/learningService');
     const data = await learningService.getLearningData(filters);
     
     res.json(data);

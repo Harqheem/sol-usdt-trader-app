@@ -602,7 +602,11 @@ window.addEventListener('offline', () => {
   stopPricePolling();
 });
 
+// COMPLETE FIXED VERSION - Replace entire showRiskDetailsModal() function in script.js
+// This fixes the cooldownRemaining undefined error
+
 function showRiskDetailsModal() {
+
   // Create modal backdrop
   const backdrop = document.createElement('div');
   backdrop.id = 'risk-modal-backdrop';
@@ -671,7 +675,7 @@ function showRiskDetailsModal() {
             <div style="background: ${status.daily.consecutiveLosses === 0 ? '#f0fdf4' : status.daily.consecutiveLosses >= status.daily.maxConsecutiveLosses ? '#fef2f2' : '#fffbeb'}; border: 1px solid ${status.daily.consecutiveLosses === 0 ? '#86efac' : status.daily.consecutiveLosses >= status.daily.maxConsecutiveLosses ? '#fca5a5' : '#fcd34d'}; padding: 16px; border-radius: 8px;">
               <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; font-weight: 600;">Consecutive Losses</div>
               <div style="font-size: 24px; font-weight: 700; color: ${status.daily.consecutiveLosses >= status.daily.maxConsecutiveLosses ? '#dc2626' : '#1a1a1a'};">${status.daily.consecutiveLosses}/${status.daily.maxConsecutiveLosses}</div>
-              <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">${status.daily.consecutiveLosses === 0 ? '✅ Clean streak' : status.daily.consecutiveLosses >= status.daily.maxConsecutiveLosses ? '🚫 Limit reached' : '⚠️  Be careful'}</div>
+              <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">${status.daily.consecutiveLosses === 0 ? '✅ Clean streak' : status.daily.consecutiveLosses >= status.daily.maxConsecutiveLosses ? '🚫 Limit reached' : '⚠️ Be careful'}</div>
             </div>
             
             <div style="background: ${status.pause.isPaused ? '#fef2f2' : '#f0fdf4'}; border: 1px solid ${status.pause.isPaused ? '#fca5a5' : '#86efac'}; padding: 16px; border-radius: 8px;">
@@ -686,33 +690,47 @@ function showRiskDetailsModal() {
             <div style="font-size: 14px; font-weight: 600; color: #1a1a1a; margin-bottom: 12px;">Per-Symbol Status</div>
             ${Object.keys(status.symbols).length === 0 ? 
               '<div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 14px;">No trades today</div>' :
-              Object.entries(status.symbols).map(([symbol, stats]) => `
-                <div style="background: #f9fafb; border: 1px solid #e5e7eb; padding: 14px; border-radius: 8px; margin-bottom: 8px;">
-                  <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 8px;">
-                    <div style="font-weight: 600; color: #1a1a1a; font-size: 15px;">${symbol}</div>
-                    <div style="display: flex; gap: 12px; margin-left: auto;">
-                      <span style="font-size: 13px; color: #6b7280;">Trades: <strong>${stats.trades}/${status.parameters.maxSymbolTradesPerDay}</strong></span>
-                      <span style="font-size: 13px; color:${stats.losses >= status.parameters.maxSymbolLossesPerDay ? 
-  `<div style="font-size: 12px; color: #ef4444; display: flex; align-items: center; gap: 6px;">
-    <span>🚫</span> Max losses reached - blocked until tomorrow
-  </div>` : 
-  stats.lastLossTime ? `
-    <div style="font-size: 12px; color: ${cooldownRemaining > 0 ? '#ef4444' : '#15803d'}; display: flex; align-items: center; gap: 6px;">
-      ${cooldownRemaining > 0 ? 
-        `<span>⏰</span> Cooldown: ${cooldownRemaining} min remaining` :
-        `<span>✅</span> Cooldown expired - can trade again`
-      }
-    </div>
-  ` : ''}
-                </div>
-              `).join('')
+              Object.entries(status.symbols).map(([symbol, stats]) => {
+                // ✅ FIX: Calculate cooldown BEFORE using it
+                let cooldownRemaining = 0;
+                if (stats.lastLossTime) {
+                  const cooldownMs = status.parameters.cooldownAfterLossHours * 3600000;
+                  const timeSinceLoss = Date.now() - stats.lastLossTime;
+                  cooldownRemaining = Math.max(0, Math.ceil((cooldownMs - timeSinceLoss) / 60000));
+                }
+                
+                return `
+                  <div style="background: #f9fafb; border: 1px solid #e5e7eb; padding: 14px; border-radius: 8px; margin-bottom: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                      <div style="font-weight: 600; color: #1a1a1a; font-size: 15px;">${symbol}</div>
+                      <div style="display: flex; gap: 12px;">
+                        <span style="font-size: 13px; color: #6b7280;">Trades: <strong>${stats.trades}/${status.parameters.maxSymbolTradesPerDay}</strong></span>
+                        <span style="font-size: 13px; color: #6b7280;">Losses: <strong style="color: ${stats.losses >= status.parameters.maxSymbolLossesPerDay ? '#ef4444' : '#1a1a1a'}">${stats.losses}/${status.parameters.maxSymbolLossesPerDay}</strong></span>
+                      </div>
+                    </div>
+                    ${stats.losses >= status.parameters.maxSymbolLossesPerDay ? 
+                      `<div style="font-size: 12px; color: #ef4444; display: flex; align-items: center; gap: 6px;">
+                        <span>🚫</span> Max losses reached - blocked until tomorrow
+                      </div>` : 
+                      stats.lastLossTime ? `
+                        <div style="font-size: 12px; color: ${cooldownRemaining > 0 ? '#ef4444' : '#15803d'}; display: flex; align-items: center; gap: 6px;">
+                          ${cooldownRemaining > 0 ? 
+                            `<span>⏰</span> Cooldown: ${cooldownRemaining} min remaining` :
+                            `<span>✅</span> Cooldown expired - can trade again`
+                          }
+                        </div>
+                      ` : '<div style="font-size: 12px; color: #15803d;">✅ No recent losses</div>'
+                    }
+                  </div>
+                `;
+              }).join('')
             }
           </div>
           
           <!-- Risk Parameters -->
           <details style="margin-bottom: 20px;">
             <summary style="cursor: pointer; font-size: 14px; font-weight: 600; color: #1a1a1a; padding: 12px; background: #f9fafb; border-radius: 8px; list-style: none; user-select: none;">
-              ⚙️  Risk Parameters (Click to expand)
+              ⚙️ Risk Parameters (Click to expand)
             </summary>
             <div style="padding: 16px; background: white; border: 1px solid #e5e7eb; border-radius: 8px; margin-top: 8px; font-size: 13px; color: #6b7280;">
               <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
@@ -720,7 +738,7 @@ function showRiskDetailsModal() {
                 <div><strong>Max Consecutive Losses:</strong> ${status.parameters.maxConsecutiveLosses}</div>
                 <div><strong>Max Symbol Trades/Day:</strong> ${status.parameters.maxSymbolTradesPerDay}</div>
                 <div><strong>Cooldown After Loss:</strong> ${status.parameters.cooldownAfterLossHours}h</div>
-                <div><strong>Catastrophic Loss Limit:</strong> $${status.parameters.catastrophicLossLimit}</div>
+                <div><strong>Catastrophic Loss Limit:</strong> ${status.parameters.catastrophicLossPct}%</div>
                 <div><strong>Risk Per Trade:</strong> ${(status.parameters.riskPercentPerTrade * 100).toFixed(1)}%</div>
               </div>
             </div>
