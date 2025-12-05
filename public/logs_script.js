@@ -48,6 +48,8 @@ let pageSize = 25;
 let totalPages = 1;
 let sortColumn = 'time';
 let sortDirection = 'desc';
+let currentTradeManagement = null;
+
 
 const symbols = ['SOLUSDT', 'ETHUSDT', 'SUIUSDT', 'ADAUSDT', 'BNBUSDT', 'XRPUSDT'];
 symbols.forEach(sym => {
@@ -178,6 +180,85 @@ function getCurrentTP2(signal) {
     originalTP2: signal.tp2 ? signal.tp2.toFixed(decimals) : '-',
     adjustmentCount: signal.tp2_adjustment_count || 0
   };
+}
+
+
+// ========================================
+// MANAGEMENT PANEL HELPER FUNCTIONS
+// ========================================
+
+// Helper: Extract signal type from trade
+function getSignalTypeFromTrade(trade) {
+  const notes = trade.notes || '';
+  
+  // Fast signals
+  if (notes.includes('RSI_BULLISH_DIVERGENCE') || notes.includes('RSI BULLISH')) 
+    return 'RSI_BULLISH_DIVERGENCE';
+  if (notes.includes('RSI_BEARISH_DIVERGENCE') || notes.includes('RSI BEARISH')) 
+    return 'RSI_BEARISH_DIVERGENCE';
+  if (notes.includes('CVD_BULLISH_DIVERGENCE') || notes.includes('CVD BULLISH')) 
+    return 'CVD_BULLISH_DIVERGENCE';
+  if (notes.includes('CVD_BEARISH_DIVERGENCE') || notes.includes('CVD BEARISH')) 
+    return 'CVD_BEARISH_DIVERGENCE';
+  if (notes.includes('LIQUIDITY_SWEEP_BULLISH') || notes.includes('SWEEP REVERSAL - BULLISH')) 
+    return 'LIQUIDITY_SWEEP_BULLISH';
+  if (notes.includes('LIQUIDITY_SWEEP_BEARISH') || notes.includes('SWEEP REVERSAL - BEARISH')) 
+    return 'LIQUIDITY_SWEEP_BEARISH';
+  
+  // Default signals
+  if (notes.includes('BOS') || notes.includes('Break of Structure')) 
+    return 'BOS';
+  if (notes.includes('LIQUIDITY_GRAB') || notes.includes('Liquidity Grab')) 
+    return 'LIQUIDITY_GRAB';
+  if (notes.includes('CHOCH') || notes.includes('Change of Character')) 
+    return 'CHOCH';
+  if (notes.includes('SR_BOUNCE') || notes.includes('S/R BOUNCE')) 
+    return 'SR_BOUNCE';
+  
+  return 'SR_BOUNCE';
+}
+
+// Helper: Format signal type display name
+function formatSignalType(type) {
+  const map = {
+    'BOS': 'BOS',
+    'LIQUIDITY_GRAB': 'Liquidity Grab',
+    'CHOCH': 'ChoCH',
+    'SR_BOUNCE': 'S/R Bounce',
+    'RSI_BULLISH_DIVERGENCE': '⚡ RSI Bull Div',
+    'RSI_BEARISH_DIVERGENCE': '⚡ RSI Bear Div',
+    'CVD_BULLISH_DIVERGENCE': '⚡ CVD Bull Div',
+    'CVD_BEARISH_DIVERGENCE': '⚡ CVD Bear Div',
+    'LIQUIDITY_SWEEP_BULLISH': '⚡ Sweep Bull',
+    'LIQUIDITY_SWEEP_BEARISH': '⚡ Sweep Bear'
+  };
+  return map[type] || type;
+}
+
+// Helper: Get time in trade
+function getTimeInTrade(trade) {
+  const start = new Date(trade.open_time || trade.timestamp);
+  const now = new Date();
+  const diff = now - start;
+  
+  const hours = Math.floor(diff / 3600000);
+  const minutes = Math.floor((diff % 3600000) / 60000);
+  
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  return `${minutes}m`;
+}
+
+// Helper: Format timestamp
+function formatTimestamp(timestamp) {
+  const date = new Date(timestamp);
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
 }
 
 async function fetchSignals() {
@@ -388,7 +469,6 @@ function updateSortIndicators() {
   });
 }
 
-let currentTradeManagement = null;
 
 // Initialize management panel
 function initializeManagementPanel() {
@@ -397,11 +477,6 @@ function initializeManagementPanel() {
     closeBtn.addEventListener('click', closeManagementPanel);
   }
 }
-
-// Call initialization on page load
-document.addEventListener('DOMContentLoaded', () => {
-  initializeManagementPanel();
-});
 
 // Open management panel for a specific trade
 async function showTradeManagement(tradeId) {
@@ -1051,10 +1126,10 @@ function showDetails(signal) {
     : '<span style="background: #e0e7ff; color: #4338ca; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">📊 DEFAULT</span>';
   
    const terminateButton = signal.status === 'pending' 
-    ? `<button id="terminate-trade-btn" class="btn btn-danger" style="margin-top: 20px; width: 100%;">🚫 Terminate This Trade</button>` 
+    ? `<button id="terminate-trade-btn" class="btn btn-danger" style="margin-top: 20px; width: relative;">🚫 Terminate This Trade</button>` 
     : '';
     const managementButton = (signal.status === 'opened' || signal.status === 'closed') ?
-    `<button id="view-management-btn" class="btn btn-primary" style="margin-top: 20px; width: 100%;">
+    `<button id="view-management-btn" class="btn btn-primary" style="margin-top: 20px; width: absolute;">
       📋 View Trade Management
     </button>` : '';
     const currentTP2Data = getCurrentTP2(signal);
@@ -1305,7 +1380,10 @@ customPositionSizeInput.addEventListener('input', () => {
 customLeverageInput.addEventListener('input', () => {
   sortAndPaginateData();
 });
-
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', () => {
+  initializeManagementPanel();
+});
 // Initial load
 fetchSignals();
 

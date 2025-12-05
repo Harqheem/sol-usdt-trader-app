@@ -709,4 +709,46 @@ async function initializeMonitorService() {
     return;
   }
   
-  console.log
+  console.log('🔄 Initializing monitor service...');
+  
+  try {
+    await refreshOpenTrades();
+    
+    // Start periodic refresh (every 5 minutes)
+    refreshInterval = setInterval(() => {
+      refreshOpenTrades().catch(err => console.error('Refresh failed:', err));
+    }, 300000);
+    
+    isInitialized = true;
+    console.log('✅ Monitor service initialized (includes Fast & Default management)');
+  } catch (err) {
+    console.error('❌ Monitor service initialization failed:', err);
+    throw err;
+  }
+}
+
+function cleanup() {
+  console.log('🧹 Cleaning up monitor service...');
+  
+  if (refreshInterval) {
+    clearInterval(refreshInterval);
+    refreshInterval = null;
+  }
+  
+  Object.keys(subscriptions).forEach(sym => {
+    try {
+      subscriptions[sym]();
+    } catch (err) {
+      console.error(`Error unsubscribing ${sym}:`, err);
+    }
+  });
+  
+  isInitialized = false;
+  console.log('✅ Monitor service cleaned up');
+}
+
+module.exports = {
+  initializeMonitorService,
+  cleanup,
+  refreshOpenTrades
+};
