@@ -1,4 +1,4 @@
-// services/monitorService.js - UPDATED: Includes Fast Signal Management
+// services/monitorService.js - FIXED: Trade Management has priority over monitor
 
 const Binance = require('binance-api-node').default;
 const { supabase } = require('./logsService');
@@ -29,6 +29,10 @@ let isInitialized = false;
 
 // Processing locks
 const tradeProcessingLocks = new Set();
+
+// ✅ NEW: Track if management just acted to prevent monitor interference
+const managementCooldowns = new Map(); // tradeId -> timestamp
+const MANAGEMENT_COOLDOWN_MS = 10000; // 10 seconds
 
 // ========================================
 // PNL CALCULATION
@@ -61,7 +65,6 @@ function calculatePnL(entryPrice, exitPrice, isBuy, positionSize, leverage, frac
 // ========================================
 
 function calculateATRForTrade(trade) {
-  // Estimate ATR from trade levels (TP1 is 1.5 ATR for DEFAULT, 1.0 ATR for FAST)
   const isFast = trade.signal_source === 'fast';
   const atrMultiplier = isFast ? 1.0 : 1.5;
   const atr = Math.abs(trade.tp1 - trade.entry) / atrMultiplier;
@@ -184,6 +187,15 @@ async function processPriceUpdate(trade, currentPrice) {
     if (trade.status === 'opened') {
       const atr = calculateATRForTrade(trade);
       
+      // ✅ CHECK: Is trade in management cooldown?
+      const lastManagementAction = managementCooldowns.get(trade.id) || 0;
+      const timeSinceManagement = Date.now() - lastManagementAction;
+      
+      if (timeSinceManagement < MANAGEMENT_COOLDOWN_MS) {
+        // Skip ALL monitor checks if management just acted
+        return;
+      }
+      
       // ⚡ PRIORITY 1: FAST SIGNAL MANAGEMENT
       if (isFastSignal) {
         const fastCheck = await checkFastTradeManagement(trade, currentPrice, atr);
@@ -200,6 +212,9 @@ async function processPriceUpdate(trade, currentPrice) {
             fastCheck.signalType
           );
           
+          // ✅ SET COOLDOWN - prevent monitor from interfering
+          managementCooldowns.set(trade.id, Date.now());
+          
           // Refresh trade data
           const { data: updatedTrade } = await supabase
             .from('signals')
@@ -214,10 +229,11 @@ async function processPriceUpdate(trade, currentPrice) {
             if (updatedTrade.remaining_position === 0) {
               console.log(`✅ Fast trade fully closed by management`);
               openTradesCache = openTradesCache.filter(t => t.id !== trade.id);
+              managementCooldowns.delete(trade.id);
               return;
             }
             
-            // Skip monitor's checks this tick
+            // Skip monitor's checks this cycle
             console.log(`⏭️ Skipping monitor checks (fast management just acted)`);
             return;
           }
@@ -240,6 +256,9 @@ async function processPriceUpdate(trade, currentPrice) {
             managementCheck.signalType
           );
           
+          // ✅ SET COOLDOWN - prevent monitor from interfering
+          managementCooldowns.set(trade.id, Date.now());
+          
           // Refresh trade data
           const { data: updatedTrade } = await supabase
             .from('signals')
@@ -254,10 +273,11 @@ async function processPriceUpdate(trade, currentPrice) {
             if (updatedTrade.remaining_position === 0) {
               console.log(`✅ Trade fully closed by management`);
               openTradesCache = openTradesCache.filter(t => t.id !== trade.id);
+              managementCooldowns.delete(trade.id);
               return;
             }
             
-            // Skip monitor's checks this tick
+            // Skip monitor's checks this cycle
             console.log(`⏭️ Skipping monitor checks (management just acted)`);
             return;
           }
@@ -266,25 +286,34 @@ async function processPriceUpdate(trade, currentPrice) {
       
       // ========================================
       // PRIORITY 3: MONITOR'S BACKUP CHECKS
-      // Only if management didn't act above
+      // Only runs if:
+      // 1. Management didn't act above
+      // 2. No recent management action (cooldown expired)
       // ========================================
       
       let updates = {};
 
-      // Check TP1 (partial close)
+      // ✅ CHANGED: TP1 backup (only if management hasn't handled it)
       if (remainingFraction === 1.0) {
         const tp1Hit = isBuy 
           ? currentPrice >= trade.tp1 * 0.9997
           : currentPrice <= trade.tp1 * 1.0003;
         
         if (tp1Hit) {
-          updates = await handleTP1Hit(trade, currentPrice, isBuy, positionSize, leverage);
+          // Check if management system should have handled this
+          // If so, let it handle it on next cycle
+          console.log(`📊 ${trade.symbol}: TP1 price reached - letting management system handle`);
+          
+          // DON'T apply backup updates - wait for management
+          // Only apply if management is disabled or trade is FAST without management
+          if (isFastSignal || !hasManagementRules(trade)) {
+            updates = await handleTP1Hit(trade, currentPrice, isBuy, positionSize, leverage);
+          }
         }
       }
 
-      // Check TP2 (full close)
+      // ✅ CHANGED: TP2 backup (only if not handled by management)
       if (remainingFraction < 1.0 && Object.keys(updates).length === 0) {
-        // ✅ USE UPDATED TP2 if it exists (from dynamic management)
         const currentTP2 = trade.updated_tp2 || trade.tp2;
         
         const tp2Hit = isBuy 
@@ -296,7 +325,7 @@ async function processPriceUpdate(trade, currentPrice) {
         }
       }
 
-      // Check SL/Trailing Stop
+      // ✅ CHANGED: SL backup (only if not recently moved by management)
       if (Object.keys(updates).length === 0) {
         const distanceFromEntry = Math.abs((currentPrice - trade.entry) / trade.entry);
         
@@ -312,13 +341,14 @@ async function processPriceUpdate(trade, currentPrice) {
         }
       }
 
-      // Apply updates (only if monitor found something)
+      // Apply updates (only if monitor found something AND management didn't recently act)
       if (Object.keys(updates).length > 0) {
         await updateTrade(trade.id, updates);
         Object.assign(trade, updates);
         
         if (updates.status === 'closed') {
           openTradesCache = openTradesCache.filter(t => t.id !== trade.id);
+          managementCooldowns.delete(trade.id);
           recentlyTransitioned.delete(trade.id);
         }
       }
@@ -326,6 +356,20 @@ async function processPriceUpdate(trade, currentPrice) {
   } catch (err) {
     console.error(`Processing error for ${trade.symbol}:`, err);
   }
+}
+
+// ✅ NEW: Check if trade has management rules
+function hasManagementRules(trade) {
+  if (trade.signal_source === 'fast') {
+    return true; // Fast signals have management
+  }
+  
+  // Default signals have management if they're a known type
+  const notes = trade.notes || '';
+  return notes.includes('BOS') || 
+         notes.includes('LIQUIDITY_GRAB') || 
+         notes.includes('CHOCH') || 
+         notes.includes('SR_BOUNCE');
 }
 
 // ========================================
@@ -341,6 +385,7 @@ async function handleExpiredTrade(trade, timeSincePlaced, isBuy, isFastSignal) {
   await updateTrade(trade.id, updates);
   Object.assign(trade, updates);
   openTradesCache = openTradesCache.filter(t => t.id !== trade.id);
+  managementCooldowns.delete(trade.id);
   
   const hours = (timeSincePlaced / 3600000).toFixed(1);
   const signalTag = isFastSignal ? '⚡FAST' : '📊DEFAULT';
@@ -398,26 +443,29 @@ async function handleEntryHit(trade, currentPrice, isBuy, isFastSignal) {
   }, 3000);
 }
 
+// ✅ CHANGED: TP1 handler - simplified (management handles SL moves)
 async function handleTP1Hit(trade, currentPrice, isBuy, positionSize, leverage) {
   const partialPnl = calculatePnL(trade.entry, trade.tp1, isBuy, positionSize, leverage, 0.5);
   const signalTag = trade.signal_source === 'fast' ? '⚡FAST' : '📊DEFAULT';
   
-  console.log(`✅ Partial close at TP1 for ${trade.symbol} [${signalTag}] at ${currentPrice.toFixed(4)}, SL moved to entry`);
+  console.log(`✅ BACKUP: Partial close at TP1 for ${trade.symbol} [${signalTag}] at ${currentPrice.toFixed(4)}`);
+  console.log(`   ⚠️ Note: Management system should have handled this`);
   
   recentlyTransitioned.add(trade.id);
   setTimeout(() => recentlyTransitioned.delete(trade.id), 2000);
   
+  // ✅ CHANGED: Don't move SL here - let management handle it
   return { 
     partial_raw_pnl_pct: partialPnl.rawPnlPct,
     partial_net_pnl_pct: partialPnl.netPnlPct,
     partial_custom_pnl: partialPnl.customPnl,
-    remaining_position: 0.5, 
-    updated_sl: trade.entry 
+    remaining_position: 0.5
+    // ❌ REMOVED: updated_sl: trade.entry (management handles this)
   };
 }
 
-async function handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, isFastSignal) {
-  const remainingPnl = calculatePnL(trade.entry, trade.tp2, isBuy, positionSize, leverage, 0.5);
+async function handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, isFastSignal, currentTP2) {
+  const remainingPnl = calculatePnL(trade.entry, currentTP2, isBuy, positionSize, leverage, 0.5);
   
   const totalRawPnlPct = (trade.partial_raw_pnl_pct || 0) + remainingPnl.rawPnlPct;
   const totalNetPnlPct = (trade.partial_net_pnl_pct || 0) + remainingPnl.netPnlPct;
@@ -450,8 +498,8 @@ async function handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, 
       entry: trade.entry,
       sl: trade.sl,
       tp1: trade.tp1,
-      tp2: trade.tp2,
-      exitPrice: trade.tp2,
+      tp2: currentTP2,
+      exitPrice: currentTP2,
       pnl: totalNetPnlPct,
       closeReason: 'TP2',
       marketConditions: null,
@@ -465,11 +513,12 @@ async function handleTP2Hit(trade, currentPrice, isBuy, positionSize, leverage, 
   return { 
     status: 'closed', 
     close_time: new Date().toISOString(), 
-    exit_price: trade.tp2, 
+    exit_price: currentTP2, 
     raw_pnl_percentage: totalRawPnlPct, 
     pnl_percentage: totalNetPnlPct,
     custom_pnl: totalCustomPnl,
-    remaining_position: 0.0 
+    remaining_position: 0.0,
+    close_reason: 'TP2'
   };
 }
 
@@ -494,7 +543,6 @@ async function handleStopHit(trade, exitPrice, isBuy, positionSize, leverage, re
   }
   
   if (remainingFraction === 1.0) {
-    // Full position stopped out
     const fullLoss = calculatePnL(trade.entry, exitPrice, isBuy, positionSize, leverage, 1.0);
     
     console.log(`${isActualLoss ? '❌' : '✅'} Closed full at ${adjustedStopType} for ${trade.symbol} [${signalTag}] at ${exitPrice.toFixed(4)} (P&L: ${fullLoss.netPnlPct.toFixed(2)}%)`);
@@ -563,7 +611,6 @@ async function handleStopHit(trade, exitPrice, isBuy, positionSize, leverage, re
       close_reason: adjustedStopType
     };
   } else {
-    // Partial position stopped (after TP1)
     const remainingPnl = calculatePnL(trade.entry, exitPrice, isBuy, positionSize, leverage, 0.5);
     
     const totalRawPnlPct = (trade.partial_raw_pnl_pct || 0) + remainingPnl.rawPnlPct;
@@ -662,46 +709,4 @@ async function initializeMonitorService() {
     return;
   }
   
-  console.log('🔄 Initializing monitor service...');
-  
-  try {
-    await refreshOpenTrades();
-    
-    // Start periodic refresh (every 5 minutes)
-    refreshInterval = setInterval(() => {
-      refreshOpenTrades().catch(err => console.error('Refresh failed:', err));
-    }, 300000);
-    
-    isInitialized = true;
-    console.log('✅ Monitor service initialized (includes Fast & Default management)');
-  } catch (err) {
-    console.error('❌ Monitor service initialization failed:', err);
-    throw err;
-  }
-}
-
-function cleanup() {
-  console.log('🧹 Cleaning up monitor service...');
-  
-  if (refreshInterval) {
-    clearInterval(refreshInterval);
-    refreshInterval = null;
-  }
-  
-  Object.keys(subscriptions).forEach(sym => {
-    try {
-      subscriptions[sym]();
-    } catch (err) {
-      console.error(`Error unsubscribing ${sym}:`, err);
-    }
-  });
-  
-  isInitialized = false;
-  console.log('✅ Monitor service cleaned up');
-}
-
-module.exports = {
-  initializeMonitorService,
-  cleanup,
-  refreshOpenTrades
-};
+  console.log

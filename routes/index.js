@@ -567,6 +567,142 @@ router.get('/api/dynamic-config', (req, res) => {
   }
 });
 
+// ========================================
+// TRADE-SPECIFIC MANAGEMENT ENDPOINTS
+// Add these AFTER existing management endpoints in routes/index.js
+// ========================================
+
+// Get individual trade with current price
+router.get('/api/trade/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { supabase } = require('../services/logsService');
+    
+    const { data: trade, error } = await supabase
+      .from('signals')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (error) throw error;
+    if (!trade) {
+      return res.status(404).json({ error: 'Trade not found' });
+    }
+    
+    // If trade is opened, get current price from cache
+    if (trade.status === 'opened') {
+      const { wsCache } = require('../services/dataService/cacheManager');
+      const symbolCache = wsCache[trade.symbol];
+      
+      if (symbolCache && symbolCache.currentPrice) {
+        trade.current_price = parseFloat(symbolCache.currentPrice);
+      } else {
+        trade.current_price = trade.entry; // Fallback to entry
+      }
+    } else {
+      // For closed trades, use exit price
+      trade.current_price = trade.exit_price || trade.entry;
+    }
+    
+    res.json(trade);
+  } catch (error) {
+    console.error('❌ Get trade error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get trade management details with history
+router.get('/api/management/trade/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { supabase } = require('../services/logsService');
+    
+    // Get trade details
+    const { data: trade, error: tradeError } = await supabase
+      .from('signals')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (tradeError) throw tradeError;
+    if (!trade) {
+      return res.status(404).json({ error: 'Trade not found' });
+    }
+    
+    // Add current price if opened
+    if (trade.status === 'opened') {
+      const { wsCache } = require('../services/dataService/cacheManager');
+      const symbolCache = wsCache[trade.symbol];
+      trade.current_price = symbolCache?.currentPrice || trade.entry;
+    } else {
+      trade.current_price = trade.exit_price || trade.entry;
+    }
+    
+    // Get management history
+    const { data: history, error: historyError } = await supabase
+      .from('trade_management_log')
+      .select('*')
+      .eq('trade_id', id)
+      .order('timestamp', { ascending: true });
+    
+    if (historyError) throw historyError;
+    
+    // Determine signal type from trade notes
+    const signalType = getSignalTypeFromTradeNotes(trade.notes);
+    
+    // Get appropriate rules based on signal source
+    const isFast = trade.signal_source === 'fast';
+    const { MANAGEMENT_RULES } = require('../services/tradeManagementService');
+    const { FAST_MANAGEMENT_RULES } = require('../services/fastTradeManagementService');
+    
+    const allRules = isFast ? FAST_MANAGEMENT_RULES : MANAGEMENT_RULES;
+    const rules = allRules[signalType] || null;
+    
+    res.json({
+      trade,
+      history: history || [],
+      rules: rules || null,
+      signalType,
+      system: isFast ? 'fast' : 'default'
+    });
+  } catch (error) {
+    console.error('❌ Get management error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Helper function to extract signal type from notes
+function getSignalTypeFromTradeNotes(notes) {
+  if (!notes) return 'SR_BOUNCE';
+  
+  // Fast signals
+  if (notes.includes('RSI_BULLISH_DIVERGENCE') || notes.includes('RSI BULLISH')) 
+    return 'RSI_BULLISH_DIVERGENCE';
+  if (notes.includes('RSI_BEARISH_DIVERGENCE') || notes.includes('RSI BEARISH')) 
+    return 'RSI_BEARISH_DIVERGENCE';
+  if (notes.includes('CVD_BULLISH_DIVERGENCE') || notes.includes('CVD BULLISH')) 
+    return 'CVD_BULLISH_DIVERGENCE';
+  if (notes.includes('CVD_BEARISH_DIVERGENCE') || notes.includes('CVD BEARISH')) 
+    return 'CVD_BEARISH_DIVERGENCE';
+  if (notes.includes('LIQUIDITY_SWEEP_BULLISH') || notes.includes('SWEEP REVERSAL - BULLISH')) 
+    return 'LIQUIDITY_SWEEP_BULLISH';
+  if (notes.includes('LIQUIDITY_SWEEP_BEARISH') || notes.includes('SWEEP REVERSAL - BEARISH')) 
+    return 'LIQUIDITY_SWEEP_BEARISH';
+  
+  // Default signals
+  if (notes.includes('BOS') || notes.includes('Break of Structure')) 
+    return 'BOS';
+  if (notes.includes('LIQUIDITY_GRAB') || notes.includes('Liquidity Grab')) 
+    return 'LIQUIDITY_GRAB';
+  if (notes.includes('CHOCH') || notes.includes('Change of Character')) 
+    return 'CHOCH';
+  if (notes.includes('SR_BOUNCE') || notes.includes('S/R BOUNCE')) 
+    return 'SR_BOUNCE';
+  
+  return 'SR_BOUNCE';
+}
+
+
 router.post('/api/review-position/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -606,3 +742,4 @@ router.post('/api/review-all-positions', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.getSignalTypeFromTradeNotes = getSignalTypeFromTradeNotes;

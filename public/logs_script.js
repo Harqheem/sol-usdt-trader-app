@@ -388,6 +388,400 @@ function updateSortIndicators() {
   });
 }
 
+let currentTradeManagement = null;
+
+// Initialize management panel
+function initializeManagementPanel() {
+  const closeBtn = document.getElementById('close-management');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', closeManagementPanel);
+  }
+}
+
+// Call initialization on page load
+document.addEventListener('DOMContentLoaded', () => {
+  initializeManagementPanel();
+});
+
+// Open management panel for a specific trade
+async function showTradeManagement(tradeId) {
+  const panel = document.getElementById('management-panel');
+  const content = document.getElementById('mgmt-content');
+  
+  if (!panel || !content) return;
+  
+  // Show panel with loading state
+  panel.classList.add('active');
+  content.innerHTML = `
+    <div class="loading-state">
+      <div class="loading-spinner"></div>
+      <p>Loading management data...</p>
+    </div>
+  `;
+  
+  try {
+    // Fetch trade details and management history
+    const [tradeResponse, managementResponse] = await Promise.all([
+      fetch(`/api/trade/${tradeId}`),
+      fetch(`/api/management/trade/${tradeId}`)
+    ]);
+    
+    if (!tradeResponse.ok || !managementResponse.ok) {
+      throw new Error('Failed to fetch trade data');
+    }
+    
+    const trade = await tradeResponse.json();
+    const management = await managementResponse.json();
+    
+    currentTradeManagement = { trade, management };
+    renderTradeManagement(trade, management);
+    
+  } catch (error) {
+    console.error('Error loading trade management:', error);
+    content.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">❌</div>
+        <div class="empty-title">Failed to Load</div>
+        <div class="empty-text">${error.message}</div>
+      </div>
+    `;
+  }
+}
+
+// Render trade management details
+function renderTradeManagement(trade, managementData) {
+  const content = document.getElementById('mgmt-content');
+  const isFast = trade.signal_source === 'fast';
+  const systemIcon = isFast ? '⚡' : '📊';
+  const systemName = isFast ? 'FAST' : 'DEFAULT';
+  
+  // Update header
+  document.getElementById('mgmt-icon').textContent = systemIcon;
+  document.getElementById('mgmt-symbol').textContent = `${trade.symbol} Management`;
+  
+  const signalType = getSignalTypeFromTrade(trade);
+  document.getElementById('mgmt-signal-type').textContent = formatSignalType(signalType);
+  
+  const statusBadge = trade.status === 'opened' ? '🟢 ACTIVE' : '⚪ CLOSED';
+  document.getElementById('mgmt-status').textContent = statusBadge;
+  
+  // Calculate current stats
+  const direction = trade.signal_type.includes('Long') || trade.signal_type === 'Buy' ? 'LONG' : 'SHORT';
+  const isBuy = direction === 'LONG';
+  
+  // Calculate ATR and profit
+  const atrMultiplier = isFast ? 1.0 : 1.5;
+  const atr = Math.abs(trade.tp1 - trade.entry) / atrMultiplier;
+  
+  let currentPrice = trade.current_price || trade.entry;
+  const profitDistance = isBuy ? (currentPrice - trade.entry) : (trade.entry - currentPrice);
+  const profitATR = profitDistance / atr;
+  const profitPct = (profitDistance / trade.entry) * 100;
+  
+  // Get management rules and history
+  const rules = managementData.rules;
+  const checkpoints = rules?.checkpoints || [];
+  const executedCheckpoints = managementData.history || [];
+  
+  // Find next checkpoint
+  const nextCheckpoint = checkpoints.find(cp => 
+    !executedCheckpoints.some(ex => ex.checkpoint_name === cp.name) && 
+    profitATR < cp.profitATR
+  );
+  
+  // Build HTML
+  let html = `
+    <div class="management-section">
+      <div class="trade-stats-grid">
+        <div class="stat-box">
+          <div class="stat-label">Current Profit</div>
+          <div class="stat-value ${profitATR >= 0 ? 'positive' : 'negative'}">
+            ${profitATR >= 0 ? '+' : ''}${profitATR.toFixed(2)} ATR
+          </div>
+          <div style="font-size: 12px; color: var(--gray-500); margin-top: 4px;">
+            ${profitPct >= 0 ? '+' : ''}${profitPct.toFixed(2)}%
+          </div>
+        </div>
+        
+        <div class="stat-box">
+          <div class="stat-label">Time in Trade</div>
+          <div class="stat-value">${getTimeInTrade(trade)}</div>
+        </div>
+        
+        <div class="stat-box">
+          <div class="stat-label">Current SL</div>
+          <div class="stat-value">
+            ${parseFloat(trade.updated_sl || trade.sl).toFixed(4)}
+          </div>
+          ${trade.updated_sl && trade.updated_sl !== trade.sl ? 
+            '<div style="font-size: 11px; color: var(--success); margin-top: 4px;">✓ Modified</div>' : 
+            '<div style="font-size: 11px; color: var(--gray-500); margin-top: 4px;">Original</div>'}
+        </div>
+        
+        <div class="stat-box">
+          <div class="stat-label">Position</div>
+          <div class="stat-value">
+            ${((trade.remaining_position || 1.0) * 100).toFixed(0)}%
+          </div>
+          ${trade.remaining_position && trade.remaining_position < 1.0 ?
+            '<div style="font-size: 11px; color: var(--info); margin-top: 4px;">Partial closed</div>' :
+            '<div style="font-size: 11px; color: var(--gray-500); margin-top: 4px;">Full position</div>'}
+        </div>
+      </div>
+    </div>
+  `;
+  
+  // Show next checkpoint for active trades
+  if (trade.status === 'opened' && nextCheckpoint) {
+    const distance = nextCheckpoint.profitATR - profitATR;
+    html += `
+      <div class="next-checkpoint">
+        <div class="next-checkpoint-label">NEXT CHECKPOINT</div>
+        <div class="next-checkpoint-name">${nextCheckpoint.name}</div>
+        <div class="next-checkpoint-distance">
+          ${distance > 0 ? '+' : ''}${distance.toFixed(2)} ATR away (${nextCheckpoint.profitATR} ATR)
+        </div>
+        <div style="margin-top: var(--spacing-md); font-size: 13px; opacity: 0.9;">
+          ${nextCheckpoint.actions.map(a => `• ${formatAction(a)}`).join('<br>')}
+        </div>
+      </div>
+    `;
+  }
+  
+  // Management history section
+  html += `<div class="management-section">`;
+  html += `<div class="management-section-title">📋 Management History</div>`;
+  
+  if (executedCheckpoints.length === 0) {
+    html += `
+      <div class="no-management">
+        <div class="no-management-icon">🎯</div>
+        <div style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">
+          No Management Actions Yet
+        </div>
+        <div style="font-size: 13px;">
+          ${trade.status === 'opened' ? 
+            'Checkpoints will appear here as profit targets are reached' :
+            'This trade closed without triggering management actions'}
+        </div>
+      </div>
+    `;
+  } else {
+    html += `<div class="management-timeline">`;
+    
+    // Sort by timestamp (most recent first)
+    const sortedHistory = [...executedCheckpoints].sort((a, b) => 
+      new Date(b.timestamp) - new Date(a.timestamp)
+    );
+    
+    sortedHistory.forEach((entry, index) => {
+      const timestamp = new Date(entry.timestamp);
+      const relativeTime = getRelativeTime(timestamp);
+      
+      html += `
+        <div class="timeline-item">
+          <div class="timeline-checkpoint"></div>
+          <div class="timeline-time">${relativeTime} • ${formatTimestamp(entry.timestamp)}</div>
+          <div class="timeline-checkpoint-name">
+            ${entry.checkpoint_name}
+            <span class="timeline-atr">${entry.checkpoint_atr} ATR</span>
+          </div>
+          <div class="timeline-actions">
+      `;
+      
+      // Show SL move if present
+      if (entry.new_sl) {
+        html += `
+          <div class="timeline-action sl-move">
+            <div><strong>Stop Loss Adjusted</strong></div>
+            <div class="action-detail">
+              <span>From: $${parseFloat(entry.old_sl).toFixed(4)}</span>
+              <span>→</span>
+              <span><strong>$${parseFloat(entry.new_sl).toFixed(4)}</strong></span>
+            </div>
+          </div>
+        `;
+      }
+      
+      // Show partial close if present
+      if (entry.close_percent) {
+        html += `
+          <div class="timeline-action partial-close">
+            <div><strong>Partial Close</strong></div>
+            <div class="action-detail">
+              <span>Closed: ${entry.close_percent}%</span>
+              <span>→</span>
+              <span><strong>${entry.new_remaining}% remaining</strong></span>
+            </div>
+          </div>
+        `;
+      }
+      
+      // Show reason
+      if (entry.reason) {
+        html += `
+          <div style="margin-top: 8px; font-size: 12px; color: var(--gray-600); font-style: italic;">
+            "${entry.reason}"
+          </div>
+        `;
+      }
+      
+      html += `
+          </div>
+        </div>
+      `;
+    });
+    
+    html += `</div>`; // Close timeline
+  }
+  
+  html += `</div>`; // Close section
+  
+  // Show all configured checkpoints
+  html += `
+    <div class="management-section">
+      <div class="management-section-title">⚙️ Configured Checkpoints</div>
+      <div style="font-size: 13px; color: var(--gray-600); margin-bottom: var(--spacing-md);">
+        ${systemName} System • ${formatSignalType(signalType)}
+      </div>
+  `;
+  
+  if (checkpoints.length > 0) {
+    html += `<div class="management-timeline">`;
+    
+    checkpoints.forEach((checkpoint, index) => {
+      const isExecuted = executedCheckpoints.some(ex => ex.checkpoint_name === checkpoint.name);
+      const isPending = !isExecuted && profitATR >= checkpoint.profitATR;
+      const isUpcoming = !isExecuted && profitATR < checkpoint.profitATR;
+      
+      let statusClass = 'upcoming';
+      let statusLabel = 'Upcoming';
+      
+      if (isExecuted) {
+        statusClass = '';
+        statusLabel = '✓ Executed';
+      } else if (isPending) {
+        statusClass = 'upcoming';
+        statusLabel = '⏳ Executing...';
+      }
+      
+      html += `
+        <div class="timeline-item">
+          <div class="timeline-checkpoint ${statusClass}"></div>
+          <div class="timeline-time">${statusLabel}</div>
+          <div class="timeline-checkpoint-name">
+            ${checkpoint.name}
+            <span class="timeline-atr">${checkpoint.profitATR} ATR</span>
+          </div>
+          <div style="margin-top: var(--spacing-sm); font-size: 13px; color: var(--gray-600);">
+            ${checkpoint.actions.map(a => `• ${formatAction(a)}`).join('<br>')}
+          </div>
+        </div>
+      `;
+    });
+    
+    html += `</div>`;
+  } else {
+    html += `
+      <div class="no-management">
+        <div style="font-size: 13px; color: var(--gray-600);">
+          No management rules configured for this signal type
+        </div>
+      </div>
+    `;
+  }
+  
+  html += `</div>`; // Close section
+  
+  // Add manual review button for active DEFAULT trades
+  if (trade.status === 'opened' && !isFast) {
+    html += `
+      <div class="management-section">
+        <button id="manual-review-btn" class="btn btn-primary manual-review-btn">
+          🔍 Trigger Manual Review
+        </button>
+        <div style="font-size: 12px; color: var(--gray-500); text-align: center; margin-top: var(--spacing-sm);">
+          Force an immediate review of management conditions
+        </div>
+      </div>
+    `;
+  }
+  
+  content.innerHTML = html;
+  
+  // Attach manual review handler
+  const reviewBtn = document.getElementById('manual-review-btn');
+  if (reviewBtn) {
+    reviewBtn.addEventListener('click', () => triggerManualReview(trade.id));
+  }
+}
+
+// Close management panel
+function closeManagementPanel() {
+  const panel = document.getElementById('management-panel');
+  if (panel) {
+    panel.classList.remove('active');
+  }
+  currentTradeManagement = null;
+}
+
+// Trigger manual review
+async function triggerManualReview(tradeId) {
+  const btn = document.getElementById('manual-review-btn');
+  if (!btn) return;
+  
+  btn.disabled = true;
+  btn.textContent = '⏳ Reviewing...';
+  
+  try {
+    const response = await fetch(`/api/review-position/${tradeId}`, {
+      method: 'POST'
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      alert('✅ Manual review completed successfully');
+      // Reload management data
+      await showTradeManagement(tradeId);
+    } else {
+      alert('❌ Review failed: ' + result.message);
+    }
+  } catch (error) {
+    console.error('Manual review error:', error);
+    alert('❌ Failed to trigger review: ' + error.message);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '🔍 Trigger Manual Review';
+    }
+  }
+}
+
+// Helper: Get relative time
+function getRelativeTime(date) {
+  const now = new Date();
+  const diff = now - date;
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+  
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${days}d ago`;
+}
+
+// Helper: Format action
+function formatAction(action) {
+  if (action.type === 'move_sl') {
+    return `Move SL to ${action.target} - ${action.reason}`;
+  } else if (action.type === 'close_partial') {
+    return `Close ${action.percent}% - ${action.reason}`;
+  }
+  return action.reason;
+}
+
 function renderTableAndSummary() {
   const startTime = performance.now();
   
@@ -656,9 +1050,13 @@ function showDetails(signal) {
     ? '<span style="background: #fef3c7; color: #92400e; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">⚡ FAST</span>'
     : '<span style="background: #e0e7ff; color: #4338ca; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">📊 DEFAULT</span>';
   
-  const terminateButton = signal.status === 'pending' 
+   const terminateButton = signal.status === 'pending' 
     ? `<button id="terminate-trade-btn" class="btn btn-danger" style="margin-top: 20px; width: 100%;">🚫 Terminate This Trade</button>` 
     : '';
+    const managementButton = (signal.status === 'opened' || signal.status === 'closed') ?
+    `<button id="view-management-btn" class="btn btn-primary" style="margin-top: 20px; width: 100%;">
+      📋 View Trade Management
+    </button>` : '';
     const currentTP2Data = getCurrentTP2(signal);
 let currentTP2Display = currentTP2Data.value;
 
@@ -732,9 +1130,10 @@ if (currentTP2Data.isModified) {
     <p><strong>Custom PnL ($):</strong> ${customPnlHTMLDollars}</p>
     <p style="font-size: 0.9em; color: #666; margin-left: 20px;">Based on your custom position size (${customPositionSizeInput.value || 100}) and leverage (${customLeverageInput.value || 20}x)</p>
     ${terminateButton}
+    ${managementButton}
   `;
   
-  if (signal.status === 'pending') {
+ if (signal.status === 'pending') {
     setTimeout(() => {
       const termBtn = document.getElementById('terminate-trade-btn');
       if (termBtn) {
@@ -742,6 +1141,16 @@ if (currentTP2Data.isModified) {
       }
     }, 0);
   }
+  
+  // ✅ ADD THIS NEW HANDLER:
+  setTimeout(() => {
+    const mgmtBtn = document.getElementById('view-management-btn');
+    if (mgmtBtn) {
+      mgmtBtn.addEventListener('click', () => {
+        showTradeManagement(signal.id);
+      });
+    }
+  }, 0);
   
   sideSheet.classList.add('active');
 }

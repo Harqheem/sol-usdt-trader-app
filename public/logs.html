@@ -565,6 +565,30 @@
     </div>
   </div>
 
+  <!-- Add this AFTER the existing #side-sheet div in logs.html -->
+
+<div id="management-panel" class="management-panel">
+  <div class="management-header">
+    <button id="close-management" class="btn btn-secondary" style="width: 100%; margin-bottom: var(--spacing-md);">✕ Close</button>
+    <div class="management-title">
+      <span id="mgmt-icon">🎯</span>
+      <span id="mgmt-symbol">Trade Management</span>
+    </div>
+    <div class="management-subtitle">
+      <span id="mgmt-signal-type">-</span>
+      <span>•</span>
+      <span id="mgmt-status">-</span>
+    </div>
+  </div>
+  
+  <div class="management-content" id="mgmt-content">
+    <div class="loading-state">
+      <div class="loading-spinner"></div>
+      <p>Loading management data...</p>
+    </div>
+  </div>
+</div>
+
   <script src="navigation.js"></script>
   <script src="logs_script.js"></script>
 </body>
