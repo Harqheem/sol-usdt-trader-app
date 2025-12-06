@@ -400,33 +400,55 @@ function calculateEnhancedTrade(signal, currentPrice, atr, highs, lows, decimals
       return { valid: false, reason: 'Stop too tight' };
     }
     
-    // TP1 - Standard
+    // TP1 - Use nearest resistance from volume profile
     if (signal.suggestedTP1) {
       tp1 = signal.suggestedTP1;
-    } else {
-      tp1 = entry + (risk * SYSTEM_CONFIG.minRR);
-    }
-    
-    // TP2 - Use nearest resistance from volume profile if available
-    if (signal.suggestedTP2) {
-      tp2 = signal.suggestedTP2;
     } else if (volumeAnalysis.srLevels.resistances.length > 0) {
       const targetResistance = volumeAnalysis.srLevels.resistances[0].level;
       const potentialGain = targetResistance - entry;
       const rrRatio = potentialGain / risk;
       
-      // Only use volume level if it's at least 2.5R
-      if (rrRatio >= 2.5) {
-        tp2 = targetResistance;
+      // Must be between 1.0 and 1.5 ATR, or reject signal
+      if (rrRatio >= 1.0 && rrRatio <= 1.5) {
+        tp1 = targetResistance;
+      } else if (rrRatio > 1.5) {
+        // Too far, use 1.5R
+        tp1 = entry + (risk * 1.5);
+      } else {
+        // Too close, reject signal
+        return { valid: false, reason: `Nearest resistance too close (${rrRatio.toFixed(2)}R, need ≥1.0R)` };
+      }
+    } else {
+      // No volume level found, use standard 1.5R
+      tp1 = entry + (risk * SYSTEM_CONFIG.minRR);
+    }
+    
+    // TP2 - Look for next resistance beyond TP1, or use 3.5R
+    if (signal.suggestedTP2) {
+      tp2 = signal.suggestedTP2;
+    } else {
+      // Find resistance beyond TP1
+      const resistancesBeyondTP1 = volumeAnalysis.srLevels.resistances.filter(r => r.level > tp1);
+      
+      if (resistancesBeyondTP1.length > 0) {
+        const nextResistance = resistancesBeyondTP1[0].level;
+        const potentialGain = nextResistance - entry;
+        const rrRatio = potentialGain / risk;
+        
+        // Use it if reasonable (between 2.5R and 5R)
+        if (rrRatio >= 2.5 && rrRatio <= 5.0) {
+          tp2 = nextResistance;
+        } else {
+          tp2 = entry + (risk * 3.5);
+        }
       } else {
         tp2 = entry + (risk * 3.5);
       }
-    } else {
-      tp2 = entry + (risk * 3.5);
     }
     
   } else { // SHORT
-    if (signal.suggestedSL) {
+    
+  if (signal.suggestedSL) {
       sl = signal.suggestedSL;
     } else {
       const recentHigh = Math.max(...highs.slice(-20));
@@ -444,26 +466,50 @@ function calculateEnhancedTrade(signal, currentPrice, atr, highs, lows, decimals
       return { valid: false, reason: 'Stop too tight' };
     }
     
+    // TP1 - Use nearest support from volume profile
     if (signal.suggestedTP1) {
       tp1 = signal.suggestedTP1;
-    } else {
-      tp1 = entry - (risk * SYSTEM_CONFIG.minRR);
-    }
-    
-    if (signal.suggestedTP2) {
-      tp2 = signal.suggestedTP2;
     } else if (volumeAnalysis.srLevels.supports.length > 0) {
       const targetSupport = volumeAnalysis.srLevels.supports[0].level;
       const potentialGain = entry - targetSupport;
       const rrRatio = potentialGain / risk;
       
-      if (rrRatio >= 2.5) {
-        tp2 = targetSupport;
+      // Must be between 1.0 and 1.5 ATR, or reject signal
+      if (rrRatio >= 1.0 && rrRatio <= 1.5) {
+        tp1 = targetSupport;
+      } else if (rrRatio > 1.5) {
+        // Too far, use 1.5R
+        tp1 = entry - (risk * 1.5);
+      } else {
+        // Too close, reject signal
+        return { valid: false, reason: `Nearest support too close (${rrRatio.toFixed(2)}R, need ≥1.0R)` };
+      }
+    } else {
+      // No volume level found, use standard 1.5R
+      tp1 = entry - (risk * SYSTEM_CONFIG.minRR);
+    }
+    
+    // TP2 - Look for next support beyond TP1, or use 3.5R
+    if (signal.suggestedTP2) {
+      tp2 = signal.suggestedTP2;
+    } else {
+      // Find support beyond TP1
+      const supportsBeyondTP1 = volumeAnalysis.srLevels.supports.filter(s => s.level < tp1);
+      
+      if (supportsBeyondTP1.length > 0) {
+        const nextSupport = supportsBeyondTP1[0].level;
+        const potentialGain = entry - nextSupport;
+        const rrRatio = potentialGain / risk;
+        
+        // Use it if reasonable (between 2.5R and 5R)
+        if (rrRatio >= 2.5 && rrRatio <= 4.0) {
+          tp2 = nextSupport;
+        } else {
+          tp2 = entry - (risk * 3.5);
+        }
       } else {
         tp2 = entry - (risk * 3.5);
       }
-    } else {
-      tp2 = entry - (risk * 3.5);
     }
   }
   
