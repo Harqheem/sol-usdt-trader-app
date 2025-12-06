@@ -1133,7 +1133,7 @@ async function sendFastAlert(symbol, signal, currentPrice, atr, assetConfig) {
   const message1 = `⚡ ENTER ✅ ${signal.direction} - ${signal.urgency} URGENCY
 
 ${symbol}
-LEVERAGE: 50x
+LEVERAGE: 20x
 Entry: ${actualEntry.toFixed(decimals)}
 TP1: ${tp1.toFixed(decimals)}
 TP2: ${tp2.toFixed(decimals)}

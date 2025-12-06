@@ -153,193 +153,212 @@ async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, dec
     );
     
 
-    // ============================================
-    // STEP 7: SELECT BEST SIGNAL
-    // ============================================
-     
-    let selectedSignal = null;
-    let signalSource = null;
-    
-    // PRIORITY 1: CVD Divergence at HVN/POC (HIGHEST)
-    if (cvdDivergence && cvdDivergence.atHVN && structureStrength.score >= 30) {
-      selectedSignal = cvdDivergence;
-      signalSource = 'CVD_AT_HVN';
-     
-    }
-    // PRIORITY 2: Volume-based S/R Bounce with CVD confirmation
-    else if (volumeSRBounce && volumeSRBounce.cvdDivergence) {
-      selectedSignal = volumeSRBounce;
-      signalSource = 'VOLUME_SR_CVD';
-   
-    }
+   // services/dataService/coreSMCSystem.js - PARTIAL UPDATE
+// ONLY SHOWING THE SIGNAL SELECTION LOGIC (Step 7) that needs updating
 
-    // PRIORITY 3: Volume-based S/R Bounce
-    else if (volumeSRBounce) {
-      selectedSignal = volumeSRBounce;
-      signalSource = 'VOLUME_SR_BOUNCE';
-      
-    }
+// ============================================
+// STEP 7: SELECT BEST SIGNAL - UPDATED
+// ============================================
+let selectedSignal = null;
+let signalSource = null;
 
-    //PRIORITY 4: 1 min Liquidity sweep check
-    else if (sweep1m) {
-      selectedSignal = sweep1m;
-      signalSource = 'SWEEP_1M';
-   
-    }
+// PRIORITY 1: CVD Divergence at HVN/POC (HIGHEST)
+if (cvdDivergence && cvdDivergence.atHVN && structureStrength.score >= 30) {
+  selectedSignal = cvdDivergence;
+  signalSource = 'CVD_AT_HVN';
+  console.log(`   🎯 PRIORITY 1: CVD divergence at HVN/POC`);
+}
+// PRIORITY 2: Volume-based S/R Bounce with CVD confirmation
+else if (volumeSRBounce && volumeSRBounce.cvdDivergence) {
+  selectedSignal = volumeSRBounce;
+  signalSource = 'VOLUME_SR_CVD';
+  console.log(`   🎯 PRIORITY 2: Volume S/R Bounce + CVD`);
+}
+// PRIORITY 3: Volume-based S/R Bounce
+else if (volumeSRBounce) {
+  selectedSignal = volumeSRBounce;
+  signalSource = 'VOLUME_SR_BOUNCE';
+  console.log(`   🎯 PRIORITY 3: Volume S/R Bounce`);
+}
+// PRIORITY 4: SMC signals
+else if (smcSignals.length > 0 && structureStrength.score >= SYSTEM_CONFIG.minStructureConfidence) {
+  selectedSignal = smcSignals[0];
+  signalSource = 'SMC';
+  console.log(`   🎯 PRIORITY 4: SMC Signal (${smcSignals[0].type})`);
+}
+// PRIORITY 5: 1 min Liquidity sweep check
+else if (sweep1m) {
+  selectedSignal = sweep1m;
+  // Set proper signal type based on direction
+  signalSource = sweep1m.direction === 'LONG' ? 'LIQUIDITY_SWEEP_BULLISH' : 'LIQUIDITY_SWEEP_BEARISH';
+  console.log(`   🎯 PRIORITY 5: 1m Liquidity Sweep (${sweep1m.direction})`);
+}
+// PRIORITY 6: CVD Divergence alone
+else if (cvdDivergence && structureStrength.score >= 30) {
+  selectedSignal = cvdDivergence;
+  signalSource = 'CVD_DIVERGENCE';
+  console.log(`   🎯 PRIORITY 6: CVD Divergence`);
+}
 
-    // PRIORITY 5: SMC signals
-    else if (smcSignals.length > 0 && structureStrength.score >= SYSTEM_CONFIG.minStructureConfidence) {
-      selectedSignal = smcSignals[0];
-      signalSource = 'SMC';
-    
-    }
+if (!selectedSignal) {
+  console.log(`   ⏸️ No signals detected`);
+  return {
+    signal: 'WAIT',
+    reason: 'No trading signals detected',
+    regime: regime.type,
+    structure: marketStructure.structure,
+    volumeProfile: volumeAnalysis.summary
+  };
+}
 
-    // PRIORITY 6: CVD Divergence alone
-    else if (cvdDivergence && structureStrength.score >= 30) {
-      selectedSignal = cvdDivergence;
-      signalSource = 'CVD_DIVERGENCE';
-    
-    }
+// ============================================
+// STEP 11: BUILD FINAL SIGNAL - UPDATED
+// ============================================
+console.log(`   ✅ Building trade signal...`);
 
-
-
-    
-    if (!selectedSignal) {
-      
-      return {
-        signal: 'WAIT',
-        reason: 'No trading signals detected',
-        regime: regime.type,
-        structure: marketStructure.structure,
-        volumeProfile: volumeAnalysis.summary
-      };
-    }
-    
-    // ============================================
-    // STEP 8: HTF FILTER
-    // ============================================
-   
-    
-    const htfFilter = htfStructureFilter(selectedSignal, htfAnalysis);
-    if (!htfFilter.allowed) {
-      console.log(`   🚫 BLOCKED: ${htfFilter.reason}`);
-      return {
-        signal: 'WAIT',
-        reason: htfFilter.reason,
-        regime: regime.type,
-        htfBias: htfAnalysis.tradingBias,
-        detectedSignal: selectedSignal.type
-      };
-    }
-    
-
-    // Apply HTF confidence boost
-    if (htfFilter.confidenceBoost > 0) {
-      selectedSignal.confidence = Math.min(100, selectedSignal.confidence + htfFilter.confidenceBoost);
-    }
-    
-    // ============================================
-    // STEP 9: VALIDATE WITH REGIME
-    // ============================================
-      
-    const regimeCheck = validateWithRegime(selectedSignal, regime);
-    if (!regimeCheck.allowed) {
+return {
+  signal: selectedSignal.direction === 'LONG' ? 'Enter Long' : 'Enter Short',
+  signalType: signalSource, // ✅ THIS is what gets stored in trade.notes
+  signalSource: 'default',
+  confidence: selectedSignal.confidence,
   
-      return {
-        signal: 'WAIT',
-        reason: regimeCheck.reason,
-        regime: regime.type,
-        detectedSignal: selectedSignal.type
-      };
-    }
-    
-
-    
-    // ============================================
-    // STEP 10: CALCULATE TRADE LEVELS
-    // ============================================
-    
-    const closes = candles.map(c => parseFloat(c.close));
-    const highs = candles.map(c => parseFloat(c.high));
-    const lows = candles.map(c => parseFloat(c.low));
-    
-    const trade = calculateEnhancedTrade(
-      selectedSignal,
-      currentPrice,
-      indicators.atr,
-      highs,
-      lows,
-      decimals,
-      regime,
-      volumeAnalysis
-    );
-    
-    if (!trade.valid) {
- 
-      return {
-        signal: 'WAIT',
-        reason: trade.reason,
-        detectedSignal: selectedSignal.type,
-        regime: regime.type
-      };
-    }
-    
-
-    // ============================================
-    // STEP 11: BUILD FINAL SIGNAL
-    // ============================================
+  // Regime & Structure
+  regime: regime.type,
+  structure: marketStructure.structure,
+  structureConfidence: marketStructure.confidence,
   
-    return {
-      signal: selectedSignal.direction === 'LONG' ? 'Enter Long' : 'Enter Short',
-      signalType: selectedSignal.type,
-      signalSource: 'default',
-      confidence: selectedSignal.confidence,
-      
-      // Regime & Structure
-      regime: regime.type,
-      structure: marketStructure.structure,
-      structureConfidence: marketStructure.confidence,
-      
-      // HTF Analysis
-      htfBias: htfAnalysis.tradingBias,
-      htfStructure4h: htfAnalysis.structure4h,
-      htfStructure1d: htfAnalysis.structure1d,
-      htfConfidence: htfAnalysis.confidence,
-      
-      // Volume Profile
-      volumeProfile: {
-        poc: volumeAnalysis.summary.poc,
-        vah: volumeAnalysis.summary.vah,
-        val: volumeAnalysis.summary.val,
-        nearestSupport: volumeAnalysis.summary.nearestSupport,
-        nearestResistance: volumeAnalysis.summary.nearestResistance
-      },
-      
-      // CVD Data
-      cvdTrend: volumeAnalysis.summary.cvdTrend,
-      cvdDivergence: cvdDivergence ? cvdDivergence.type : null,
-      
-      // Trade details
-      entry: trade.entry,
-      sl: trade.sl,
-      tp1: trade.tp1,
-      tp2: trade.tp2,
-      positionSize: trade.positionSize,
-      riskAmount: trade.riskAmount,
-      strategy: selectedSignal.strategy.toUpperCase(),
-      strategyType: signalSource,
-      
-      notes: buildComprehensiveNotes(
-        selectedSignal,
-        signalSource,
-        regime,
-        marketStructure,
-        trade,
-        htfAnalysis,
-        volumeAnalysis,
-        cvdDivergence
-      )
-    };
+  // HTF Analysis
+  htfBias: htfAnalysis.tradingBias,
+  htfStructure4h: htfAnalysis.structure4h,
+  htfStructure1d: htfAnalysis.structure1d,
+  htfConfidence: htfAnalysis.confidence,
+  
+  // Volume Profile
+  volumeProfile: {
+    poc: volumeAnalysis.summary.poc,
+    vah: volumeAnalysis.summary.vah,
+    val: volumeAnalysis.summary.val,
+    nearestSupport: volumeAnalysis.summary.nearestSupport,
+    nearestResistance: volumeAnalysis.summary.nearestResistance
+  },
+  
+  // CVD Data
+  cvdTrend: volumeAnalysis.summary.cvdTrend,
+  cvdDivergence: cvdDivergence ? cvdDivergence.type : null,
+  
+  // Trade details
+  entry: trade.entry,
+  sl: trade.sl,
+  tp1: trade.tp1,
+  tp2: trade.tp2,
+  positionSize: trade.positionSize,
+  riskAmount: trade.riskAmount,
+  strategy: selectedSignal.strategy.toUpperCase(),
+  strategyType: signalSource, // ✅ Also include for clarity
+  
+  notes: buildComprehensiveNotes(
+    selectedSignal,
+    signalSource,
+    regime,
+    marketStructure,
+    trade,
+    htfAnalysis,
+    volumeAnalysis,
+    cvdDivergence
+  )
+};
+
+// ============================================
+// UPDATED NOTES BUILDER
+// ============================================
+function buildComprehensiveNotes(signal, signalSource, regime, marketStructure, trade, htfAnalysis, volumeAnalysis, cvdDivergence) {
+  let notes = `✅ SIGNAL APPROVED\n\n`;
+  
+  // Signal Type - UPDATED to show proper names
+  const signalTypeNames = {
+    'CVD_AT_HVN': 'CVD Divergence at HVN/POC',
+    'VOLUME_SR_CVD': 'Volume S/R Bounce + CVD Confirmation',
+    'VOLUME_SR_BOUNCE': 'Volume-Based S/R Bounce',
+    'LIQUIDITY_SWEEP_BULLISH': '1m Liquidity Sweep - Bullish',
+    'LIQUIDITY_SWEEP_BEARISH': '1m Liquidity Sweep - Bearish',
+    'SMC': 'Smart Money Concepts',
+    'CVD_DIVERGENCE': 'CVD Divergence'
+  };
+  
+  notes += `🎯 SIGNAL TYPE: ${signalTypeNames[signalSource] || signalSource}\n`;
+  notes += `Confidence: ${signal.confidence}%\n`;
+  notes += `${signal.reason}\n\n`;
+  
+  // Volume Profile Context (for volume-based signals)
+  if (signalSource.includes('VOLUME') || signalSource.includes('CVD_AT_HVN')) {
+    notes += `📊 VOLUME PROFILE:\n`;
+    notes += `• POC (Point of Control): $${volumeAnalysis.summary.poc.toFixed(2)}\n`;
+    notes += `• Value Area High: $${volumeAnalysis.summary.vah.toFixed(2)}\n`;
+    notes += `• Value Area Low: $${volumeAnalysis.summary.val.toFixed(2)}\n`;
+    if (volumeAnalysis.summary.nearestSupport) {
+      notes += `• Nearest Support: $${volumeAnalysis.summary.nearestSupport.toFixed(2)}\n`;
+    }
+    if (volumeAnalysis.summary.nearestResistance) {
+      notes += `• Nearest Resistance: $${volumeAnalysis.summary.nearestResistance.toFixed(2)}\n`;
+    }
+    notes += `\n`;
+  }
+  
+  // CVD Analysis (for CVD signals)
+  if (signalSource.includes('CVD')) {
+    notes += `💎 ORDER FLOW (CVD):\n`;
+    notes += `• CVD Trend: ${volumeAnalysis.summary.cvdTrend}\n`;
+    if (cvdDivergence) {
+      notes += `• Divergence: ${cvdDivergence.type} (${cvdDivergence.strength})\n`;
+      notes += `• Divergence Strength: ${(cvdDivergence.divergenceStrength * 100).toFixed(1)}%\n`;
+    } else {
+      notes += `• No divergence detected\n`;
+    }
+    notes += `\n`;
+  }
+  
+  // Liquidity Sweep Details (for sweep signals)
+  if (signalSource.includes('LIQUIDITY_SWEEP')) {
+    notes += `⚡ LIQUIDITY SWEEP:\n`;
+    if (signal.level) {
+      notes += `• Swept Level: $${signal.level.toFixed(2)}\n`;
+    }
+    if (signal.volumeRatio) {
+      notes += `• Volume Spike: ${signal.volumeRatio}x average\n`;
+    }
+    if (signal.wickPercent) {
+      notes += `• Rejection Wick: ${signal.wickPercent}%\n`;
+    }
+    notes += `\n`;
+  }
+  
+  // HTF Analysis
+  notes += `🏔️ HIGHER TIMEFRAME:\n`;
+  notes += `• 4H Structure: ${htfAnalysis.structure4h} (${htfAnalysis.confidence4h}%)\n`;
+  notes += `• 1D Structure: ${htfAnalysis.structure1d} (${htfAnalysis.confidence1d}%)\n`;
+  notes += `• Trading Bias: ${htfAnalysis.tradingBias}\n\n`;
+  
+  // Market Context
+  notes += `📈 MARKET CONTEXT:\n`;
+  notes += `• 30m Structure: ${marketStructure.structure} (${marketStructure.confidence}%)\n`;
+  notes += `• Regime: ${regime.type}\n`;
+  notes += `• Strategy: ${signal.strategy.toUpperCase()}\n\n`;
+  
+  // Trade Details
+  notes += `💰 TRADE DETAILS:\n`;
+  notes += `• Entry: ${trade.entry}\n`;
+  notes += `• Stop Loss: ${trade.sl}\n`;
+  notes += `• TP1: ${trade.tp1} (50% exit)\n`;
+  notes += `• TP2: ${trade.tp2} (50% exit)\n`;
+  notes += `• Risk: ${trade.riskAmount}\n`;
+  notes += `• Position Size: ${(regime.positionSize * 100).toFixed(0)}%\n`;
+  
+  if (regime.positionSize < 1.0) {
+    notes += `\n⚠️ CHOPPY MARKET - REDUCED POSITION SIZE`;
+  }
+  
+  return notes;
+}
     
   } catch (error) {
     console.error(`❌ SMC analysis error for ${symbol}:`, error.message);
