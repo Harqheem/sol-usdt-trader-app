@@ -15,6 +15,7 @@ const {
   detectVolumeSRBounce,
   analyzeVolumeProfileSignals
 } = require('./volumeProfileSystem');
+const { wsCache } = require('./cacheManager');
 
 // Configuration
 const SYSTEM_CONFIG = {
@@ -57,9 +58,7 @@ const { checkForSweep } = require('./liquiditySweepDetector');
 async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, decimals, candles1m, volumes1m) {
   try {
     const currentPrice = parseFloat(candles[candles.length - 1].close);
-    
-    console.log(`\n${'='.repeat(60)}`);
-    console.log(`📊 ANALYZING ${symbol} @ $${currentPrice}`);
+
     
     // ============================================
     // STEP 0: DETERMINE REGIME EARLY (FIXED)
@@ -206,7 +205,7 @@ async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, dec
 
     
     if (!selectedSignal) {
-      console.log(`   ❌ NO SIGNALS DETECTED`);
+      
       return {
         signal: 'WAIT',
         reason: 'No trading signals detected',

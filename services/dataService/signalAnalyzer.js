@@ -127,10 +127,18 @@ async function analyzeSymbol(symbol) {
     }
     
     // ✅ FIX: If wait/filtered/no signal - ALWAYS build full response
+    // ✅ FIX: If wait/filtered/no signal - ALWAYS build full response
     if (result.signal === 'WAIT' || result.signal === 'ERROR') {
       const response = buildNoTradeResponse(
         symbol, decimals, currentPrice, ohlc, timestamp,
-        indicators, htf, candles30m, result
+        indicators, htf, candles30m, {
+          signal: 'WAIT',
+          reason: result.reason || 'No clear signal',
+          regime: result.regime || 'Unknown',
+          structure: result.structure || 'Unknown',
+          structureConfidence: result.structureConfidence,
+          detectedSignal: result.detectedSignal
+        }
       );
       
       // Cache the analysis for frontend
@@ -139,7 +147,6 @@ async function analyzeSymbol(symbol) {
       
       return response;
     }
-    
     // ✅ FIX: If signal approved
     if (result.signal === 'Enter Long' || result.signal === 'Enter Short') {
       const response = buildTradeResponse(
@@ -238,6 +245,11 @@ function buildNoTradeResponse(symbol, decimals, currentPrice, ohlc, timestamp, i
       tp2: 'N/A',
       sl: 'N/A',
       positionSize: 'N/A'
+    },
+    regime: {
+      regime: result.regime || 'Unknown',
+      structure: result.structure || 'Unknown',
+      structureConfidence: result.structureConfidence || 0
     },
     marketContext: {
       regime: result.regime || 'Unknown',
