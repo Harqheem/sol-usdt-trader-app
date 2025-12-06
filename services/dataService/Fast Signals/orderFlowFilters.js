@@ -886,7 +886,6 @@ module.exports = {
   analyzePostSweepMomentum,
   checkMultiTimeframeAlignment,
   calculateVolumeProfile,
-  isLikelyTrap,
   calculateCVD,
   getCVDAtSwings
 };
