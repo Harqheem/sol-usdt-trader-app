@@ -58,7 +58,7 @@ function updateCandleCache(symbol, kline, interval) {
     } else {
       candles.push(candle);
       // Keep different amounts for different timeframes
-      const maxCandles = interval === '30m' ? 500 : 
+      const maxCandles = interval === '30m' ? 100 : 
                         interval === '1m' ? 100 :  // Only keep last 100 minutes
                         100;
       if (candles.length > maxCandles) {

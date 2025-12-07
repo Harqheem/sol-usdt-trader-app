@@ -270,6 +270,58 @@ ETHUSDT: {
       trendAlignmentBonus: 2
     }
   },
+  
+  // LINK - Moderate volatility, oracle infrastructure
+  LINKUSDT: {
+    name: 'Chainlink',
+    category: 'infrastructure',
+    
+    ema: {
+      fast: 8,
+      medium: 21,       // Balanced for steady trending
+      slow: 99
+    },
+    sma: {
+      trend: 50,
+      major: 200
+    },
+    
+    volatility: {
+      atrPeriod: 14,
+      atrMultiplier: 1.0,  // Moderate volatility (~8-9%)
+      highThreshold: 2.1,
+      lowThreshold: 0.6
+    },
+    
+    momentum: {
+      rsiPeriod: 14,
+      rsiBullish: 43,      // Standard balanced thresholds
+      rsiBearish: 57,
+      rsiOverbought: 70,
+      rsiOversold: 30,
+      adxPeriod: 14,
+      adxStrong: 29,       // LINK shows decent trends
+      adxWeak: 20
+    },
+    
+    trade: {
+      entryPullbackATR: 0.32,  // Moderate pullback entry
+      slBufferATR: 0.55,       // Standard stop buffer
+      tpMultiplier1: 1.5,
+      tpMultiplier2: 3.0,      // Conservative TP2 (consolidation pattern)
+      maxRiskPercent: 0.012,   // 1.2% max risk
+      minRiskPercent: 0.005
+    },
+    
+    scoring: {
+      baseThreshold: 12,
+      strongADXAdjust: -1,
+      weakADXAdjust: 1,
+      emaStackWeight: 2,
+      trendAlignmentBonus: 2    // Rewards trend alignment
+    }
+  },
+
 
   // ADA - Moderate-low volatility, established alt
   ADAUSDT: {

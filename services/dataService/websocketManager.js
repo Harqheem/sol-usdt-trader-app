@@ -66,14 +66,14 @@ async function loadInitialData(symbol) {
       }
       
       const [candles30m, candles1h, candles4h, candles1m, ticker] = await Promise.all([
-        utils.withTimeout(client.futuresCandles({ symbol, interval: '30m', limit: 500 }), 15000),
+        utils.withTimeout(client.futuresCandles({ symbol, interval: '30m', limit: 100 }), 15000),
         utils.withTimeout(client.candles({ symbol, interval: '1h', limit: 100 }), 15000),
         utils.withTimeout(client.candles({ symbol, interval: '4h', limit: 100 }), 15000),
         utils.withTimeout(client.futuresCandles({ symbol, interval: '1m', limit: 100 }), 15000), // NEW: Load 1m candles
         utils.withTimeout(client.avgPrice({ symbol }), 10000)
       ]);
 
-      if (!candles30m || candles30m.length < 200) {
+      if (!candles30m || candles30m.length < 50) {
         throw new Error(`Insufficient 30m data: ${candles30m ? candles30m.length : 0}`);
       }
 
