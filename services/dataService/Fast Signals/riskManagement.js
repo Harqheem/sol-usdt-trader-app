@@ -21,17 +21,17 @@ function calculateStopLoss(entry, theoreticalSL, direction, signalType, atr, cur
   let atrMultiplier;
   
   if (signalType.includes('LIQUIDITY_SWEEP') || signalType.includes('SWEEP')) {
-    maxStopPercent = config.stopLoss.liquiditySweep?.maxStopPercent || 0.018;
+    maxStopPercent = config.stopLoss.liquiditySweep?.maxStopPercent || 0.01;
     atrMultiplier = config.stopLoss.liquiditySweep?.atrMultiplier || 0.8;
   } else if (signalType.includes('CVD') && signalType.includes('DIVERGENCE')) {
-    maxStopPercent = config.stopLoss.cvdDivergence?.maxStopPercent || 0.020;
+    maxStopPercent = config.stopLoss.cvdDivergence?.maxStopPercent || 0.01;
     atrMultiplier = config.stopLoss.cvdDivergence?.atrMultiplier || 1.0;
   } else if (signalType.includes('DIVERGENCE') || signalType.includes('RSI')) {
-    maxStopPercent = config.stopLoss.divergence?.maxStopPercent || 0.020;
+    maxStopPercent = config.stopLoss.divergence?.maxStopPercent || 0.010;
     atrMultiplier = config.stopLoss.divergence?.atrMultiplier || 1.0;
   } else {
     // Fallback
-    maxStopPercent = 0.020;
+    maxStopPercent = 0.010;
     atrMultiplier = 1.0;
   }
   
@@ -76,7 +76,7 @@ function calculateStopLoss(entry, theoreticalSL, direction, signalType, atr, cur
   const finalStopPercent = Math.abs(entry - proposedSL) / entry;
   
   // Final validation against absolute max
-  const absoluteMax = config.riskManagement.maxStopLossPercent || 0.020;
+  const absoluteMax = config.riskManagement.maxStopLossPercent || 0.010;
   if (finalStopPercent > absoluteMax) {
     console.log(`   ❌ Stop loss exceeds absolute max: ${(finalStopPercent * 100).toFixed(2)}% > ${(absoluteMax * 100).toFixed(2)}%`);
     return {

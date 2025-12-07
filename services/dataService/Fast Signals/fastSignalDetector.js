@@ -14,7 +14,33 @@ const {
   calculateTakeProfits,
   meetsConfidenceRequirement 
 } = require('./riskManagement');
-const learningService = require('../../Trade Learning/learningService')
+const learningService = require('../../Trade Learning/learningService');
+const pauseService = require('../../pauseService');
+
+
+// MANUAL OVERRIDE: Set to true to pause fast signals regardless of global pause
+const HARDCODED_PAUSE = true; // Change this to true to manually pause
+
+// Check if fast signals should be paused
+function isFastSignalsPaused() {
+  // Check hardcoded override first
+  if (HARDCODED_PAUSE) {
+    return true;
+  }
+  
+  // Then check global pause service
+  return pauseService.isPaused();
+}
+
+function getPauseReason() {
+  if (HARDCODED_PAUSE) {
+    return 'HARDCODED_PAUSE';
+  }
+  if (pauseService.isPaused()) {
+    return 'GLOBAL_PAUSE';
+  }
+  return null;
+}
 
 // ========================================
 // HELPER FUNCTIONS
@@ -1049,6 +1075,37 @@ function detectRSIDivergence(symbol, closes, highs, lows, atr, currentPrice, can
 // ========================================
 
 async function sendFastAlert(symbol, signal, currentPrice, atr, assetConfig) {
+   // âœ… CHECK IF PAUSED - Add this at the very beginning
+  if (isFastSignalsPaused()) {
+    const reason = getPauseReason();
+    console.log(`🔕 ${symbol}: Fast signal paused (${reason}) - signal detected but not sent`);
+    
+    // Still log as near-miss for learning
+    if (signal.confidence >= 85) {
+      await learningService.logNearMiss({
+        symbol,
+        direction: signal.direction,
+        signalType: signal.type,
+        signalSource: 'fast',
+        conditionsMet: 4,
+        totalConditions: 5,
+        blockingReasons: [`Notifications paused: ${reason}`],
+        currentPrice,
+        marketConditions: null,
+        indicators: null,
+        conditionDetails: [
+          { name: 'Signal Detected', met: true, description: signal.reason },
+          { name: 'Confidence Met', met: true, description: `${signal.confidence}%` },
+          { name: 'Order Flow', met: true, description: signal.orderFlow?.score || 'N/A' },
+          { name: 'Stop Loss Valid', met: true, description: 'SL calculated' },
+          { name: 'Pause Status', met: false, description: reason }
+        ]
+      });
+    }
+    
+    return { sent: false, reason: reason };
+  }
+
   const limitCheck = canSendSignalWithLimits(symbol);
   
   if (!limitCheck.canSend) {
@@ -1208,5 +1265,13 @@ module.exports = {
   getDailyStats: () => ({ 
     ...dailySignalCounts, 
     bySymbol: Object.fromEntries(dailySignalCounts.bySymbol) 
+  }),
+  // Pause control exports
+  isFastSignalsPaused,
+  getPauseStatus: () => ({
+    isPaused: isFastSignalsPaused(),
+    reason: getPauseReason(),
+    hardcodedPause: HARDCODED_PAUSE,
+    globalPause: pauseService.isPaused()
   })
 };

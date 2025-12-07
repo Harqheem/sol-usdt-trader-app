@@ -567,6 +567,44 @@ router.get('/api/dynamic-config', (req, res) => {
   }
 });
 
+router.get('/api/combined-status', (req, res) => {
+  try {
+    const pauseService = require('../services/pauseService');
+    const { getPauseStatus } = require('../services/dataService/Fast Signals/fastSignalDetector');
+    
+    const globalStatus = pauseService.getStatus();
+    const fastStatus = getPauseStatus();
+    
+    res.json({
+      global: {
+        isPaused: globalStatus.isPaused,
+        pauseStartTime: globalStatus.pauseStartTime,
+        pauseDuration: globalStatus.pauseDuration,
+        timeUntilAutoResume: globalStatus.timeUntilAutoResume
+      },
+      default: {
+        isPaused: globalStatus.isPaused,
+        affectedBy: 'global_pause'
+      },
+      fast: {
+        isPaused: fastStatus.isPaused,
+        reason: fastStatus.reason,
+        hardcodedPause: fastStatus.hardcodedPause,
+        globalPause: fastStatus.globalPause,
+        affectedBy: fastStatus.hardcodedPause ? 'hardcoded_override' : 'global_pause'
+      },
+      summary: {
+        allSystemsPaused: globalStatus.isPaused || fastStatus.hardcodedPause,
+        defaultActive: !globalStatus.isPaused,
+        fastActive: !fastStatus.isPaused
+      }
+    });
+  } catch (error) {
+    console.error('❌ Combined status error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ========================================
 // TRADE-SPECIFIC MANAGEMENT ENDPOINTS
 // Add these AFTER existing management endpoints in routes/index.js

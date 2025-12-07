@@ -314,6 +314,26 @@ app.post('/force-refresh/:symbol', async (req, res) => {
   }
 });
 
+app.get('/fast-signals-status', (req, res) => {
+  try {
+    const { getPauseStatus } = require('./services/dataService/Fast Signals/fastSignalDetector');
+    const status = getPauseStatus();
+    
+    res.json({
+      ...status,
+      message: status.isPaused 
+        ? `Fast signals are PAUSED (${status.reason})`
+        : 'Fast signals are ACTIVE'
+    });
+  } catch (err) {
+    console.error('❌ Fast signals status error:', err);
+    res.status(500).json({ 
+      error: err.message,
+      isPaused: false
+    });
+  }
+});
+
 // ========================================
 // START THE SERVER
 // ========================================
