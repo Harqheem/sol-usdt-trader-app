@@ -197,7 +197,7 @@ async function reviewSinglePosition(trade) {
     const currentPrice = parseFloat(cache.currentPrice);
     const candles = cache.candles30m;
     
-    if (!candles || candles.length < 50) {
+    if (!candles || candles.length < 100) {
       console.log(`   ⚠️  ${symbol}: Insufficient candle data`);
       return;
     }

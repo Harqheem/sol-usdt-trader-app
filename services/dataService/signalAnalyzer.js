@@ -25,7 +25,7 @@ async function analyzeSymbol(symbol) {
 
     const { candles30m, candles1h, candles4h, currentPrice } = cache;
 
-    if (candles30m.length < 50) {
+    if (candles30m.length < 100) {
       return { error: `Insufficient data: ${candles30m.length} candles` };
     }
 
@@ -36,7 +36,7 @@ async function analyzeSymbol(symbol) {
     const opens = candles30m.map(c => parseFloat(c.open)).filter(v => !isNaN(v));
     const volumes = candles30m.map(c => parseFloat(c.volume)).filter(v => !isNaN(v));
 
-    if (closes.length < 50) {
+    if (closes.length < 100) {
       return { error: 'Invalid candle data' };
     }
 
