@@ -216,6 +216,10 @@ if (!selectedSignal) {
 // ============================================
 console.log(`   ✅ Building trade signal...`);
 
+// Extract highs and lows from candles for trade calculation
+const highs = candles.map(c => parseFloat(c.high));
+const lows = candles.map(c => parseFloat(c.low));
+
 const trade = calculateEnhancedTrade(
   selectedSignal,
   currentPrice,
