@@ -212,9 +212,35 @@ if (!selectedSignal) {
 }
 
 // ============================================
-// STEP 11: BUILD FINAL SIGNAL - UPDATED
+// STEP 11: CALCULATE TRADE PARAMETERS
 // ============================================
 console.log(`   ✅ Building trade signal...`);
+
+const trade = calculateEnhancedTrade(
+  selectedSignal,
+  currentPrice,
+  indicators.atr,
+  highs,
+  lows,
+  decimals,
+  regime,
+  volumeAnalysis
+);
+
+// Check if trade calculation failed
+if (!trade.valid) {
+  console.log(`   ⚠️ Trade calculation failed: ${trade.reason}`);
+  return {
+    signal: 'WAIT',
+    reason: trade.reason,
+    regime: regime.type,
+    structure: marketStructure.structure
+  };
+}
+
+// ============================================
+// STEP 12: BUILD FINAL SIGNAL
+// ============================================
 
 return {
   signal: selectedSignal.direction === 'LONG' ? 'Enter Long' : 'Enter Short',

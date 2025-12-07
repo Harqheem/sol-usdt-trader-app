@@ -1172,7 +1172,7 @@ ${slResult.wasAdjusted ? '⚠️ SL adjusted to max allowed\n' : ''}${signal.ord
       tp2: tp2,
       sl: finalSL,
       positionSize: positionSize,
-      leverage: 50,
+      leverage: 20,
       confidence: signal.confidence
     }, 'opened', null, 'fast');
     

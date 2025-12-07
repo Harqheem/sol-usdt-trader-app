@@ -517,7 +517,7 @@ function calculateNewSL(trade, target, currentPrice, atr, isBuy) {
 function calculatePartialPnL(trade, exitPrice, fraction, isBuy) {
   const TAKER_FEE = 0.00045;
   const positionSize = trade.position_size || 100;
-  const leverage = trade.leverage || 50;
+  const leverage = trade.leverage || 20;
 
   const rawPnlPct = isBuy 
     ? ((exitPrice - trade.entry) / trade.entry) * 100
