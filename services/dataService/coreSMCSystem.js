@@ -175,11 +175,11 @@ else if (volumeSRBounce && volumeSRBounce.cvdDivergence) {
   console.log(`   🎯 PRIORITY 2: Volume S/R Bounce + CVD`);
 }
 // PRIORITY 3: Volume-based S/R Bounce
-else if (volumeSRBounce) {
-  selectedSignal = volumeSRBounce;
-  signalSource = 'VOLUME_SR_BOUNCE';
-  console.log(`   🎯 PRIORITY 3: Volume S/R Bounce`);
-}
+//else if (volumeSRBounce) {
+  //selectedSignal = volumeSRBounce;
+  //signalSource = 'VOLUME_SR_BOUNCE';
+  //console.log(`   🎯 PRIORITY 3: Volume S/R Bounce`);
+//}
 // PRIORITY 4: SMC signals
 else if (smcSignals.length > 0 && structureStrength.score >= SYSTEM_CONFIG.minStructureConfidence) {
   selectedSignal = smcSignals[0];
