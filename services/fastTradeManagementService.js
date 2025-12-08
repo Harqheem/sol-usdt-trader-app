@@ -554,7 +554,18 @@ function calculateProfitATR(entry, currentPrice, atr, isBuy) {
 function getFastSignalType(trade) {
   const notes = trade.notes || '';
   
-  // Check for signal type patterns
+  // ✅ PRIORITY 1: Check for embedded strategy marker
+  const markerMatch = notes.match(/\[STRATEGY:([^\]]+)\]/);
+  if (markerMatch) {
+    const strategyType = markerMatch[1];
+    
+    // Validate it's a known FAST signal type
+    if (FAST_MANAGEMENT_RULES[strategyType]) {
+      return strategyType;
+    }
+  }
+  
+  // ✅ PRIORITY 2: Parse from notes text (existing logic)
   if (notes.includes('RSI_BULLISH_DIVERGENCE') || notes.includes('RSI BULLISH')) {
     return 'RSI_BULLISH_DIVERGENCE';
   }

@@ -305,7 +305,8 @@ return {
 // UPDATED NOTES BUILDER
 // ============================================
 function buildComprehensiveNotes(signal, signalSource, regime, marketStructure, trade, htfAnalysis, volumeAnalysis, cvdDivergence) {
-  let notes = `✅ SIGNAL APPROVED\n\n`;
+  let notes = `[SIGNAL_SOURCE:${signalSource}]\n\n`;
+  notes = `✅ SIGNAL APPROVED\n\n`;
   
   // Signal Type - UPDATED to show proper names
   const signalTypeNames = {

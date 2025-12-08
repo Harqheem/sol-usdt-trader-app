@@ -289,10 +289,13 @@ function buildTradeResponse(symbol, decimals, currentPrice, ohlc, timestamp, ind
       signalSource: result.signalSource,
       confidence: result.confidence,
       
-      // ✅ NEW: Add entry conditions for dynamic management
-      entryATR: indicators.atr,           // Store ATR at entry
-      entryADX: indicators.adx,           // Store ADX at entry
-      entryRegime: regime.type            // Store regime at entry
+      // ✅ NEW: Add strategyType - THIS IS THE KEY FIELD
+      strategyType: result.signalType, // This will be 'CVD_AT_HVN', 'BOS', etc.
+      
+      // Entry conditions for dynamic management
+      entryATR: indicators.atr,
+      entryADX: indicators.adx,
+      entryRegime: regime.type
     },
     marketContext: {
       regime: result.regime,

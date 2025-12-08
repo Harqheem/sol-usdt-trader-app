@@ -17,10 +17,10 @@ async function logSignal(symbol, signalData, status = 'pending', errorMessage = 
       sl, 
       positionSize, 
       leverage = 20,
-      // ✅ NEW: Extract entry conditions
       entryATR,
       entryADX,
-      entryRegime
+      entryRegime,
+      strategyType // ✅ NEW: Get the strategy type
     } = signalData;
     
     const timestamp = new Date().toISOString();
@@ -29,11 +29,18 @@ async function logSignal(symbol, signalData, status = 'pending', errorMessage = 
     if (signalType === 'Buy') signalType = 'Enter Long';
     if (signalType === 'Sell') signalType = 'Enter Short';
     
+    // ✅ NEW: Embed strategy type marker in notes for reliable parsing
+    let notesWithMarker = notes || '';
+    if (strategyType && signalSource === 'default') {
+      // Add marker at the very beginning
+      notesWithMarker = `[STRATEGY:${strategyType}]\n\n${notes || ''}`;
+    }
+    
     const insertData = {
       timestamp,
       symbol,
-      signal_type: signalType,
-      notes,
+      signal_type: signalType, // This is the direction (Enter Long/Short)
+      notes: notesWithMarker, // ✅ Notes now contain strategy marker
       entry,
       tp1,
       tp2,
@@ -48,7 +55,6 @@ async function logSignal(symbol, signalData, status = 'pending', errorMessage = 
       signal_source: signalSource,
       last_review_time: null,
       review_count: 0,
-      // ✅ NEW: Save entry conditions for dynamic management
       entry_atr: entryATR || null,
       entry_adx: entryADX || null,
       entry_regime: entryRegime || null
@@ -68,13 +74,10 @@ async function logSignal(symbol, signalData, status = 'pending', errorMessage = 
       throw new Error('No data returned from insert');
     }
     
-    console.log(`✅ Signal logged for ${symbol} (ID: ${data[0].id}, Status: ${status}, Source: ${signalSource})`);
+    console.log(`✅ Signal logged for ${symbol} (ID: ${data[0].id}, Status: ${status}, Source: ${signalSource}${strategyType ? `, Strategy: ${strategyType}` : ''})`);
     
-    // ✅ IMPROVED: Log entry conditions if present
     if (entryATR && entryADX) {
       console.log(`   📊 Entry conditions: ATR ${entryATR.toFixed(2)}, ADX ${entryADX.toFixed(1)}${entryRegime ? `, Regime: ${entryRegime}` : ''}`);
-    } else {
-      console.log(`   ⚠️  Entry conditions not captured (won't be available for dynamic management)`);
     }
     
     return data[0].id;
@@ -83,6 +86,7 @@ async function logSignal(symbol, signalData, status = 'pending', errorMessage = 
     throw err;
   }
 }
+
 
 async function getSignals(options = {}) {
   const { symbol, limit = 50, fromDate, toDate, status, signalSource } = options;

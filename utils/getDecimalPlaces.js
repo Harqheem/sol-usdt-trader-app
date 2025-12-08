@@ -1,6 +1,9 @@
 function getDecimalPlaces(symbol) {
-  if (symbol === 'SUIUSDT' || symbol === 'ADAUSDT' || symbol === 'XRPUSDT') return 4;
-  else 
+  if (
+    symbol === 'SUIUSDT' || symbol === 'ADAUSDT' || symbol === 'XRPUSDT') return 4;
+
+  if (symbol === 'LINKUSDT') return 3;
+
   return 2;
 }
 

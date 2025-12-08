@@ -622,24 +622,44 @@ function calculateProfitATR(entry, currentPrice, atr, isBuy) {
 function getSignalType(trade) {
   const notes = trade.notes || '';
   
-  // NEW SIGNAL TYPES FIRST
-  if (notes.includes('LIQUIDITY_SWEEP_BULLISH') || notes.includes('SWEEP REVERSAL - BULLISH')) {
-    return 'LIQUIDITY_SWEEP_BULLISH';
-  }
-  if (notes.includes('LIQUIDITY_SWEEP_BEARISH') || notes.includes('SWEEP REVERSAL - BEARISH')) {
-    return 'LIQUIDITY_SWEEP_BEARISH';
-  }
-  if (notes.includes('VOLUME_SR_CVD')) {
-    return 'VOLUME_SR_CVD';
-  }
-  if (notes.includes('CVD_AT_HVN')) {
-    return 'CVD_AT_HVN';
-  }
-  if (notes.includes('VOLUME_SR_BOUNCE')) {
-    return 'VOLUME_SR_BOUNCE';
+  // ✅ PRIORITY 1: Check for embedded strategy marker
+  const markerMatch = notes.match(/\[STRATEGY:([^\]]+)\]/);
+  if (markerMatch) {
+    const strategyType = markerMatch[1];
+    console.log(`✅ ${trade.symbol}: Found strategy marker: ${strategyType}`);
+    
+    // Validate it's a known strategy type
+    if (MANAGEMENT_RULES[strategyType]) {
+      return strategyType;
+    } else {
+      console.log(`   ⚠️ Unknown strategy type: ${strategyType}, using fallback`);
+    }
   }
   
-  // EXISTING SIGNAL TYPES
+  // ✅ PRIORITY 2: Parse from notes text (fallback)
+  console.log(`⚠️ ${trade.symbol}: No marker found, parsing notes text...`);
+  
+  // NEW VOLUME PROFILE & CVD SIGNALS (check these FIRST)
+  if (notes.includes('CVD Divergence at HVN/POC') || notes.includes('CVD_AT_HVN')) {
+    return 'CVD_AT_HVN';
+  }
+  if (notes.includes('Volume S/R Bounce + CVD') || notes.includes('VOLUME_SR_CVD')) {
+    return 'VOLUME_SR_CVD';
+  }
+  if (notes.includes('Volume-Based S/R Bounce') || notes.includes('VOLUME_SR_BOUNCE')) {
+    return 'VOLUME_SR_BOUNCE';
+  }
+  if (notes.includes('1m Liquidity Sweep - Bullish') || notes.includes('LIQUIDITY_SWEEP_BULLISH')) {
+    return 'LIQUIDITY_SWEEP_BULLISH';
+  }
+  if (notes.includes('1m Liquidity Sweep - Bearish') || notes.includes('LIQUIDITY_SWEEP_BEARISH')) {
+    return 'LIQUIDITY_SWEEP_BEARISH';
+  }
+  if (notes.includes('CVD Divergence') || notes.includes('CVD_DIVERGENCE')) {
+    return 'CVD_DIVERGENCE';
+  }
+  
+  // EXISTING SMC SIGNALS
   if (notes.includes('BOS') || notes.includes('Break of Structure')) {
     return 'BOS';
   }
@@ -653,7 +673,7 @@ function getSignalType(trade) {
     return 'SR_BOUNCE';
   }
 
-  return 'SR_BOUNCE';
+   return 'SR_BOUNCE';
 }
 
 async function loadExecutedCheckpoints(tradeId) {
