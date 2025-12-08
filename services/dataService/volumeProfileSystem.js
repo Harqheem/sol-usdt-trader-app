@@ -315,6 +315,7 @@ function detectAdvancedCVDDivergence(candles, volumes, volumeProfile) {
       return {
         type: 'BEARISH_DIVERGENCE',
         direction: 'SHORT',
+        strategy: 'reversal',
         strength: divergenceStrength > 0.15 ? 'very_strong' : 
                   divergenceStrength > 0.08 ? 'strong' : 'moderate',
         confidence: Math.min(95, 65 + (divergenceStrength * 150)),
@@ -348,6 +349,7 @@ function detectAdvancedCVDDivergence(candles, volumes, volumeProfile) {
       return {
         type: 'BULLISH_DIVERGENCE',
         direction: 'LONG',
+        strategy: 'reversal',
         strength: divergenceStrength > 0.15 ? 'very_strong' : 
                   divergenceStrength > 0.08 ? 'strong' : 'moderate',
         confidence: Math.min(95, 65 + (divergenceStrength * 150)),

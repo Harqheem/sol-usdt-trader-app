@@ -215,6 +215,7 @@ function detectCVDDivergence(candles, volumes) {
       return {
         type: 'BEARISH_DIVERGENCE',
         direction: 'SHORT',
+        strategy: 'reversal',
         strength: strength > 0.1 ? 'strong' : 'moderate',
         confidence: Math.min(95, 70 + (strength * 100)),
         reason: `📉 Bearish CVD divergence - Price HH but CVD LH (${(strength * 100).toFixed(0)}% weaker)`
@@ -233,6 +234,7 @@ function detectCVDDivergence(candles, volumes) {
       return {
         type: 'BULLISH_DIVERGENCE',
         direction: 'LONG',
+        strategy: 'reversal',
         strength: strength > 0.1 ? 'strong' : 'moderate',
         confidence: Math.min(95, 70 + (strength * 100)),
         reason: `📈 Bullish CVD divergence - Price LL but CVD HL (${(strength * 100).toFixed(0)}% stronger)`
