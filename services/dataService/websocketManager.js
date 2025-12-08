@@ -1,4 +1,5 @@
-// MANAGES WEBSOCKET CONNECTIONS AND INITIAL DATA LOADING
+// services/dataService/websocketManager.js - OPTIMIZED for 10 symbols
+// Faster loading while staying under rate limits
 
 const Binance = require('binance-api-node').default;
 const { symbols } = require('../../config');
@@ -12,6 +13,162 @@ let failureCount = {};
 
 // SSE clients tracker for real-time updates
 const sseClients = new Map();
+
+// ============================================
+// SMART DELAY WITH RATE TRACKING
+// ============================================
+const rateTracker = {
+  requests: [],
+  maxPerSecond: 15,  // Conservative limit (Binance allows 20)
+  maxPerMinute: 250  // Conservative limit (Binance allows 1200)
+};
+
+function trackRequest() {
+  const now = Date.now();
+  rateTracker.requests.push(now);
+  
+  // Clean up old requests (older than 1 minute)
+  rateTracker.requests = rateTracker.requests.filter(time => now - time < 60000);
+}
+
+function getSmartDelay() {
+  const now = Date.now();
+  const lastSecond = rateTracker.requests.filter(time => now - time < 1000).length;
+  const lastMinute = rateTracker.requests.length;
+  
+  // If approaching per-second limit
+  if (lastSecond >= rateTracker.maxPerSecond - 2) {
+    return 1000; // Wait 1 second
+  }
+  
+  // If approaching per-minute limit
+  if (lastMinute >= rateTracker.maxPerMinute - 10) {
+    return 2000; // Wait 2 seconds
+  }
+  
+  // Normal operation - minimal delay
+  return 100; // Just 100ms between requests
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// ============================================
+// PARALLEL BATCH LOADER - Load multiple symbols simultaneously
+// ============================================
+async function loadSymbolsConcurrently(symbolBatch, batchNumber, totalBatches) {
+  console.log(`\n📦 Batch ${batchNumber}/${totalBatches}: Loading ${symbolBatch.length} symbols in parallel...`);
+  
+  // Load all symbols in this batch concurrently
+  const promises = symbolBatch.map(symbol => loadInitialData(symbol));
+  const results = await Promise.all(promises);
+  
+  // Report results
+  const successful = results.filter(r => r).length;
+  console.log(`   ✅ Batch ${batchNumber} complete: ${successful}/${symbolBatch.length} successful`);
+  
+  return results;
+}
+
+// ============================================
+// OPTIMIZED DATA LOADER - Smart delays between requests
+// ============================================
+async function loadInitialData(symbol) {
+  console.log(`📥 ${symbol}: Starting load...`);
+  
+  const maxRetries = 3;
+  let attempt = 0;
+  
+  while (attempt < maxRetries) {
+    try {
+      if (attempt > 0) {
+        const backoffDelay = Math.pow(2, attempt) * 1500;
+        console.log(`   ⏳ ${symbol}: Retry ${attempt}/${maxRetries} after ${backoffDelay}ms`);
+        await delay(backoffDelay);
+      }
+      
+      // ✅ OPTIMIZED: Sequential with smart adaptive delays
+      trackRequest();
+      const candles30m = await utils.withTimeout(
+        client.futuresCandles({ symbol, interval: '30m', limit: 200 }), 
+        12000
+      );
+      await delay(getSmartDelay());
+      
+      trackRequest();
+      const candles1h = await utils.withTimeout(
+        client.candles({ symbol, interval: '1h', limit: 100 }), 
+        12000
+      );
+      await delay(getSmartDelay());
+      
+      trackRequest();
+      const candles4h = await utils.withTimeout(
+        client.candles({ symbol, interval: '4h', limit: 100 }), 
+        12000
+      );
+      await delay(getSmartDelay());
+      
+      trackRequest();
+      const candles1m = await utils.withTimeout(
+        client.futuresCandles({ symbol, interval: '1m', limit: 100 }), 
+        12000
+      );
+      await delay(getSmartDelay());
+      
+      trackRequest();
+      const ticker = await utils.withTimeout(
+        client.avgPrice({ symbol }), 
+        10000
+      );
+
+      if (!candles30m || candles30m.length < 100) {
+        throw new Error(`Insufficient 30m data: ${candles30m ? candles30m.length : 0}`);
+      }
+
+      wsCache[symbol].candles30m = candles30m;
+      wsCache[symbol].candles1h = candles1h;
+      wsCache[symbol].candles4h = candles4h;
+      wsCache[symbol].candles1m = candles1m;
+      wsCache[symbol].currentPrice = parseFloat(ticker.price);
+      wsCache[symbol].isReady = true;
+      wsCache[symbol].lastUpdate = Date.now();
+      wsCache[symbol].error = null;
+      failureCount[symbol] = 0;
+
+      console.log(`   ✅ ${symbol}: Complete ($${ticker.price})`);
+      return true;
+      
+    } catch (error) {
+      attempt++;
+      
+      const isRateLimit = error.message && (
+        error.message.includes('429') || 
+        error.message.includes('rate limit') ||
+        error.message.includes('too many requests')
+      );
+      
+      if (isRateLimit) {
+        console.error(`   ⚠️  ${symbol}: RATE LIMITED - backing off...`);
+        await delay(3000 * attempt);
+      } else {
+        console.error(`   ❌ ${symbol}: Error (${attempt}/${maxRetries}):`, error.message);
+      }
+      
+      if (attempt >= maxRetries) {
+        wsCache[symbol].error = error.message;
+        wsCache[symbol].isReady = false;
+        failureCount[symbol] = (failureCount[symbol] || 0) + 1;
+        return false;
+      }
+    }
+  }
+  
+  return false;
+}
+
+// ... [Keep all SSE functions unchanged] ...
 
 function registerSSEClient(symbol, res) {
   if (!sseClients.has(symbol)) {
@@ -50,69 +207,11 @@ function broadcastAnalysis(symbol, analysis) {
   }
 }
 
-// Load initial historical data (REST API - once on startup)
-async function loadInitialData(symbol) {
-  console.log(`📥 ${symbol}: Loading initial data...`);
-  
-  const maxRetries = 3;
-  let attempt = 0;
-  
-  while (attempt < maxRetries) {
-    try {
-      if (attempt > 0) {
-        const backoffDelay = Math.pow(2, attempt) * 2000;
-        console.log(`${symbol}: Retry ${attempt}/${maxRetries} after ${backoffDelay}ms`);
-        await new Promise(resolve => setTimeout(resolve, backoffDelay));
-      }
-      
-      const [candles30m, candles1h, candles4h, candles1m, ticker] = await Promise.all([
-        utils.withTimeout(client.futuresCandles({ symbol, interval: '30m', limit: 200 }), 15000),
-        utils.withTimeout(client.candles({ symbol, interval: '1h', limit: 100 }), 15000),
-        utils.withTimeout(client.candles({ symbol, interval: '4h', limit: 100 }), 15000),
-        utils.withTimeout(client.futuresCandles({ symbol, interval: '1m', limit: 100 }), 15000), // NEW: Load 1m candles
-        utils.withTimeout(client.avgPrice({ symbol }), 10000)
-      ]);
-
-      if (!candles30m || candles30m.length < 100) {
-        throw new Error(`Insufficient 30m data: ${candles30m ? candles30m.length : 0}`);
-      }
-
-      wsCache[symbol].candles30m = candles30m;
-      wsCache[symbol].candles1h = candles1h;
-      wsCache[symbol].candles4h = candles4h;
-      wsCache[symbol].candles1m = candles1m; // NEW: Store 1m candles
-      wsCache[symbol].currentPrice = parseFloat(ticker.price);
-      wsCache[symbol].isReady = true;
-      wsCache[symbol].lastUpdate = Date.now();
-      wsCache[symbol].error = null;
-      failureCount[symbol] = 0;
-
-      console.log(`✅ ${symbol}: Loaded (${candles30m.length} x 30m, ${candles1m.length} x 1m, $${ticker.price})`);
-      return true;
-      
-    } catch (error) {
-      attempt++;
-      console.error(`❌ ${symbol}: Load failed (${attempt}/${maxRetries}):`, error.message);
-      
-      if (attempt >= maxRetries) {
-        wsCache[symbol].error = error.message;
-        wsCache[symbol].isReady = false;
-        failureCount[symbol] = (failureCount[symbol] || 0) + 1;
-        return false;
-      }
-    }
-  }
-  
-  return false;
-}
-
 function generateCandleSummary(symbol, analysis) {
   const parts = [];
   
-  // Add safety checks for all nested properties
   const { core, signals, earlySignals, regime } = analysis || {};
   
-  // Safety check: ensure all required properties exist
   if (!core || !signals || !regime) {
     return `❌ ${symbol}: Incomplete analysis data`;
   }
@@ -133,7 +232,6 @@ function generateCandleSummary(symbol, analysis) {
     parts.push(`⚪ No trade signal`);
   }
   
-  // FIXED: Add safety check for earlySignals
   if (earlySignals && earlySignals.recommendation && earlySignals.recommendation !== 'neutral') {
     const emoji = earlySignals.recommendation.includes('bullish') ? '🟢' : '🔴';
     parts.push(`${emoji} Early: ${earlySignals.recommendation.toUpperCase()} (${earlySignals.confidence})`);
@@ -153,16 +251,13 @@ async function startSymbolStream(symbol) {
     
     const cleanupFunctions = [];
 
-    // Ticker stream - real-time price updates
     const tickerCleanup = client.ws.futuresTicker(symbol, async (ticker) => {
       updateCurrentPrice(symbol, ticker.curDayClose);
       
-      // Check fast signals on price updates (if enabled)
       if (fastSignalConfig.enabled) {
         const { checkFastSignals } = require('./Fast Signals/fastSignalDetector');
         const fastSignalResult = await checkFastSignals(symbol, parseFloat(ticker.curDayClose));
         
-        // Register fast signal to prevent duplicate candle-close signals
         if (fastSignalResult && fastSignalResult.sent) {
           if (!wsCache[symbol].fastSignals) {
             wsCache[symbol].fastSignals = [];
@@ -174,7 +269,6 @@ async function startSymbolStream(symbol) {
             timestamp: Date.now()
           });
           
-          // Clean up old fast signals (older than 30 minutes)
           wsCache[symbol].fastSignals = wsCache[symbol].fastSignals.filter(
             fs => Date.now() - fs.timestamp < 1800000
           );
@@ -183,13 +277,11 @@ async function startSymbolStream(symbol) {
     });
     cleanupFunctions.push(tickerCleanup);
 
-    // NEW: 1-minute kline stream for volume detection
     const kline1mCleanup = client.ws.futuresCandles(symbol, '1m', (candle) => {
       updateCandleCache(symbol, candle, '1m');
     });
     cleanupFunctions.push(kline1mCleanup);
 
-    // 30m kline stream - candle updates
     const kline30mCleanup = client.ws.futuresCandles(symbol, '30m', async (candle) => {
       const candleClosed = updateCandleCache(symbol, candle, '30m');
       
@@ -199,17 +291,13 @@ async function startSymbolStream(symbol) {
         console.log(`🕐 ${symbol}: 30m CANDLE CLOSED at ${closeTime}`);
         console.log(`_______________________`);
         
-        // Trigger analysis
         const { triggerAnalysis } = require('./analysisScheduler');
         await triggerAnalysis(symbol);
         
-        // Get the cached analysis
         const analysis = wsCache[symbol].lastAnalysis;
         
         if (analysis && !analysis.error) {
           console.log(generateCandleSummary(symbol, analysis));
-          
-          // Broadcast to SSE clients immediately
           broadcastAnalysis(symbol, analysis);
         } else {
           console.log(`⚠️ ${symbol}: Analysis unavailable - ${analysis?.error || 'Unknown error'}`);
@@ -238,7 +326,7 @@ async function startSymbolStream(symbol) {
       startTime: Date.now()
     };
 
-    console.log(`✅ ${symbol}: WebSocket streams connected (including 1m)`);
+    console.log(`✅ ${symbol}: WebSocket streams connected`);
     
   } catch (error) {
     console.error(`❌ ${symbol}: WebSocket error:`, error.message);
@@ -246,26 +334,12 @@ async function startSymbolStream(symbol) {
   }
 }
 
-// Broadcast management updates to dashboard
-function broadcastManagementUpdate(tradeId, action) {
-  const managementClients = sseClients.get('management') || new Set();
-  
-  managementClients.forEach(res => {
-    try {
-      res.write(`data: ${JSON.stringify({
-        type: 'management_action',
-        tradeId,
-        action
-      })}\n\n`);
-    } catch (err) {
-      console.error('Failed to send management update:', err);
-    }
-  });
-}
-
-// Initialize WebSocket manager
+// ============================================
+// OPTIMIZED INITIALIZATION FOR 10 SYMBOLS
+// ============================================
 async function initWebSocketManager() {
   console.log('🔌 Initializing WebSocket Manager...');
+  console.log('⚡ OPTIMIZED MODE: Fast parallel loading with smart rate limiting\n');
   
   utils.validateEnv();
 
@@ -275,36 +349,92 @@ async function initWebSocketManager() {
     failureCount[symbol] = 0;
   }
 
-  console.log('📥 Loading initial data (one-time REST API calls)...');
+  const totalSymbols = symbols.length;
+  console.log('📥 Loading initial data with optimized strategy...');
+  console.log(`   Total symbols: ${totalSymbols}`);
+  
+  // ✅ OPTIMIZED STRATEGY based on symbol count
+  let batchSize, batchDelay, strategy;
+  
+  if (totalSymbols <= 5) {
+    // Small: Load all at once
+    batchSize = totalSymbols;
+    batchDelay = 0;
+    strategy = 'All symbols in parallel';
+  } else if (totalSymbols <= 10) {
+    // Medium: 2 batches of 5
+    batchSize = 5;
+    batchDelay = 2000; // 2 second gap between batches
+    strategy = '2 parallel batches';
+  } else if (totalSymbols <= 15) {
+    // Large: 3 batches of 5
+    batchSize = 5;
+    batchDelay = 2000;
+    strategy = '3 parallel batches';
+  } else {
+    // Very large: smaller batches
+    batchSize = 4;
+    batchDelay = 2500;
+    strategy = 'Conservative batching';
+  }
+  
+  console.log(`   Strategy: ${strategy}`);
+  console.log(`   Batch size: ${batchSize} symbols loaded in parallel`);
+  console.log(`   Delay between batches: ${batchDelay}ms`);
+  console.log(`   Smart delays: 100ms-1000ms adaptive`);
+  
+  const estimatedTime = totalSymbols <= 10 ? '8-12 seconds' : `${Math.ceil(totalSymbols / batchSize) * 5}s`;
+  console.log(`   Estimated time: ${estimatedTime}\n`);
 
+  // Create batches
+  const batches = [];
+  for (let i = 0; i < symbols.length; i += batchSize) {
+    batches.push(symbols.slice(i, i + batchSize));
+  }
+
+  const startTime = Date.now();
   let successCount = 0;
-  for (const symbol of symbols) {
-    const success = await loadInitialData(symbol);
-    if (success) successCount++;
+  
+  // Load batches
+  for (let i = 0; i < batches.length; i++) {
+    const batch = batches[i];
+    const results = await loadSymbolsConcurrently(batch, i + 1, batches.length);
     
-    if (symbols.indexOf(symbol) < symbols.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, 2000));
+    successCount += results.filter(r => r).length;
+    
+    // Delay between batches (except after last batch)
+    if (i < batches.length - 1 && batchDelay > 0) {
+      console.log(`\n⏳ Cooling down for ${batchDelay}ms before next batch...\n`);
+      await delay(batchDelay);
     }
   }
 
-  console.log(`✅ Initial data loaded: ${successCount}/${symbols.length} symbols`);
+  const loadTime = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log(`\n✅ Initial data loaded: ${successCount}/${totalSymbols} symbols in ${loadTime}s`);
+  console.log(`   Average: ${(loadTime / successCount).toFixed(1)}s per symbol`);
+  console.log(`   Total requests: ${rateTracker.requests.length}`);
 
   if (successCount === 0) {
     throw new Error('Failed to load data for any symbols');
   }
 
-  // Start WebSocket streams
-  console.log('🔌 Starting WebSocket streams...');
-  for (const symbol of symbols) {
-    if (wsCache[symbol] && wsCache[symbol].isReady) {
-      await startSymbolStream(symbol);
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
-  }
-
-  console.log(`✅ WebSocket streams: ${Object.keys(wsConnections).length} active`);
+  // Start WebSocket streams (can be done faster)
+  console.log('\n🔌 Starting WebSocket streams...');
+  const streamStartTime = Date.now();
   
-  // Log fast signal status
+  // Start all streams in parallel (WebSocket connections don't count towards REST API limits)
+  const streamPromises = symbols
+    .filter(symbol => wsCache[symbol] && wsCache[symbol].isReady)
+    .map(symbol => startSymbolStream(symbol));
+  
+  await Promise.all(streamPromises);
+  
+  const streamTime = ((Date.now() - streamStartTime) / 1000).toFixed(1);
+  console.log(`\n✅ WebSocket streams: ${Object.keys(wsConnections).length} active (connected in ${streamTime}s)`);
+  
+  const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log(`\n🎉 Total initialization time: ${totalTime}s`);
+  
   if (fastSignalConfig.enabled) {
     console.log(`⚡ Fast signals: ENABLED with 1-MINUTE VOLUME DETECTION`);
     console.log(`   Check interval: ${fastSignalConfig.checkInterval / 1000}s`);
@@ -330,7 +460,6 @@ function cleanup() {
     }
   }
   
-  // Clean up SSE clients
   sseClients.forEach((clients, symbol) => {
     clients.forEach(res => {
       try {

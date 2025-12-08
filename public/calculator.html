@@ -372,6 +372,9 @@
             <option value="BNBUSDT">BNB/USDT</option>
             <option value="XRPUSDT">XRP/USDT</option>
             <option value="LINKUSDT">LINK/USDT</option>
+            <option value="TONUSDT">TON/USDT</option>
+            <option value="TRXUSDT">TRX/USDT</option>
+            <option value="DOGEUSDT">DOGE/USDT</option>
           </select>
         </div>
 
@@ -469,7 +472,10 @@
       'ADAUSDT': { decimals: 4, minMove: 0.0001 },
       'BNBUSDT': { decimals: 2, minMove: 0.01 },
       'XRPUSDT': { decimals: 4, minMove: 0.0001 },
-      'LINKUSDT': { decimals: 2, minMove: 0.01}
+      'LINKUSDT': { decimals: 3, minMove: 0.001},
+      'TONUSDT': { decimals: 4, minMove: 0.0001},
+      'TRXUSDT': { decimals: 5, minMove: 0.00001},
+      'DOGEUSDT': { decimals: 5, minMove: 0.00001}
     };
 
     function formatPrice(price, symbol) {
