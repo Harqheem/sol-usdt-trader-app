@@ -373,6 +373,159 @@ ETHUSDT: {
       trendAlignmentBonus: 1
     }
   },
+  
+  // TON - High volatility, Telegram-integrated layer-1
+  TONUSDT: {
+    name: 'Toncoin',
+    category: 'layer1',
+    
+    ema: {
+      fast: 7,
+      medium: 21,
+      slow: 99
+    },
+    sma: {
+      trend: 50,
+      major: 200
+    },
+    
+    volatility: {
+      atrPeriod: 14,
+      atrMultiplier: 1.25,  // High volatility, explosive moves
+      highThreshold: 2.8,
+      lowThreshold: 0.9
+    },
+    
+    momentum: {
+      rsiPeriod: 14,
+      rsiBullish: 44,
+      rsiBearish: 56,
+      rsiOverbought: 72,
+      rsiOversold: 28,
+      adxPeriod: 14,
+      adxStrong: 28,
+      adxWeak: 18
+    },
+    
+    trade: {
+      entryPullbackATR: 0.42,
+      slBufferATR: 0.65,
+      tpMultiplier1: 1.5,
+      tpMultiplier2: 3.8,      // High upside potential
+      maxRiskPercent: 0.015,
+      minRiskPercent: 0.005
+    },
+    
+    scoring: {
+      baseThreshold: 11,
+      strongADXAdjust: -2,
+      weakADXAdjust: 1,
+      emaStackWeight: 2,
+      trendAlignmentBonus: 2
+    }
+  },
+
+  // TRX - Low-moderate volatility, payment/dApp platform
+  TRXUSDT: {
+    name: 'Tron',
+    category: 'layer1',
+    
+    ema: {
+      fast: 8,
+      medium: 25,
+      slow: 99
+    },
+    sma: {
+      trend: 50,
+      major: 200
+    },
+    
+    volatility: {
+      atrPeriod: 14,
+      atrMultiplier: 0.85,  // Lower volatility, steady movements
+      highThreshold: 1.9,
+      lowThreshold: 0.55
+    },
+    
+    momentum: {
+      rsiPeriod: 14,
+      rsiBullish: 41,
+      rsiBearish: 59,
+      rsiOverbought: 69,
+      rsiOversold: 31,
+      adxPeriod: 14,
+      adxStrong: 31,       // Needs stronger confirmation
+      adxWeak: 21
+    },
+    
+    trade: {
+      entryPullbackATR: 0.28,
+      slBufferATR: 0.52,
+      tpMultiplier1: 1.5,
+      tpMultiplier2: 2.8,      // Moderate targets
+      maxRiskPercent: 0.011,
+      minRiskPercent: 0.004
+    },
+    
+    scoring: {
+      baseThreshold: 12,
+      strongADXAdjust: -1,
+      weakADXAdjust: 1,
+      emaStackWeight: 2,
+      trendAlignmentBonus: 1
+    }
+  },
+
+  // DOGE - Very high volatility, meme coin dynamics
+  DOGEUSDT: {
+    name: 'Dogecoin',
+    category: 'meme',
+    
+    ema: {
+      fast: 7,
+      medium: 21,
+      slow: 99
+    },
+    sma: {
+      trend: 50,
+      major: 200
+    },
+    
+    volatility: {
+      atrPeriod: 14,
+      atrMultiplier: 1.4,   // Extremely volatile, sentiment-driven
+      highThreshold: 3.5,
+      lowThreshold: 1.2
+    },
+    
+    momentum: {
+      rsiPeriod: 14,
+      rsiBullish: 46,       // Higher threshold for meme volatility
+      rsiBearish: 54,
+      rsiOverbought: 74,    // Can stay extended longer
+      rsiOversold: 26,
+      adxPeriod: 14,
+      adxStrong: 26,        // Lower threshold, trends fast
+      adxWeak: 16
+    },
+    
+    trade: {
+      entryPullbackATR: 0.55,   // Very wide entries
+      slBufferATR: 0.75,        // Very wide stops
+      tpMultiplier1: 1.5,
+      tpMultiplier2: 4.5,       // Massive TP2 for viral moves
+      maxRiskPercent: 0.015,    // 1.5% max (high risk)
+      minRiskPercent: 0.005
+    },
+    
+    scoring: {
+      baseThreshold: 10,        // Lower threshold (catch momentum)
+      strongADXAdjust: -2,
+      weakADXAdjust: 0,         // Don't penalize weak ADX as much
+      emaStackWeight: 1,        // Less weight on technicals
+      trendAlignmentBonus: 3    // Reward strong trends heavily
+    }
+  }
 
 };
 

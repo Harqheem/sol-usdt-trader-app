@@ -1,5 +1,5 @@
-// services/dataService/websocketManager.js - OPTIMIZED for 10 symbols
-// Faster loading while staying under rate limits
+// services/dataService/websocketManager.js - WITH AUTO-RETRY FOR FAILED SYMBOLS
+// Automatically retries failed symbols every hour without manual restart
 
 const Binance = require('binance-api-node').default;
 const { symbols } = require('../../config');
@@ -11,6 +11,16 @@ const client = Binance();
 const wsConnections = {};
 let failureCount = {};
 
+// ✅ NEW: Auto-retry system for failed symbols
+const retrySystem = {
+  failedSymbols: new Set(),
+  retryInterval: 60 * 60 * 1000, // 1 hour
+  retryTimerId: null,
+  lastRetryTime: null,
+  totalRetryAttempts: {},
+  maxRetryAttempts: 10 // Give up after 10 failed hours
+};
+
 // SSE clients tracker for real-time updates
 const sseClients = new Map();
 
@@ -19,15 +29,13 @@ const sseClients = new Map();
 // ============================================
 const rateTracker = {
   requests: [],
-  maxPerSecond: 15,  // Conservative limit (Binance allows 20)
-  maxPerMinute: 250  // Conservative limit (Binance allows 1200)
+  maxPerSecond: 18,
+  maxPerMinute: 1000
 };
 
 function trackRequest() {
   const now = Date.now();
   rateTracker.requests.push(now);
-  
-  // Clean up old requests (older than 1 minute)
   rateTracker.requests = rateTracker.requests.filter(time => now - time < 60000);
 }
 
@@ -36,18 +44,15 @@ function getSmartDelay() {
   const lastSecond = rateTracker.requests.filter(time => now - time < 1000).length;
   const lastMinute = rateTracker.requests.length;
   
-  // If approaching per-second limit
   if (lastSecond >= rateTracker.maxPerSecond - 2) {
-    return 1000; // Wait 1 second
+    return 2000;
   }
   
-  // If approaching per-minute limit
   if (lastMinute >= rateTracker.maxPerMinute - 10) {
-    return 2000; // Wait 2 seconds
+    return 5000;
   }
   
-  // Normal operation - minimal delay
-  return 100; // Just 100ms between requests
+  return 200;
 }
 
 function delay(ms) {
@@ -55,16 +60,205 @@ function delay(ms) {
 }
 
 // ============================================
-// PARALLEL BATCH LOADER - Load multiple symbols simultaneously
+// AUTO-RETRY SYSTEM
+// ============================================
+
+/**
+ * Start automatic retry system for failed symbols
+ */
+function startAutoRetrySystem() {
+  console.log('\n🔄 Auto-Retry System: ENABLED');
+  console.log(`   Retry interval: ${retrySystem.retryInterval / 60000} minutes`);
+  console.log(`   Max retry attempts: ${retrySystem.maxRetryAttempts}`);
+  
+  // Clear any existing timer
+  if (retrySystem.retryTimerId) {
+    clearInterval(retrySystem.retryTimerId);
+  }
+  
+  // Set up periodic retry check
+  retrySystem.retryTimerId = setInterval(async () => {
+    await retryFailedSymbols();
+  }, retrySystem.retryInterval);
+  
+  console.log(`   ✅ Auto-retry scheduled every ${retrySystem.retryInterval / 60000} minutes\n`);
+}
+
+/**
+ * Stop auto-retry system (for cleanup)
+ */
+function stopAutoRetrySystem() {
+  if (retrySystem.retryTimerId) {
+    clearInterval(retrySystem.retryTimerId);
+    retrySystem.retryTimerId = null;
+    console.log('🔄 Auto-retry system stopped');
+  }
+}
+
+/**
+ * Add a symbol to the failed list
+ */
+function markSymbolAsFailed(symbol, error) {
+  retrySystem.failedSymbols.add(symbol);
+  retrySystem.totalRetryAttempts[symbol] = (retrySystem.totalRetryAttempts[symbol] || 0) + 1;
+  
+  console.log(`\n⚠️  SYMBOL FAILED: ${symbol}`);
+  console.log(`   Error: ${error}`);
+  console.log(`   Retry attempt: ${retrySystem.totalRetryAttempts[symbol]}/${retrySystem.maxRetryAttempts}`);
+  console.log(`   Auto-retry scheduled in ${retrySystem.retryInterval / 60000} minutes`);
+  
+  if (retrySystem.totalRetryAttempts[symbol] >= retrySystem.maxRetryAttempts) {
+    console.log(`   ❌ Max retry attempts reached - ${symbol} will be disabled`);
+  }
+}
+
+/**
+ * Remove a symbol from failed list (successful load)
+ */
+function markSymbolAsSuccess(symbol) {
+  if (retrySystem.failedSymbols.has(symbol)) {
+    retrySystem.failedSymbols.delete(symbol);
+    const attempts = retrySystem.totalRetryAttempts[symbol] || 0;
+    delete retrySystem.totalRetryAttempts[symbol];
+    
+    console.log(`\n✅ RECOVERY SUCCESS: ${symbol}`);
+    console.log(`   Symbol is now operational after ${attempts} failed attempt(s)`);
+  }
+}
+
+/**
+ * Retry all failed symbols
+ */
+async function retryFailedSymbols() {
+  if (retrySystem.failedSymbols.size === 0) {
+    return; // Nothing to retry
+  }
+  
+  const now = new Date().toLocaleString();
+  console.log('\n═══════════════════════════════════════');
+  console.log(`🔄 AUTO-RETRY: Starting recovery attempt at ${now}`);
+  console.log(`   Failed symbols: ${retrySystem.failedSymbols.size}`);
+  console.log('═══════════════════════════════════════\n');
+  
+  retrySystem.lastRetryTime = Date.now();
+  
+  const symbolsToRetry = Array.from(retrySystem.failedSymbols).filter(symbol => {
+    const attempts = retrySystem.totalRetryAttempts[symbol] || 0;
+    return attempts < retrySystem.maxRetryAttempts;
+  });
+  
+  if (symbolsToRetry.length === 0) {
+    console.log('⚠️  All failed symbols have exceeded max retry attempts');
+    return;
+  }
+  
+  console.log(`🔄 Retrying ${symbolsToRetry.length} symbol(s)...`);
+  
+  let successCount = 0;
+  let failCount = 0;
+  
+  // Retry symbols one at a time to avoid rate limits
+  for (const symbol of symbolsToRetry) {
+    console.log(`\n🔄 Attempting recovery: ${symbol}...`);
+    
+    try {
+      // Reinitialize cache
+      initializeSymbolCache(symbol);
+      
+      // Try to load data
+      const success = await loadInitialData(symbol);
+      
+      if (success) {
+        // Mark as successful
+        markSymbolAsSuccess(symbol);
+        
+        // Start WebSocket streams
+        await startSymbolStream(symbol);
+        
+        successCount++;
+      } else {
+        markSymbolAsFailed(symbol, 'Load failed during retry');
+        failCount++;
+      }
+      
+      // Small delay between retries
+      await delay(2000);
+      
+    } catch (error) {
+      console.error(`   ❌ Retry failed for ${symbol}:`, error.message);
+      markSymbolAsFailed(symbol, error.message);
+      failCount++;
+    }
+  }
+  
+  console.log('\n═══════════════════════════════════════');
+  console.log(`🔄 AUTO-RETRY COMPLETE`);
+  console.log(`   ✅ Recovered: ${successCount}`);
+  console.log(`   ❌ Still failed: ${failCount}`);
+  console.log(`   ⏰ Next retry: ${new Date(Date.now() + retrySystem.retryInterval).toLocaleTimeString()}`);
+  console.log('═══════════════════════════════════════\n');
+}
+
+/**
+ * Get retry system status (for API endpoint)
+ */
+function getRetryStatus() {
+  return {
+    enabled: retrySystem.retryTimerId !== null,
+    retryInterval: retrySystem.retryInterval,
+    failedSymbols: Array.from(retrySystem.failedSymbols),
+    totalFailed: retrySystem.failedSymbols.size,
+    retryAttempts: retrySystem.totalRetryAttempts,
+    lastRetryTime: retrySystem.lastRetryTime ? new Date(retrySystem.lastRetryTime).toLocaleString() : 'Never',
+    nextRetryTime: retrySystem.lastRetryTime ? 
+      new Date(retrySystem.lastRetryTime + retrySystem.retryInterval).toLocaleString() : 
+      'Scheduled',
+    maxRetryAttempts: retrySystem.maxRetryAttempts
+  };
+}
+
+/**
+ * Manual retry trigger (for API endpoint)
+ */
+async function triggerManualRetry(symbol) {
+  if (!symbol) {
+    // Retry all failed symbols
+    await retryFailedSymbols();
+    return { success: true, message: 'Retrying all failed symbols' };
+  }
+  
+  // Retry specific symbol
+  if (!retrySystem.failedSymbols.has(symbol)) {
+    return { success: false, message: `${symbol} is not in failed list` };
+  }
+  
+  console.log(`\n🔄 MANUAL RETRY triggered for ${symbol}...`);
+  
+  try {
+    initializeSymbolCache(symbol);
+    const success = await loadInitialData(symbol);
+    
+    if (success) {
+      markSymbolAsSuccess(symbol);
+      await startSymbolStream(symbol);
+      return { success: true, message: `${symbol} recovered successfully` };
+    } else {
+      return { success: false, message: `${symbol} failed to load` };
+    }
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+}
+
+// ============================================
+// PARALLEL BATCH LOADER
 // ============================================
 async function loadSymbolsConcurrently(symbolBatch, batchNumber, totalBatches) {
   console.log(`\n📦 Batch ${batchNumber}/${totalBatches}: Loading ${symbolBatch.length} symbols in parallel...`);
   
-  // Load all symbols in this batch concurrently
   const promises = symbolBatch.map(symbol => loadInitialData(symbol));
   const results = await Promise.all(promises);
   
-  // Report results
   const successful = results.filter(r => r).length;
   console.log(`   ✅ Batch ${batchNumber} complete: ${successful}/${symbolBatch.length} successful`);
   
@@ -72,7 +266,7 @@ async function loadSymbolsConcurrently(symbolBatch, batchNumber, totalBatches) {
 }
 
 // ============================================
-// OPTIMIZED DATA LOADER - Smart delays between requests
+// OPTIMIZED DATA LOADER
 // ============================================
 async function loadInitialData(symbol) {
   console.log(`📥 ${symbol}: Starting load...`);
@@ -88,7 +282,6 @@ async function loadInitialData(symbol) {
         await delay(backoffDelay);
       }
       
-      // ✅ OPTIMIZED: Sequential with smart adaptive delays
       trackRequest();
       const candles30m = await utils.withTimeout(
         client.futuresCandles({ symbol, interval: '30m', limit: 200 }), 
@@ -138,6 +331,10 @@ async function loadInitialData(symbol) {
       failureCount[symbol] = 0;
 
       console.log(`   ✅ ${symbol}: Complete ($${ticker.price})`);
+      
+      // ✅ Mark as success if it was previously failed
+      markSymbolAsSuccess(symbol);
+      
       return true;
       
     } catch (error) {
@@ -160,6 +357,10 @@ async function loadInitialData(symbol) {
         wsCache[symbol].error = error.message;
         wsCache[symbol].isReady = false;
         failureCount[symbol] = (failureCount[symbol] || 0) + 1;
+        
+        // ✅ Mark for auto-retry
+        markSymbolAsFailed(symbol, error.message);
+        
         return false;
       }
     }
@@ -249,6 +450,15 @@ async function startSymbolStream(symbol) {
   try {
     console.log(`🔌 ${symbol}: Starting WebSocket streams...`);
     
+    // ✅ Clean up old connection if exists
+    if (wsConnections[symbol] && wsConnections[symbol].cleanup) {
+      try {
+        wsConnections[symbol].cleanup();
+      } catch (err) {
+        console.log(`   ⚠️  Cleaned up old connection for ${symbol}`);
+      }
+    }
+    
     const cleanupFunctions = [];
 
     const tickerCleanup = client.ws.futuresTicker(symbol, async (ticker) => {
@@ -331,11 +541,14 @@ async function startSymbolStream(symbol) {
   } catch (error) {
     console.error(`❌ ${symbol}: WebSocket error:`, error.message);
     wsCache[symbol].error = error.message;
+    
+    // ✅ Mark for retry if WebSocket fails
+    markSymbolAsFailed(symbol, `WebSocket error: ${error.message}`);
   }
 }
 
 // ============================================
-// OPTIMIZED INITIALIZATION FOR 10 SYMBOLS
+// OPTIMIZED INITIALIZATION
 // ============================================
 async function initWebSocketManager() {
   console.log('🔌 Initializing WebSocket Manager...');
@@ -343,7 +556,6 @@ async function initWebSocketManager() {
   
   utils.validateEnv();
 
-  // Initialize cache for all symbols
   for (const symbol of symbols) {
     initializeSymbolCache(symbol);
     failureCount[symbol] = 0;
@@ -353,26 +565,21 @@ async function initWebSocketManager() {
   console.log('📥 Loading initial data with optimized strategy...');
   console.log(`   Total symbols: ${totalSymbols}`);
   
-  // ✅ OPTIMIZED STRATEGY based on symbol count
   let batchSize, batchDelay, strategy;
   
   if (totalSymbols <= 5) {
-    // Small: Load all at once
     batchSize = totalSymbols;
     batchDelay = 0;
     strategy = 'All symbols in parallel';
   } else if (totalSymbols <= 10) {
-    // Medium: 2 batches of 5
     batchSize = 5;
-    batchDelay = 2000; // 2 second gap between batches
+    batchDelay = 2000;
     strategy = '2 parallel batches';
   } else if (totalSymbols <= 15) {
-    // Large: 3 batches of 5
     batchSize = 5;
     batchDelay = 2000;
     strategy = '3 parallel batches';
   } else {
-    // Very large: smaller batches
     batchSize = 4;
     batchDelay = 2500;
     strategy = 'Conservative batching';
@@ -386,7 +593,6 @@ async function initWebSocketManager() {
   const estimatedTime = totalSymbols <= 10 ? '8-12 seconds' : `${Math.ceil(totalSymbols / batchSize) * 5}s`;
   console.log(`   Estimated time: ${estimatedTime}\n`);
 
-  // Create batches
   const batches = [];
   for (let i = 0; i < symbols.length; i += batchSize) {
     batches.push(symbols.slice(i, i + batchSize));
@@ -395,14 +601,12 @@ async function initWebSocketManager() {
   const startTime = Date.now();
   let successCount = 0;
   
-  // Load batches
   for (let i = 0; i < batches.length; i++) {
     const batch = batches[i];
     const results = await loadSymbolsConcurrently(batch, i + 1, batches.length);
     
     successCount += results.filter(r => r).length;
     
-    // Delay between batches (except after last batch)
     if (i < batches.length - 1 && batchDelay > 0) {
       console.log(`\n⏳ Cooling down for ${batchDelay}ms before next batch...\n`);
       await delay(batchDelay);
@@ -417,12 +621,17 @@ async function initWebSocketManager() {
   if (successCount === 0) {
     throw new Error('Failed to load data for any symbols');
   }
+  
+  // ✅ Show failed symbols summary
+  if (retrySystem.failedSymbols.size > 0) {
+    console.log(`\n⚠️  FAILED SYMBOLS: ${retrySystem.failedSymbols.size}`);
+    console.log(`   Symbols: ${Array.from(retrySystem.failedSymbols).join(', ')}`);
+    console.log(`   These will be automatically retried in 1 hour`);
+  }
 
-  // Start WebSocket streams (can be done faster)
   console.log('\n🔌 Starting WebSocket streams...');
   const streamStartTime = Date.now();
   
-  // Start all streams in parallel (WebSocket connections don't count towards REST API limits)
   const streamPromises = symbols
     .filter(symbol => wsCache[symbol] && wsCache[symbol].isReady)
     .map(symbol => startSymbolStream(symbol));
@@ -434,6 +643,9 @@ async function initWebSocketManager() {
   
   const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log(`\n🎉 Total initialization time: ${totalTime}s`);
+  
+  // ✅ START AUTO-RETRY SYSTEM
+  startAutoRetrySystem();
   
   if (fastSignalConfig.enabled) {
     console.log(`⚡ Fast signals: ENABLED with 1-MINUTE VOLUME DETECTION`);
@@ -447,6 +659,9 @@ async function initWebSocketManager() {
 // Cleanup WebSocket connections
 function cleanup() {
   console.log('🧹 Cleaning up WebSocket connections...');
+  
+  // ✅ Stop auto-retry system
+  stopAutoRetrySystem();
   
   let cleanedCount = 0;
   for (const symbol in wsConnections) {
@@ -480,5 +695,9 @@ module.exports = {
   wsConnections,
   failureCount,
   registerSSEClient,
-  unregisterSSEClient
+  unregisterSSEClient,
+  // ✅ Export retry system functions
+  getRetryStatus,
+  triggerManualRetry,
+  retryFailedSymbols
 };

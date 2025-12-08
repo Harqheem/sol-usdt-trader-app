@@ -15,6 +15,12 @@ const {
   reviewAllPositions,
   REVIEW_CONFIG 
 } = require('../services/dynamicPositionManager');
+const { 
+  getRetryStatus, 
+  triggerManualRetry, 
+  retryFailedSymbols 
+} = require('../services/dataService/websocketManager');
+
 
 // Rate limiting for price endpoint
 const priceRateLimiter = new Map();
@@ -152,6 +158,197 @@ router.get('/price', async (req, res) => {
     res.status(500).json({ 
       error: 'Failed to fetch price',
       details: error.message 
+    });
+  }
+});
+
+/**
+ * GET /retry-status
+ * Get current status of auto-retry system
+ */
+router.get('/retry-status', (req, res) => {
+  try {
+    const status = getRetryStatus();
+    res.json(status);
+  } catch (err) {
+    console.error('❌ Retry status error:', err);
+    res.status(500).json({ 
+      error: 'Failed to get retry status',
+      details: err.message 
+    });
+  }
+});
+
+/**
+ * POST /retry-symbol/:symbol
+ * Manually trigger retry for a specific symbol
+ * 
+ * Example: POST /retry-symbol/BTCUSDT
+ */
+router.post('/retry-symbol/:symbol', async (req, res) => {
+  try {
+    const { symbol } = req.params;
+    
+    console.log(`🔄 Manual retry triggered for ${symbol} via API`);
+    
+    const result = await triggerManualRetry(symbol);
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        symbol: symbol,
+        message: result.message,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        symbol: symbol,
+        error: result.message,
+        timestamp: new Date().toISOString()
+      });
+    }
+  } catch (err) {
+    console.error('❌ Manual retry error:', err);
+    res.status(500).json({ 
+      success: false,
+      error: 'Retry failed',
+      details: err.message 
+    });
+  }
+});
+
+/**
+ * POST /retry-all-failed
+ * Manually trigger retry for ALL failed symbols
+ */
+router.post('/retry-all-failed', async (req, res) => {
+  try {
+    console.log('🔄 Manual retry triggered for ALL failed symbols via API');
+    
+    const result = await triggerManualRetry(null); // null = all symbols
+    
+    res.json({
+      success: true,
+      message: result.message,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('❌ Retry all error:', err);
+    res.status(500).json({ 
+      success: false,
+      error: 'Retry failed',
+      details: err.message 
+    });
+  }
+});
+
+/**
+ * GET /symbol-health
+ * Get detailed health status of all symbols
+ */
+router.get('/symbol-health', (req, res) => {
+  try {
+    const { wsCache } = require('../services/dataService/cacheManager');
+    const { symbols } = require('../config');
+    const retryStatus = getRetryStatus();
+    
+    const symbolHealth = symbols.map(symbol => {
+      const cache = wsCache[symbol];
+      const isFailed = retryStatus.failedSymbols.includes(symbol);
+      const retryAttempts = retryStatus.retryAttempts[symbol] || 0;
+      
+      return {
+        symbol: symbol,
+        status: cache?.isReady ? 'active' : 'failed',
+        isReady: cache?.isReady || false,
+        hasPrice: !!cache?.currentPrice,
+        currentPrice: cache?.currentPrice || null,
+        lastUpdate: cache?.lastUpdate ? new Date(cache.lastUpdate).toISOString() : null,
+        error: cache?.error || null,
+        inRetryQueue: isFailed,
+        retryAttempts: retryAttempts,
+        maxRetryAttempts: retryStatus.maxRetryAttempts,
+        willRetry: isFailed && retryAttempts < retryStatus.maxRetryAttempts
+      };
+    });
+    
+    const summary = {
+      total: symbols.length,
+      active: symbolHealth.filter(s => s.status === 'active').length,
+      failed: symbolHealth.filter(s => s.status === 'failed').length,
+      inRetryQueue: symbolHealth.filter(s => s.inRetryQueue).length,
+      permanentlyFailed: symbolHealth.filter(s => 
+        s.inRetryQueue && s.retryAttempts >= s.maxRetryAttempts
+      ).length
+    };
+    
+    res.json({
+      summary,
+      symbols: symbolHealth,
+      retrySystem: retryStatus
+    });
+  } catch (err) {
+    console.error('❌ Symbol health error:', err);
+    res.status(500).json({ 
+      error: 'Failed to get symbol health',
+      details: err.message 
+    });
+  }
+});
+
+// ============================================
+// ENHANCED HEALTH ENDPOINT (with retry info)
+// ============================================
+
+// Update existing /health endpoint to include retry info
+router.get('/health', (req, res) => {
+  try {
+    const now = Date.now();
+    const { wsCache } = require('../services/dataService/cacheManager');
+    const { symbols } = require('../config');
+    
+    // Get retry status
+    let retryInfo = null;
+    try {
+      retryInfo = getRetryStatus();
+    } catch (err) {
+      console.error('Could not get retry status:', err);
+    }
+    
+    const health = {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      symbols: {}
+    };
+    
+    for (const symbol of symbols) {
+      const cache = wsCache[symbol];
+      health.symbols[symbol] = {
+        isReady: cache?.isReady || false,
+        hasPrice: !!cache?.currentPrice,
+        lastUpdate: cache?.lastUpdate ? new Date(cache.lastUpdate).toISOString() : null,
+        hasError: !!cache?.error,
+        error: cache?.error || null
+      };
+    }
+    
+    // Add retry info if available
+    if (retryInfo) {
+      health.retrySystem = {
+        enabled: retryInfo.enabled,
+        failedSymbols: retryInfo.totalFailed,
+        nextRetryTime: retryInfo.nextRetryTime
+      };
+    }
+    
+    res.json(health);
+  } catch (err) {
+    console.error('❌ Health check error:', err);
+    res.status(500).json({ 
+      status: 'error',
+      error: err.message 
     });
   }
 });
