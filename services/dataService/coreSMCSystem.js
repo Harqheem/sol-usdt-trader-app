@@ -189,6 +189,10 @@ else if (smcSignals.length > 0 && structureStrength.score >= SYSTEM_CONFIG.minSt
 // PRIORITY 5: 1 min Liquidity sweep check
 else if (sweep1m) {
   selectedSignal = sweep1m;
+  // Ensure strategy is set (should already be 'reversal' from detector)
+  if (!selectedSignal.strategy) {
+    selectedSignal.strategy = 'reversal';
+  }
   // Set proper signal type based on direction
   signalSource = sweep1m.direction === 'LONG' ? 'LIQUIDITY_SWEEP_BULLISH' : 'LIQUIDITY_SWEEP_BEARISH';
   console.log(`   🎯 PRIORITY 5: 1m Liquidity Sweep (${sweep1m.direction})`);
@@ -201,7 +205,6 @@ else if (cvdDivergence && structureStrength.score >= 30) {
 }
 
 if (!selectedSignal) {
-  console.log(`   ⏸️ No signals detected`);
   return {
     signal: 'WAIT',
     reason: 'No trading signals detected',
