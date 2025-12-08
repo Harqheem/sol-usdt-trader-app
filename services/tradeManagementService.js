@@ -637,7 +637,7 @@ function getSignalType(trade) {
   }
   
   // ✅ PRIORITY 2: Parse from notes text (fallback)
-  console.log(`⚠️ ${trade.symbol}: No marker found, parsing notes text...`);
+ 
   
   // NEW VOLUME PROFILE & CVD SIGNALS (check these FIRST)
   if (notes.includes('CVD Divergence at HVN/POC') || notes.includes('CVD_AT_HVN')) {
