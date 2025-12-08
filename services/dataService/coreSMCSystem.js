@@ -410,7 +410,7 @@ function buildComprehensiveNotes(signal, signalSource, regime, marketStructure, 
  */
 function calculateEnhancedTrade(signal, currentPrice, atr, highs, lows, decimals, regime, volumeAnalysis) {
   let entry, sl, tp1, tp2;
-  const strategy = signal.strategy;
+   const strategy = signal.strategy || 'reversal';
   
   // Use signal's suggested entry if available (from volume SR bounce)
   if (signal.suggestedEntry) {
@@ -452,8 +452,8 @@ function calculateEnhancedTrade(signal, currentPrice, atr, highs, lows, decimals
       return { valid: false, reason: 'Stop too tight' };
     }
     
-    tp1 = entry - (risk * SYSTEM_CONFIG.minRR);
-    tp2 = entry - (risk * 3.0);
+    tp1 = entry + (risk * SYSTEM_CONFIG.minRR);
+    tp2 = entry + (risk * 3.0);
   
     
   } else { // SHORT
