@@ -5,7 +5,7 @@ function getDecimalPlaces(symbol) {
 
   if (symbol === 'LINKUSDT') return 3;
 
-  return 2;
+  if (symbol === 'ETHUSDT' || symbol === 'SOLUSDT') return 2;
 }
 
 module.exports = getDecimalPlaces;

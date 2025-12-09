@@ -13,18 +13,18 @@ const RISK_PARAMS = {
   leverage: 20,
   
   // Daily Limits (DEFAULT SYSTEM ONLY)
-  maxDailyTrades: 8,
-  maxConsecutiveLosses: 2,
+  maxDailyTrades: 10,
+  maxConsecutiveLosses: 3,
   catastrophicLossPct: -100,  // -100% of account
   
   // Per-Symbol Limits
   maxSymbolTradesPerDay: 2,
   maxSymbolLossesPerDay: 2,
-  cooldownAfterLossHours: 4,
+  cooldownAfterLossHours: 6,
   cooldownAfterWinHours: 4,
   
   // Pause Duration
-  pauseDurationHours: 8
+  pauseDurationHours: 1
 };
 
 // ============================================
@@ -276,7 +276,7 @@ function canTakeNewTrade(symbol) {
   // Check 3: Consecutive losses limit (DEFAULT ONLY)
   if (riskState.dailyStats.consecutiveLosses >= RISK_PARAMS.maxConsecutiveLosses) {
     checks.failed.push(`Max consecutive DEFAULT losses reached (${RISK_PARAMS.maxConsecutiveLosses})`);
-    checks.failed.push('Default system auto-paused for 12 hours');
+    checks.failed.push(`Default system auto-paused for (${RISK_PARAMS.pauseDurationHours}) hours`);
     
     // Auto-pause DEFAULT ONLY
     pauseTrading(`${RISK_PARAMS.maxConsecutiveLosses} consecutive DEFAULT losses - auto-pause`);
