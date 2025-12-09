@@ -24,7 +24,7 @@ const SYSTEM_CONFIG = {
   riskPerTrade: 0.02,
   leverage: 20,
   minRR: 1.5,
-  maxStopPct: 0.025,
+  maxStopPct: 0.02,
   
   // Signal requirements
   minADXForSMC: 20,
@@ -162,47 +162,50 @@ async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, dec
 let selectedSignal = null;
 let signalSource = null;
 
+// PRIORITY 4: SMC signals
+if (smcSignals.length > 0 && structureStrength.score >= SYSTEM_CONFIG.minStructureConfidence) {
+  selectedSignal = smcSignals[0];
+  signalSource = 'SMC';
+  console.log(`   🎯 PRIORITY 4: SMC Signal (${smcSignals[0].type})`);
+}
+
+//rearrange priorities when removing the comments
 // PRIORITY 1: CVD Divergence at HVN/POC (HIGHEST)
-if (cvdDivergence && cvdDivergence.atHVN && structureStrength.score >= 30) {
-  selectedSignal = cvdDivergence;
-  signalSource = 'CVD_AT_HVN';
-  console.log(`   🎯 PRIORITY 1: CVD divergence at HVN/POC`);
-}
+// else if (cvdDivergence && cvdDivergence.atHVN && structureStrength.score >= 30) {
+  //selectedSignal = cvdDivergence;
+  //signalSource = 'CVD_AT_HVN';
+  //console.log(`   🎯 PRIORITY 1: CVD divergence at HVN/POC`);
+//}
 // PRIORITY 2: Volume-based S/R Bounce with CVD confirmation
-else if (volumeSRBounce && volumeSRBounce.cvdDivergence) {
-  selectedSignal = volumeSRBounce;
-  signalSource = 'VOLUME_SR_CVD';
-  console.log(`   🎯 PRIORITY 2: Volume S/R Bounce + CVD`);
-}
+//else if (volumeSRBounce && volumeSRBounce.cvdDivergence) {
+  //selectedSignal = volumeSRBounce;
+  //signalSource = 'VOLUME_SR_CVD';
+  //console.log(`   🎯 PRIORITY 2: Volume S/R Bounce + CVD`);
+//}
 // PRIORITY 3: Volume-based S/R Bounce
 //else if (volumeSRBounce) {
   //selectedSignal = volumeSRBounce;
   //signalSource = 'VOLUME_SR_BOUNCE';
   //console.log(`   🎯 PRIORITY 3: Volume S/R Bounce`);
 //}
-// PRIORITY 4: SMC signals
-else if (smcSignals.length > 0 && structureStrength.score >= SYSTEM_CONFIG.minStructureConfidence) {
-  selectedSignal = smcSignals[0];
-  signalSource = 'SMC';
-  console.log(`   🎯 PRIORITY 4: SMC Signal (${smcSignals[0].type})`);
-}
+
 // PRIORITY 5: 1 min Liquidity sweep check
-else if (sweep1m) {
-  selectedSignal = sweep1m;
+//else if (sweep1m) {
+  //selectedSignal = sweep1m;
   // Ensure strategy is set (should already be 'reversal' from detector)
-  if (!selectedSignal.strategy) {
-    selectedSignal.strategy = 'reversal';
-  }
+  //if (!selectedSignal.strategy) {
+    //selectedSignal.strategy = 'reversal';
+  //}
   // Set proper signal type based on direction
-  signalSource = sweep1m.direction === 'LONG' ? 'LIQUIDITY_SWEEP_BULLISH' : 'LIQUIDITY_SWEEP_BEARISH';
-  console.log(`   🎯 PRIORITY 5: 1m Liquidity Sweep (${sweep1m.direction})`);
-}
+  //signalSource = sweep1m.direction === 'LONG' ? 'LIQUIDITY_SWEEP_BULLISH' : 'LIQUIDITY_SWEEP_BEARISH';
+  //console.log(`   🎯 PRIORITY 5: 1m Liquidity Sweep (${sweep1m.direction})`);
+//}
 // PRIORITY 6: CVD Divergence alone
-else if (cvdDivergence && structureStrength.score >= 30) {
-  selectedSignal = cvdDivergence;
-  signalSource = 'CVD_DIVERGENCE';
-  console.log(`   🎯 PRIORITY 6: CVD Divergence`);
-}
+//else if (cvdDivergence && structureStrength.score >= 30) {
+  //selectedSignal = cvdDivergence;
+  //signalSource = 'CVD_DIVERGENCE';
+  //console.log(`   🎯 PRIORITY 6: CVD Divergence`);
+//}
 
 if (!selectedSignal) {
   return {
@@ -449,7 +452,7 @@ function calculateEnhancedTrade(signal, currentPrice, atr, highs, lows, decimals
     if (riskPct > SYSTEM_CONFIG.maxStopPct) {
       return { valid: false, reason: `Stop too far: ${(riskPct * 100).toFixed(1)}%` };
     }
-    if (riskPct < 0.003) {
+    if (riskPct < 0.002) {
       return { valid: false, reason: 'Stop too tight' };
     }
     
@@ -473,7 +476,7 @@ function calculateEnhancedTrade(signal, currentPrice, atr, highs, lows, decimals
     if (riskPct > SYSTEM_CONFIG.maxStopPct) {
       return { valid: false, reason: `Stop too far: ${(riskPct * 100).toFixed(1)}%` };
     }
-    if (riskPct < 0.003) {
+    if (riskPct < 0.002) {
       return { valid: false, reason: 'Stop too tight' };
     }
     
