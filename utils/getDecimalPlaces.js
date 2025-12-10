@@ -1,5 +1,5 @@
 function getDecimalPlaces(symbol) {
-  if (symbol === 'DOGEUSDT' || 'TRXUSDT') return 5;
+  if (symbol === 'DOGEUSDT' || symbol === 'TRXUSDT') return 5;
 
   if (symbol === 'SUIUSDT' || symbol === 'ADAUSDT' || symbol === 'XRPUSDT' || symbol === 'TONUSDT') return 4;
 

@@ -1,5 +1,5 @@
 // services/dataService/volumeProfileSystem.js
-// COMPREHENSIVE VOLUME PROFILE + CVD + S/R SYSTEM - ENHANCED
+// COMPREHENSIVE VOLUME PROFILE + CVD + S/R SYSTEM - FIXED
 
 /**
  * ========================================
@@ -40,6 +40,7 @@ function calculateVolumeProfile(candles, volumes, numBins = 24) {
     });
   }
   
+  // FIX #3: CORRECTED BIN OVERLAP DETECTION
   // Distribute volume into bins
   for (let i = 0; i < candles.length; i++) {
     const candle = candles[i];
@@ -49,18 +50,34 @@ function calculateVolumeProfile(candles, volumes, numBins = 24) {
     const close = parseFloat(candle.close);
     const volume = volumes[i];
     
-    // Determine if candle is bullish or bearish
-    const isBullish = close > open;
-    const buyVol = isBullish ? volume * 0.65 : volume * 0.35;
-    const sellVol = isBullish ? volume * 0.35 : volume * 0.65;
+    // FIX #2: IMPROVED VOLUME DISTRIBUTION
+    // Use close position and wick analysis for better estimation
+    const range = high - low;
+    if (range === 0) continue;
     
-    // Find which bins this candle touches
+    const closePosition = (close - low) / range; // 0 = low, 1 = high
+    const upperWick = high - Math.max(open, close);
+    const lowerWick = Math.min(open, close) - low;
+    const body = Math.abs(close - open);
+    
+    // Calculate buy pressure more accurately
+    const wickPressure = (lowerWick - upperWick) / range; // Positive = bullish wicks
+    const bodyPressure = (close - open) / range; // Positive = bullish body
+    
+    // Combine factors with weights
+    let buyPressure = (closePosition * 0.5) + (wickPressure * 0.2) + (bodyPressure * 0.3);
+    buyPressure = Math.max(0.1, Math.min(0.9, buyPressure)); // Keep in range 10-90%
+    
+    const buyVol = volume * buyPressure;
+    const sellVol = volume * (1 - buyPressure);
+    
+    // FIX #3: PROPER OVERLAP DETECTION
+    // Find which bins this candle overlaps with
     const touchedBins = bins.filter(bin => 
-      (bin.priceLevel >= low && bin.priceLevel <= high) ||
-      (bin.priceHigh >= low && bin.priceHigh <= high) ||
-      (low >= bin.priceLevel && low <= bin.priceHigh) ||
-      (high >= bin.priceLevel && high <= bin.priceHigh)
+      !(bin.priceHigh < low || bin.priceLevel > high) // Not (no overlap)
     );
+    
+    if (touchedBins.length === 0) continue;
     
     // Distribute volume proportionally across touched bins
     const volumePerBin = volume / touchedBins.length;
@@ -84,13 +101,13 @@ function calculateVolumeProfile(candles, volumes, numBins = 24) {
   // Calculate total volume
   const totalVolume = bins.reduce((sum, bin) => sum + bin.volume, 0);
   
-  // Find Value Area (70% of volume)
+  // FIX #6: IMPROVED VALUE AREA EXPANSION
+  // Find Value Area (70% of volume) - expand based on volume density
   let valueAreaVolume = 0;
   const targetVolume = totalVolume * 0.70;
   const valueAreaBins = [poc];
   valueAreaVolume += poc.volume;
   
-  // Expand value area up and down from POC
   const pocIndex = bins.indexOf(poc);
   let upIndex = pocIndex + 1;
   let downIndex = pocIndex - 1;
@@ -101,15 +118,28 @@ function calculateVolumeProfile(candles, volumes, numBins = 24) {
     
     if (!upBin && !downBin) break;
     
-    // Add the bin with more volume
-    if (upBin && (!downBin || upBin.volume >= downBin.volume)) {
+    // Calculate how much each direction contributes to reaching target
+    const remainingVolume = targetVolume - valueAreaVolume;
+    
+    if (upBin && !downBin) {
       valueAreaBins.push(upBin);
       valueAreaVolume += upBin.volume;
       upIndex++;
-    } else if (downBin) {
+    } else if (downBin && !upBin) {
       valueAreaBins.push(downBin);
       valueAreaVolume += downBin.volume;
       downIndex--;
+    } else {
+      // Both directions available - choose higher volume to minimize bins
+      if (upBin.volume >= downBin.volume) {
+        valueAreaBins.push(upBin);
+        valueAreaVolume += upBin.volume;
+        upIndex++;
+      } else {
+        valueAreaBins.push(downBin);
+        valueAreaVolume += downBin.volume;
+        downIndex--;
+      }
     }
   }
   
@@ -117,16 +147,17 @@ function calculateVolumeProfile(candles, volumes, numBins = 24) {
   const vah = Math.max(...valueAreaBins.map(b => b.priceHigh));
   const val = Math.min(...valueAreaBins.map(b => b.priceLevel));
   
-  // Identify High Volume Nodes (HVN) and Low Volume Nodes (LVN)
-  const avgVolume = totalVolume / bins.length;
-  const hvnThreshold = avgVolume * 1.5;
-  const lvnThreshold = avgVolume * 0.5;
+  // FIX #8: PERCENTILE-BASED HVN/LVN THRESHOLDS
+  // Calculate volume percentiles for better threshold setting
+  const volumeArray = bins.map(b => b.volume).sort((a, b) => a - b);
+  const p80 = volumeArray[Math.floor(volumeArray.length * 0.80)]; // 80th percentile
+  const p20 = volumeArray[Math.floor(volumeArray.length * 0.20)]; // 20th percentile
   
   bins.forEach(bin => {
-    if (bin.volume >= hvnThreshold) {
-      bin.type = 'HVN'; // High Volume Node - strong S/R
-    } else if (bin.volume <= lvnThreshold) {
-      bin.type = 'LVN'; // Low Volume Node - price moves fast through
+    if (bin.volume >= p80) {
+      bin.type = 'HVN'; // Top 20% = High Volume Node
+    } else if (bin.volume <= p20) {
+      bin.type = 'LVN'; // Bottom 20% = Low Volume Node
     } else {
       bin.type = 'NORMAL';
     }
@@ -158,6 +189,7 @@ function calculateVolumeProfile(candles, volumes, numBins = 24) {
  * 2. ENHANCED CVD WITH IMPROVED VOLUME DISTRIBUTION
  * ========================================
  * CVD with better volume estimation using wick analysis
+ * FIX #1: Delta now represents directional pressure, not absolute buy/sell
  */
 function calculateEnhancedCVD(candles, volumes) {
   if (!candles || candles.length < 2) {
@@ -182,16 +214,14 @@ function calculateEnhancedCVD(candles, volumes) {
     const low = parseFloat(candle.low);
     const volume = volumes[i];
     
-    // IMPROVED VOLUME DISTRIBUTION using open-close-wick analysis
+    // FIX #4: IMPROVED BUY PRESSURE CALCULATION
     const range = high - low;
     if (range === 0) {
-      // No movement - split volume evenly
-      const delta = 0;
-      cumulativeDelta += delta;
+      cumulativeDelta += 0;
       cvdArray.push({
         timestamp: candle.closeTime,
         price: close,
-        delta: delta,
+        delta: 0,
         cvd: cumulativeDelta,
         volume: volume,
         buyVolume: volume * 0.5,
@@ -210,40 +240,25 @@ function calculateEnhancedCVD(candles, volumes) {
     const lowerWickPercent = lowerWick / range;
     const closePosition = (close - low) / range;
     
-    // Wick analysis for pressure detection
-    const wickImbalance = lowerWickPercent - upperWickPercent;
+    // Directional body pressure
+    const bodyDirection = close > open ? 1 : close < open ? -1 : 0;
+    const bodyPressure = bodyDirection * bodyPercent;
     
-    // Body direction (primary factor)
-    const isBullish = close > open;
-    let buyPressure = 0;
+    // Wick pressure (lower wick = buying, upper wick = selling)
+    const wickPressure = (lowerWickPercent - upperWickPercent);
     
-    if (isBullish) {
-      // Bullish candle: base buy pressure from body
-      buyPressure = bodyPercent * 0.7; // 70% weight to body direction
-      
-      // Add pressure from close position
-      buyPressure += closePosition * 0.2; // 20% weight to close position
-      
-      // Wick analysis: lower wick = rejected selling = bullish
-      buyPressure += wickImbalance * 0.1; // 10% weight to wick imbalance
-    } else {
-      // Bearish candle: base sell pressure from body
-      buyPressure = bodyPercent * 0.3; // Inverse of bullish
-      
-      // Close position still matters
-      buyPressure += closePosition * 0.2;
-      
-      // Wick analysis
-      buyPressure += wickImbalance * 0.1;
-    }
+    // Combined pressure score (-1 to +1)
+    const pressureScore = (bodyPressure * 0.6) + (wickPressure * 0.2) + ((closePosition - 0.5) * 2 * 0.2);
     
-    // Constrain to 0-1 range
-    buyPressure = Math.max(0, Math.min(1, buyPressure));
+    // Convert to buy percentage (0 to 1)
+    const buyPressure = (pressureScore + 1) / 2; // Map -1..1 to 0..1
+    const buyPressureConstrained = Math.max(0.1, Math.min(0.9, buyPressure));
     
-    // Distribute volume
-    const buyVolume = volume * buyPressure;
-    const sellVolume = volume * (1 - buyPressure);
+    // FIX #1: Delta represents directional volume pressure
+    const buyVolume = volume * buyPressureConstrained;
+    const sellVolume = volume * (1 - buyPressureConstrained);
     
+    // Delta = net directional pressure (positive = buying, negative = selling)
     const delta = buyVolume - sellVolume;
     cumulativeDelta += delta;
     
@@ -262,9 +277,21 @@ function calculateEnhancedCVD(candles, volumes) {
       sellVolume: sellVolume,
       imbalance: delta / volume,
       bodyPercent: bodyPercent,
-      wickImbalance: wickImbalance,
+      wickImbalance: wickPressure,
       institutionalSignal: institutionalSignal
     });
+  }
+  
+  if (cvdArray.length < 2) {
+    return {
+      cvd: cvdArray,
+      current: 0,
+      delta: 0,
+      trend: 'NEUTRAL',
+      slope: 0,
+      acceleration: 0,
+      recentImbalance: 0
+    };
   }
   
   const current = cvdArray[cvdArray.length - 1]?.cvd || 0;
@@ -276,10 +303,10 @@ function calculateEnhancedCVD(candles, volumes) {
   if (cvdArray.length >= 5) {
     const recent5 = cvdArray.slice(-5);
     const cvdChange = recent5[4].cvd - recent5[0].cvd;
-    slope = cvdChange / 5; // Average change per candle
+    slope = cvdChange / 5;
   }
   
-  // Calculate CVD acceleration (change in slope)
+  // Calculate CVD acceleration
   let acceleration = 0;
   if (cvdArray.length >= 10) {
     const recent5 = cvdArray.slice(-5);
@@ -289,18 +316,22 @@ function calculateEnhancedCVD(candles, volumes) {
     acceleration = recentSlope - previousSlope;
   }
   
-  // Determine CVD trend (5-candle weighted average)
+  // FIX #11: CVD TREND WITH NEUTRAL ZONE
   let trend = 'NEUTRAL';
   if (cvdArray.length >= 5) {
     const recent5 = cvdArray.slice(-5);
-    // Weight recent deltas more heavily
     const weights = [1, 1.2, 1.4, 1.6, 2.0];
     const weightedSum = recent5.reduce((sum, d, idx) => sum + (d.delta * weights[idx]), 0);
     const totalWeight = weights.reduce((a, b) => a + b, 0);
     const avgDelta = weightedSum / totalWeight;
     
-    if (avgDelta > 0) trend = 'BULLISH';
-    else if (avgDelta < 0) trend = 'BEARISH';
+    // Calculate average volume for threshold
+    const avgVolume = recent5.reduce((sum, d) => sum + d.volume, 0) / 5;
+    const threshold = avgVolume * 0.05; // 5% of average volume
+    
+    if (avgDelta > threshold) trend = 'BULLISH';
+    else if (avgDelta < -threshold) trend = 'BEARISH';
+    // else stays NEUTRAL
   }
   
   return {
@@ -318,34 +349,29 @@ function calculateEnhancedCVD(candles, volumes) {
  * ========================================
  * 3. DELTA CONFIRMATION ANALYSIS
  * ========================================
- * Checks if volume delta matches price movement strength
  */
 function analyzeDeltaConfirmation(candles, volumes, cvdData) {
-  if (candles.length < 3) return { confirmed: false };
+  if (candles.length < 3 || cvdData.cvd.length < 3) return { confirmed: false };
   
   const recentCandles = candles.slice(-3);
   const recentCVD = cvdData.cvd.slice(-3);
   
-  // Calculate price momentum
   const priceChange = parseFloat(recentCandles[2].close) - parseFloat(recentCandles[0].close);
   const priceDirection = priceChange > 0 ? 'UP' : priceChange < 0 ? 'DOWN' : 'FLAT';
   
-  // Calculate CVD momentum
   const cvdChange = recentCVD[2].cvd - recentCVD[0].cvd;
   const cvdDirection = cvdChange > 0 ? 'UP' : cvdChange < 0 ? 'DOWN' : 'FLAT';
   
-  // Check for confirmation
   const confirmed = priceDirection === cvdDirection && priceDirection !== 'FLAT';
   
-  // Calculate strength of confirmation
   const avgRange = recentCandles.reduce((sum, c) => {
     return sum + (parseFloat(c.high) - parseFloat(c.low));
   }, 0) / 3;
   
   const priceStrength = Math.abs(priceChange) / avgRange;
-  const cvdStrength = Math.abs(cvdChange) / Math.abs(recentCVD[0].cvd || 1);
+  const cvdBase = Math.abs(recentCVD[0].cvd) || 1;
+  const cvdStrength = Math.abs(cvdChange) / cvdBase;
   
-  // Strong confirmation = both price and CVD moving strongly in same direction
   const strength = confirmed ? Math.min(priceStrength, cvdStrength) : 0;
   
   return {
@@ -361,7 +387,7 @@ function analyzeDeltaConfirmation(candles, volumes, cvdData) {
  * ========================================
  * 4. EXHAUSTION DETECTION
  * ========================================
- * Detects climactic volume with minimal price movement (absorption)
+ * FIX #9: MORE FLEXIBLE EXHAUSTION DETECTION
  */
 function detectExhaustion(candles, volumes, cvdData) {
   if (candles.length < 10) return null;
@@ -374,14 +400,12 @@ function detectExhaustion(candles, volumes, cvdData) {
   const currentVolume = recentVolumes[recentVolumes.length - 1];
   const currentCVD = recentCVD[recentCVD.length - 1];
   
-  // Calculate average volume (excluding current)
   const avgVolume = recentVolumes.slice(0, -1).reduce((a, b) => a + b, 0) / 9;
   
-  // Check for climactic volume (2x+ average)
+  // FIX #9: More flexible volume threshold (1.5x to 3x)
   const volumeRatio = currentVolume / avgVolume;
-  if (volumeRatio < 2.0) return null;
+  if (volumeRatio < 1.5) return null;
   
-  // Calculate price movement
   const open = parseFloat(currentCandle.open);
   const close = parseFloat(currentCandle.close);
   const high = parseFloat(currentCandle.high);
@@ -390,17 +414,19 @@ function detectExhaustion(candles, volumes, cvdData) {
   const body = Math.abs(close - open);
   const bodyPercent = range > 0 ? body / range : 0;
   
-  // Exhaustion = high volume but small body (absorption)
-  if (bodyPercent > 0.4) return null; // Body too large
+  // More flexible body requirement (up to 50%)
+  if (bodyPercent > 0.5) return null;
   
-  // Check wick structure
   const upperWick = high - Math.max(open, close);
   const lowerWick = Math.min(open, close) - low;
   
-  // Bullish exhaustion: selling climax with lower wick rejection
+  // Bullish exhaustion
   if (lowerWick > upperWick * 1.5 && currentCVD.delta < 0) {
-    // Strong selling into support, but price holds = bullish exhaustion
     const cvdReversalStrength = Math.abs(currentCVD.delta) / currentVolume;
+    
+    // FIX #7: CALIBRATED CONFIDENCE SCORE
+    let confidence = 60 + (volumeRatio * 8) + (cvdReversalStrength * 30);
+    confidence = Math.min(88, confidence); // Cap at 88%
     
     return {
       type: 'BULLISH_EXHAUSTION',
@@ -411,13 +437,16 @@ function detectExhaustion(candles, volumes, cvdData) {
       cvdDelta: currentCVD.delta,
       strength: cvdReversalStrength > 0.4 ? 'very_strong' : 'strong',
       reason: `💥 Bullish exhaustion - Selling climax (${volumeRatio.toFixed(1)}x vol) absorbed at support`,
-      confidence: Math.min(90, 70 + (volumeRatio * 5))
+      confidence: Math.round(confidence)
     };
   }
   
-  // Bearish exhaustion: buying climax with upper wick rejection
+  // Bearish exhaustion
   if (upperWick > lowerWick * 1.5 && currentCVD.delta > 0) {
     const cvdReversalStrength = Math.abs(currentCVD.delta) / currentVolume;
+    
+    let confidence = 60 + (volumeRatio * 8) + (cvdReversalStrength * 30);
+    confidence = Math.min(88, confidence);
     
     return {
       type: 'BEARISH_EXHAUSTION',
@@ -428,7 +457,7 @@ function detectExhaustion(candles, volumes, cvdData) {
       cvdDelta: currentCVD.delta,
       strength: cvdReversalStrength > 0.4 ? 'very_strong' : 'strong',
       reason: `💥 Bearish exhaustion - Buying climax (${volumeRatio.toFixed(1)}x vol) rejected at resistance`,
-      confidence: Math.min(90, 70 + (volumeRatio * 5))
+      confidence: Math.round(confidence)
     };
   }
   
@@ -437,9 +466,8 @@ function detectExhaustion(candles, volumes, cvdData) {
 
 /**
  * ========================================
- * 5. INSTITUTIONAL VS RETAIL VOLUME ANALYSIS
+ * 5. INSTITUTIONAL ACTIVITY DETECTION
  * ========================================
- * Identifies institutional accumulation/distribution patterns
  */
 function detectInstitutionalActivity(candles, volumes, cvdData) {
   if (candles.length < 20) return null;
@@ -448,13 +476,11 @@ function detectInstitutionalActivity(candles, volumes, cvdData) {
   const recentVolumes = volumes.slice(-20);
   const recentCVD = cvdData.cvd.slice(-20);
   
-  // Calculate volume statistics
   const avgVolume = recentVolumes.reduce((a, b) => a + b, 0) / 20;
   const stdDev = Math.sqrt(
     recentVolumes.reduce((sum, v) => sum + Math.pow(v - avgVolume, 2), 0) / 20
   );
   
-  // Identify high volume candles (institutional footprint)
   const institutionalCandles = [];
   for (let i = 0; i < recentCandles.length; i++) {
     const volume = recentVolumes[i];
@@ -474,20 +500,23 @@ function detectInstitutionalActivity(candles, volumes, cvdData) {
         volumeRatio: volume / avgVolume,
         bodyPercent: bodyPercent,
         delta: recentCVD[i].delta,
-        isAbsorption: bodyPercent < 0.3 // Small body on high volume
+        isAbsorption: bodyPercent < 0.3
       });
     }
   }
   
   if (institutionalCandles.length < 3) return null;
   
-  // Analyze pattern
   const recentInst = institutionalCandles.slice(-5);
   const totalDelta = recentInst.reduce((sum, c) => sum + c.delta, 0);
   const avgBodyPercent = recentInst.reduce((sum, c) => sum + c.bodyPercent, 0) / recentInst.length;
   const absorptionCount = recentInst.filter(c => c.isAbsorption).length;
   
-  // Institutional accumulation: positive delta, absorption patterns
+  // FIX #7: CALIBRATED CONFIDENCE
+  const baseConfidence = 55;
+  const absorptionBonus = absorptionCount * 6;
+  const deltaBonus = Math.min(15, Math.abs(totalDelta) / 1000);
+  
   if (totalDelta > 0 && absorptionCount >= 2) {
     return {
       type: 'INSTITUTIONAL_ACCUMULATION',
@@ -499,11 +528,10 @@ function detectInstitutionalActivity(candles, volumes, cvdData) {
       avgBodyPercent: avgBodyPercent,
       strength: absorptionCount >= 3 ? 'very_strong' : 'strong',
       reason: `🏦 Institutional accumulation detected - ${absorptionCount} absorption events with positive delta`,
-      confidence: Math.min(85, 60 + (absorptionCount * 8))
+      confidence: Math.min(82, baseConfidence + absorptionBonus + deltaBonus)
     };
   }
   
-  // Institutional distribution: negative delta, absorption patterns
   if (totalDelta < 0 && absorptionCount >= 2) {
     return {
       type: 'INSTITUTIONAL_DISTRIBUTION',
@@ -515,7 +543,7 @@ function detectInstitutionalActivity(candles, volumes, cvdData) {
       avgBodyPercent: avgBodyPercent,
       strength: absorptionCount >= 3 ? 'very_strong' : 'strong',
       reason: `🏦 Institutional distribution detected - ${absorptionCount} absorption events with negative delta`,
-      confidence: Math.min(85, 60 + (absorptionCount * 8))
+      confidence: Math.min(82, baseConfidence + absorptionBonus + deltaBonus)
     };
   }
   
@@ -524,9 +552,9 @@ function detectInstitutionalActivity(candles, volumes, cvdData) {
 
 /**
  * ========================================
- * 6. ENHANCED CVD DIVERGENCE DETECTION (3-4 SWING POINTS)
+ * 6. ADVANCED CVD DIVERGENCE DETECTION
  * ========================================
- * Advanced divergence detection with multiple swing points
+ * FIX #5: IMPROVED SWING DETECTION (2-3 bar lookback with tolerance)
  */
 function detectAdvancedCVDDivergence(candles, volumes, volumeProfile) {
   if (candles.length < 30) return null;
@@ -538,18 +566,19 @@ function detectAdvancedCVDDivergence(candles, volumes, volumeProfile) {
   const cvdData = calculateEnhancedCVD(candles, volumes);
   const cvdValues = cvdData.cvd.map(c => c.cvd);
   
-  // Extended lookback for better swing detection
   const lookback = Math.min(30, candles.length);
   const recentHighs = highs.slice(-lookback);
   const recentLows = lows.slice(-lookback);
   const recentCVD = cvdValues.slice(-lookback);
   
-  // IMPROVED SWING DETECTION - only needs immediate neighbors
+  // FIX #5: IMPROVED SWING DETECTION (look 2-3 bars on each side)
   const swingHighs = [];
-  for (let i = 1; i < recentHighs.length - 1; i++) {
+  for (let i = 2; i < recentHighs.length - 2; i++) {
     const high = recentHighs[i];
-    // Swing high = higher than both immediate neighbors
-    const isSwingHigh = high > recentHighs[i - 1] && high > recentHighs[i + 1];
+    // Must be higher than 2 bars on each side
+    const isSwingHigh = 
+      high > recentHighs[i - 1] && high > recentHighs[i - 2] &&
+      high > recentHighs[i + 1] && high > recentHighs[i + 2];
     
     if (isSwingHigh) {
       swingHighs.push({ price: high, cvd: recentCVD[i], index: i });
@@ -557,32 +586,29 @@ function detectAdvancedCVDDivergence(candles, volumes, volumeProfile) {
   }
   
   const swingLows = [];
-  for (let i = 1; i < recentLows.length - 1; i++) {
+  for (let i = 2; i < recentLows.length - 2; i++) {
     const low = recentLows[i];
-    const isSwingLow = low < recentLows[i - 1] && low < recentLows[i + 1];
+    const isSwingLow = 
+      low < recentLows[i - 1] && low < recentLows[i - 2] &&
+      low < recentLows[i + 1] && low < recentLows[i + 2];
     
     if (isSwingLow) {
       swingLows.push({ price: low, cvd: recentCVD[i], index: i });
     }
   }
   
-  // ANALYZE 3-4 SWING POINTS for stronger divergence
-  
-  // BULLISH DIVERGENCE: Price making LL, CVD making HL
-  if (swingLows.length >= 3) {
+  // BULLISH DIVERGENCE: Price LL, CVD HL
+  if (swingLows.length >= 2) {
     const recent = swingLows[swingLows.length - 1];
-    const middle = swingLows[swingLows.length - 2];
-    const older = swingLows[swingLows.length - 3];
+    const older = swingLows[swingLows.length - 2];
     
-    const priceDowntrend = recent.price < middle.price && middle.price < older.price;
-    const cvdUptrend = recent.cvd > middle.cvd && middle.cvd > older.cvd;
+    const price2LL = recent.price < older.price;
+    const cvd2HL = recent.cvd > older.cvd;
     
-    const price2LL = recent.price < middle.price;
-    const cvd2HL = recent.cvd > middle.cvd;
-    
-    if ((priceDowntrend && cvdUptrend) || (price2LL && cvd2HL && swingLows.length === 2)) {
-      const divergenceStrength = Math.abs(recent.cvd - older.cvd) / Math.abs(older.cvd);
-      const is3Point = priceDowntrend && cvdUptrend;
+    if (price2LL && cvd2HL) {
+      const divergenceStrength = Math.abs(recent.cvd - older.cvd) / Math.abs(older.cvd || 1);
+      const is3Point = swingLows.length >= 3 && 
+        swingLows[swingLows.length - 2].price < swingLows[swingLows.length - 3].price;
       
       const currentPrice = closes[closes.length - 1];
       const atHVN = volumeProfile && volumeProfile.hvnLevels ?
@@ -590,70 +616,59 @@ function detectAdvancedCVDDivergence(candles, volumes, volumeProfile) {
           Math.abs(currentPrice - (hvn.priceLevel + hvn.priceHigh) / 2) / currentPrice < 0.01
         ) : false;
       
+      // FIX #12: REALISTIC DIVERGENCE CONFIDENCE FORMULA
+      let confidence = 58 + (divergenceStrength * 100) + (is3Point ? 12 : 0) + (atHVN ? 8 : 0);
+      confidence = Math.min(85, confidence); // Cap at 85% (realistic)
+      
       return {
         type: is3Point ? 'BULLISH_DIVERGENCE_3PT' : 'BULLISH_DIVERGENCE',
         direction: 'LONG',
         strategy: 'reversal',
         swingPoints: is3Point ? 3 : 2,
-        strength: is3Point && divergenceStrength > 0.15 ? 'very_strong' :
-                  divergenceStrength > 0.15 ? 'very_strong' :
+        strength: divergenceStrength > 0.15 ? 'very_strong' :
                   divergenceStrength > 0.08 ? 'strong' : 'moderate',
-        confidence: Math.min(95, (is3Point ? 75 : 65) + (divergenceStrength * 150)),
+        confidence: Math.round(confidence),
         atHVN: atHVN,
         reason: `📈 Bullish CVD divergence (${is3Point ? '3-point' : '2-point'}) - Price LL but CVD HL (${(divergenceStrength * 100).toFixed(1)}% stronger)${atHVN ? ' at HVN' : ''}`,
-        divergenceStrength: divergenceStrength,
-        priceLow1: older.price,
-        priceLow2: middle.price,
-        priceLow3: recent.price,
-        cvd1: older.cvd,
-        cvd2: middle.cvd,
-        cvd3: recent.cvd  };
+        divergenceStrength: divergenceStrength
+      };
     }
   }
 
-  // BEARISH DIVERGENCE: Price making HH, CVD making LH
-  if (swingHighs.length >= 3) {
+  // BEARISH DIVERGENCE: Price HH, CVD LH
+  if (swingHighs.length >= 2) {
     const recent = swingHighs[swingHighs.length - 1];
-    const middle = swingHighs[swingHighs.length - 2];
-    const older = swingHighs[swingHighs.length - 3];
+    const older = swingHighs[swingHighs.length - 2];
     
-    // Check for consistent pattern across 3 points
-    const priceUptrend = recent.price > middle.price && middle.price > older.price;
-    const cvdDowntrend = recent.cvd < middle.cvd && middle.cvd < older.cvd;
+    const price2HH = recent.price > older.price;
+    const cvd2LH = recent.cvd < older.cvd;
     
-    // Also check 2-point divergence if 3-point doesn't match
-    const price2HH = recent.price > middle.price;
-    const cvd2LH = recent.cvd < middle.cvd;
-    
-    if ((priceUptrend && cvdDowntrend) || (price2HH && cvd2LH && swingHighs.length === 2)) {
-      const divergenceStrength = Math.abs(older.cvd - recent.cvd) / Math.abs(older.cvd);
-      const is3Point = priceUptrend && cvdDowntrend;
+    if (price2HH && cvd2LH) {
+      const divergenceStrength = Math.abs(older.cvd - recent.cvd) / Math.abs(older.cvd || 1);
+      const is3Point = swingHighs.length >= 3 && 
+        swingHighs[swingHighs.length - 2].price > swingHighs[swingHighs.length - 3].price;
       
-      // Check if at HVN
       const currentPrice = closes[closes.length - 1];
       const atHVN = volumeProfile && volumeProfile.hvnLevels ? 
         volumeProfile.hvnLevels.some(hvn => 
           Math.abs(currentPrice - (hvn.priceLevel + hvn.priceHigh) / 2) / currentPrice < 0.01
         ) : false;
       
+      // FIX #12: REALISTIC DIVERGENCE CONFIDENCE FORMULA
+      let confidence = 58 + (divergenceStrength * 100) + (is3Point ? 12 : 0) + (atHVN ? 8 : 0);
+      confidence = Math.min(85, confidence);
+      
       return {
         type: is3Point ? 'BEARISH_DIVERGENCE_3PT' : 'BEARISH_DIVERGENCE',
         direction: 'SHORT',
         strategy: 'reversal',
         swingPoints: is3Point ? 3 : 2,
-        strength: is3Point && divergenceStrength > 0.15 ? 'very_strong' : 
-                  divergenceStrength > 0.15 ? 'very_strong' :
+        strength: divergenceStrength > 0.15 ? 'very_strong' : 
                   divergenceStrength > 0.08 ? 'strong' : 'moderate',
-        confidence: Math.min(95, (is3Point ? 75 : 65) + (divergenceStrength * 150)),
+        confidence: Math.round(confidence),
         atHVN: atHVN,
         reason: `📉 Bearish CVD divergence (${is3Point ? '3-point' : '2-point'}) - Price HH but CVD LH (${(divergenceStrength * 100).toFixed(1)}% weaker)${atHVN ? ' at HVN' : ''}`,
-        divergenceStrength: divergenceStrength,
-        priceHigh1: older.price,
-        priceHigh2: middle.price,
-        priceHigh3: recent.price,
-        cvd1: older.cvd,
-        cvd2: middle.cvd,
-        cvd3: recent.cvd
+        divergenceStrength: divergenceStrength
       };
     }
   }
@@ -665,7 +680,6 @@ function detectAdvancedCVDDivergence(candles, volumes, volumeProfile) {
  * ========================================
  * 7. VOLUME-BASED S/R LEVELS
  * ========================================
- * S/R levels derived from volume profile (HVNs)
  */
 function identifyVolumeSRLevels(candles, volumes, volumeProfile, atr) {
   const currentPrice = parseFloat(candles[candles.length - 1].close);
@@ -673,13 +687,11 @@ function identifyVolumeSRLevels(candles, volumes, volumeProfile, atr) {
   const supports = [];
   const resistances = [];
   
-  // Use HVNs as S/R levels
   volumeProfile.hvnLevels.forEach(hvn => {
     const level = (hvn.priceLevel + hvn.priceHigh) / 2;
     const distance = Math.abs(currentPrice - level);
     const distanceATR = distance / atr;
     
-    // Only consider levels within 5 ATR
     if (distanceATR > 5) return;
     
     const levelData = {
@@ -699,7 +711,6 @@ function identifyVolumeSRLevels(candles, volumes, volumeProfile, atr) {
     }
   });
   
-  // Add POC as special S/R level
   if (volumeProfile.poc) {
     const pocLevel = volumeProfile.poc.price;
     const distance = Math.abs(currentPrice - pocLevel);
@@ -713,7 +724,7 @@ function identifyVolumeSRLevels(candles, volumes, volumeProfile, atr) {
         imbalance: volumeProfile.poc.imbalance,
         isPOC: true,
         distanceATR: distanceATR,
-        strength: 100 // POC is strongest level
+        strength: 100
       };
       
       if (pocLevel < currentPrice) {
@@ -724,12 +735,11 @@ function identifyVolumeSRLevels(candles, volumes, volumeProfile, atr) {
     }
   }
   
-  // Sort by distance (nearest first)
   supports.sort((a, b) => a.distanceATR - b.distanceATR);
   resistances.sort((a, b) => a.distanceATR - b.distanceATR);
   
   return {
-    supports: supports.slice(0, 3), // Top 3 nearest
+    supports: supports.slice(0, 3),
     resistances: resistances.slice(0, 3),
     poc: volumeProfile.poc,
     vah: volumeProfile.vah,
@@ -749,12 +759,11 @@ function calculateLevelStrength(hvn, totalVolume) {
  * ========================================
  * 8. ENHANCED S/R BOUNCE WITH VOLUME PROFILE + CVD
  * ========================================
- * Combines volume profile levels with CVD confirmation
+ * FIX #10: FLEXIBLE DISTANCE CHECK (0.3-0.8 ATR with confidence scaling)
  */
 function detectVolumeSRBounce(candles, volumes, atr, regime) {
   if (candles.length < 50) return null;
   
-  // Only in ranging/choppy markets
   if (regime.type === 'TRENDING_BULL' || regime.type === 'TRENDING_BEAR') {
     return null;
   }
@@ -769,63 +778,56 @@ function detectVolumeSRBounce(candles, volumes, atr, regime) {
   const currentLow = lows[lows.length - 1];
   const currentOpen = opens[opens.length - 1];
   
-  // Calculate volume profile
   const volumeProfile = calculateVolumeProfile(candles.slice(-100), volumes.slice(-100));
-  
-  // Get S/R levels from volume profile
   const srLevels = identifyVolumeSRLevels(candles.slice(-100), volumes.slice(-100), volumeProfile, atr);
-  
-  // Calculate CVD
   const cvdData = calculateEnhancedCVD(candles.slice(-50), volumes.slice(-50));
   
-  // Check for additional confirmations
   const deltaConfirmation = analyzeDeltaConfirmation(candles.slice(-3), volumes.slice(-3), cvdData);
   const exhaustion = detectExhaustion(candles.slice(-10), volumes.slice(-10), cvdData);
   const institutional = detectInstitutionalActivity(candles.slice(-20), volumes.slice(-20), cvdData);
   const cvdDivergence = detectAdvancedCVDDivergence(candles.slice(-30), volumes.slice(-30), volumeProfile);
   
-  // ========================================
-  // CHECK FOR BULLISH BOUNCE AT SUPPORT
-  // ========================================
+  // FIX #10: FLEXIBLE DISTANCE CHECK
   const nearestSupport = srLevels.supports[0];
   
-  if (nearestSupport && nearestSupport.distanceATR <= 0.5) {
-    // Strong rejection wick required
+  if (nearestSupport && nearestSupport.distanceATR <= 0.8) {
     const totalRange = currentHigh - currentLow;
     const lowerWick = Math.min(currentOpen, current) - currentLow;
     const wickPercent = totalRange > 0 ? lowerWick / totalRange : 0;
     
     if (wickPercent >= 0.4 && current > currentOpen) {
-      // Volume confirmation
       const avgVolume = volumes.slice(-20, -1).reduce((a, b) => a + b) / 19;
       const currentVolume = volumes[volumes.length - 1];
       const volumeRatio = currentVolume / avgVolume;
       
       if (volumeRatio < 1.3) return null;
       
-      // CVD confirmation - should be turning bullish
       const cvdTurning = cvdData.trend === 'BULLISH' || cvdData.delta > 0;
       if (!cvdTurning) return null;
       
-      // Check momentum
       const priceChange = current - closes[closes.length - 2];
       const atrChange = priceChange / atr;
       if (atrChange < 0.3) return null;
       
-      // Build confidence score with new factors
-      let confidence = 75;
-      if (nearestSupport.isPOC) confidence += 10;
+      // FIX #7 & #10: DISTANCE-SCALED CONFIDENCE
+      let confidence = 70;
+      const distanceBonus = (0.8 - nearestSupport.distanceATR) * 10; // Closer = better
+      confidence += distanceBonus;
+      
+      if (nearestSupport.isPOC) confidence += 8;
       if (nearestSupport.strength >= 80) confidence += 5;
-      if (cvdDivergence && cvdDivergence.direction === 'LONG') confidence += 10;
-      if (nearestSupport.imbalance > 0.3) confidence += 5;
-      if (deltaConfirmation.confirmed && deltaConfirmation.quality === 'strong') confidence += 8;
-      if (exhaustion && exhaustion.type === 'BULLISH_EXHAUSTION') confidence += 12;
-      if (institutional && institutional.type === 'INSTITUTIONAL_ACCUMULATION') confidence += 10;
+      if (cvdDivergence && cvdDivergence.direction === 'LONG') confidence += 8;
+      if (nearestSupport.imbalance > 0.3) confidence += 4;
+      if (deltaConfirmation.confirmed && deltaConfirmation.quality === 'strong') confidence += 6;
+      if (exhaustion && exhaustion.type === 'BULLISH_EXHAUSTION') confidence += 10;
+      if (institutional && institutional.type === 'INSTITUTIONAL_ACCUMULATION') confidence += 8;
+      
+      confidence = Math.min(92, confidence);
       
       return {
         type: 'VOLUME_SR_BOUNCE',
         direction: 'LONG',
-        confidence: Math.min(98, confidence),
+        confidence: Math.round(confidence),
         strength: nearestSupport.strength >= 80 ? 'very_strong' : 'strong',
         strategy: 'reversal',
         reason: `💪 Volume-based support bounce at ${nearestSupport.level.toFixed(2)} (${nearestSupport.isPOC ? 'POC' : 'HVN'}, ${nearestSupport.strength.toFixed(0)}% strength, ${(wickPercent * 100).toFixed(0)}% wick)`,
@@ -842,14 +844,12 @@ function detectVolumeSRBounce(candles, volumes, atr, regime) {
         exhaustion: exhaustion ? exhaustion.type : null,
         institutional: institutional ? institutional.type : null,
         
-        // Entry details
         entryType: 'immediate',
         suggestedEntry: current,
         suggestedSL: nearestSupport.level - (atr * 0.8),
         suggestedTP1: current + (atr * 2.5),
         suggestedTP2: srLevels.resistances[0] ? srLevels.resistances[0].level : current + (atr * 4.0),
         
-        // Additional context
         volumeProfile: {
           poc: volumeProfile.poc.price,
           vah: volumeProfile.vah,
@@ -859,12 +859,10 @@ function detectVolumeSRBounce(candles, volumes, atr, regime) {
     }
   }
   
-  // ========================================
-  // CHECK FOR BEARISH REJECTION AT RESISTANCE
-  // ========================================
+  // BEARISH REJECTION
   const nearestResistance = srLevels.resistances[0];
   
-  if (nearestResistance && nearestResistance.distanceATR <= 0.5) {
+  if (nearestResistance && nearestResistance.distanceATR <= 0.8) {
     const totalRange = currentHigh - currentLow;
     const upperWick = currentHigh - Math.max(currentOpen, current);
     const wickPercent = totalRange > 0 ? upperWick / totalRange : 0;
@@ -883,19 +881,24 @@ function detectVolumeSRBounce(candles, volumes, atr, regime) {
       const atrChange = priceChange / atr;
       if (atrChange < 0.3) return null;
       
-      let confidence = 75;
-      if (nearestResistance.isPOC) confidence += 10;
+      let confidence = 70;
+      const distanceBonus = (0.8 - nearestResistance.distanceATR) * 10;
+      confidence += distanceBonus;
+      
+      if (nearestResistance.isPOC) confidence += 8;
       if (nearestResistance.strength >= 80) confidence += 5;
-      if (cvdDivergence && cvdDivergence.direction === 'SHORT') confidence += 10;
-      if (nearestResistance.imbalance < -0.3) confidence += 5;
-      if (deltaConfirmation.confirmed && deltaConfirmation.quality === 'strong') confidence += 8;
-      if (exhaustion && exhaustion.type === 'BEARISH_EXHAUSTION') confidence += 12;
-      if (institutional && institutional.type === 'INSTITUTIONAL_DISTRIBUTION') confidence += 10;
+      if (cvdDivergence && cvdDivergence.direction === 'SHORT') confidence += 8;
+      if (nearestResistance.imbalance < -0.3) confidence += 4;
+      if (deltaConfirmation.confirmed && deltaConfirmation.quality === 'strong') confidence += 6;
+      if (exhaustion && exhaustion.type === 'BEARISH_EXHAUSTION') confidence += 10;
+      if (institutional && institutional.type === 'INSTITUTIONAL_DISTRIBUTION') confidence += 8;
+      
+      confidence = Math.min(92, confidence);
       
       return {
         type: 'VOLUME_SR_BOUNCE',
         direction: 'SHORT',
-        confidence: Math.min(98, confidence),
+        confidence: Math.round(confidence),
         strength: nearestResistance.strength >= 80 ? 'very_strong' : 'strong',
         strategy: 'reversal',
         reason: `🚫 Volume-based resistance rejection at ${nearestResistance.level.toFixed(2)} (${nearestResistance.isPOC ? 'POC' : 'HVN'}, ${nearestResistance.strength.toFixed(0)}% strength, ${(wickPercent * 100).toFixed(0)}% wick)`,
@@ -945,16 +948,10 @@ function analyzeVolumeProfileSignals(candles, volumes, atr, regime) {
     };
   }
   
-  // Calculate volume profile
   const volumeProfile = calculateVolumeProfile(candles.slice(-100), volumes.slice(-100));
-  
-  // Calculate CVD
   const cvdData = calculateEnhancedCVD(candles.slice(-50), volumes.slice(-50));
-  
-  // Get S/R levels
   const srLevels = identifyVolumeSRLevels(candles.slice(-100), volumes.slice(-100), volumeProfile, atr);
   
-  // Run all detection functions
   const cvdDivergence = detectAdvancedCVDDivergence(candles.slice(-30), volumes.slice(-30), volumeProfile);
   const srBounce = detectVolumeSRBounce(candles, volumes, atr, regime);
   const deltaConfirmation = analyzeDeltaConfirmation(candles.slice(-3), volumes.slice(-3), cvdData);
@@ -963,7 +960,6 @@ function analyzeVolumeProfileSignals(candles, volumes, atr, regime) {
   
   const signals = [];
   
-  // Add all detected signals
   if (cvdDivergence) signals.push(cvdDivergence);
   if (srBounce) signals.push(srBounce);
   if (exhaustion) signals.push(exhaustion);
