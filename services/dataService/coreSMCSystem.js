@@ -171,17 +171,17 @@ if (smcSignals.length > 0 && structureStrength.score >= SYSTEM_CONFIG.minStructu
 
 //rearrange priorities when removing the comments
 // PRIORITY 1: CVD Divergence at HVN/POC (HIGHEST)
-// else if (cvdDivergence && cvdDivergence.atHVN && structureStrength.score >= 30) {
-  //selectedSignal = cvdDivergence;
-  //signalSource = 'CVD_AT_HVN';
-  //console.log(`   🎯 PRIORITY 1: CVD divergence at HVN/POC`);
-//}
-// PRIORITY 2: Volume-based S/R Bounce with CVD confirmation
-//else if (volumeSRBounce && volumeSRBounce.cvdDivergence) {
-  //selectedSignal = volumeSRBounce;
-  //signalSource = 'VOLUME_SR_CVD';
-  //console.log(`   🎯 PRIORITY 2: Volume S/R Bounce + CVD`);
-//}
+else if (cvdDivergence && cvdDivergence.atHVN && structureStrength.score >= 30) {
+  selectedSignal = cvdDivergence;
+  signalSource = 'CVD_AT_HVN';
+  console.log(`   🎯 PRIORITY 1: CVD divergence at HVN/POC`);
+}
+ //PRIORITY 2: Volume-based S/R Bounce with CVD confirmation
+else if (volumeSRBounce && volumeSRBounce.cvdDivergence) {
+  selectedSignal = volumeSRBounce;
+  signalSource = 'VOLUME_SR_CVD';
+  console.log(`   🎯 PRIORITY 2: Volume S/R Bounce + CVD`);
+}
 // PRIORITY 3: Volume-based S/R Bounce
 //else if (volumeSRBounce) {
   //selectedSignal = volumeSRBounce;
