@@ -1,9 +1,9 @@
 // services/dataService/volumeProfileSystem.js
-// FIXED COMPREHENSIVE VOLUME PROFILE + CVD + S/R SYSTEM
+// COMPREHENSIVE VOLUME PROFILE + CVD + S/R SYSTEM
 
 /**
  * ========================================
- * 1. VOLUME PROFILE CALCULATION (FIXED)
+ * 1. VOLUME PROFILE CALCULATION
  * ========================================
  */
 function calculateVolumeProfile(candles, volumes, numBins = 24) {
@@ -40,7 +40,7 @@ function calculateVolumeProfile(candles, volumes, numBins = 24) {
     });
   }
   
-  // ✅ FIX #1 & #2: Improved bin distribution and buy/sell estimation
+  // Distribute volume across bins
   for (let i = 0; i < candles.length; i++) {
     const candle = candles[i];
     const high = parseFloat(candle.high);
@@ -49,7 +49,7 @@ function calculateVolumeProfile(candles, volumes, numBins = 24) {
     const close = parseFloat(candle.close);
     const volume = volumes[i];
     
-    // Better buy/sell volume estimation using wick analysis
+    // Advanced buy/sell volume estimation
     const range = high - low;
     const closePosition = range > 0 ? (close - low) / range : 0.5;
     const upperWick = high - Math.max(open, close);
@@ -75,7 +75,7 @@ function calculateVolumeProfile(candles, volumes, numBins = 24) {
       buyVol = volume * 0.50; sellVol = volume * 0.50;
     }
     
-    // Fixed bin overlap detection
+    // Find bins that the candle touches
     const touchedBins = bins.filter(bin => !(high < bin.priceLevel || low > bin.priceHigh));
     
     if (touchedBins.length === 0) continue;
@@ -92,11 +92,12 @@ function calculateVolumeProfile(candles, volumes, numBins = 24) {
     });
   }
   
+  // Find POC (Point of Control)
   const sortedBins = [...bins].sort((a, b) => b.volume - a.volume);
   const poc = sortedBins[0];
   const totalVolume = bins.reduce((sum, bin) => sum + bin.volume, 0);
   
-  // ✅ FIX #5: Balanced Value Area calculation
+  // Calculate Value Area (70% of volume around POC)
   let valueAreaVolume = 0;
   const targetVolume = totalVolume * 0.70;
   const valueAreaBins = [poc];
@@ -155,7 +156,7 @@ function calculateVolumeProfile(candles, volumes, numBins = 24) {
 
 /**
  * ========================================
- * 2. ENHANCED CVD (FIXED)
+ * 2. ENHANCED CVD (Cumulative Volume Delta)
  * ========================================
  */
 function calculateEnhancedCVD(candles, volumes) {
@@ -214,7 +215,7 @@ function calculateEnhancedCVD(candles, volumes) {
   const previous = cvdArray[cvdArray.length - 2]?.cvd || 0;
   const deltaTrend = current - previous;
   
-  // ✅ FIX #9: Better CVD trend (7-candle with magnitude)
+  // Determine CVD trend from recent 7 candles
   let trend = 'NEUTRAL';
   if (cvdArray.length >= 7) {
     const recent7 = cvdArray.slice(-7);
@@ -236,7 +237,7 @@ function calculateEnhancedCVD(candles, volumes) {
 
 /**
  * ========================================
- * 3. CVD DIVERGENCE (FIXED - No Lookahead)
+ * 3. CVD DIVERGENCE DETECTION
  * ========================================
  */
 function detectAdvancedCVDDivergence(candles, volumes, volumeProfile) {
@@ -248,11 +249,12 @@ function detectAdvancedCVDDivergence(candles, volumes, volumeProfile) {
   const cvdData = calculateEnhancedCVD(candles, volumes);
   const cvdValues = cvdData.cvd.map(c => c.cvd);
   
-  // ✅ FIX #4: No lookahead - exclude last 3 unconfirmed candles
+  // Exclude last 3 candles to avoid lookahead bias
   const recentHighs = highs.slice(0, -3);
   const recentLows = lows.slice(0, -3);
   const recentCVD = cvdValues.slice(0, -3);
   
+  // Find swing highs
   const swingHighs = [];
   for (let i = 2; i < recentHighs.length - 2; i++) {
     const high = recentHighs[i];
@@ -262,6 +264,7 @@ function detectAdvancedCVDDivergence(candles, volumes, volumeProfile) {
     }
   }
   
+  // Find swing lows
   const swingLows = [];
   for (let i = 2; i < recentLows.length - 2; i++) {
     const low = recentLows[i];
@@ -273,7 +276,7 @@ function detectAdvancedCVDDivergence(candles, volumes, volumeProfile) {
   
   const currentPrice = closes[closes.length - 1];
   
-  // BEARISH DIVERGENCE
+  // BEARISH DIVERGENCE: Higher high in price, lower high in CVD
   if (swingHighs.length >= 2) {
     const recent = swingHighs[swingHighs.length - 1];
     const previous = swingHighs[swingHighs.length - 2];
@@ -284,7 +287,6 @@ function detectAdvancedCVDDivergence(candles, volumes, volumeProfile) {
         Math.abs(currentPrice - (hvn.priceLevel + hvn.priceHigh) / 2) / currentPrice < 0.01
       );
       
-      // ✅ FIX #11: Probabilistic confidence
       let confidence = 55;
       if (divergenceStrength > 0.20) confidence += 25;
       else if (divergenceStrength > 0.15) confidence += 20;
@@ -306,7 +308,7 @@ function detectAdvancedCVDDivergence(candles, volumes, volumeProfile) {
     }
   }
   
-  // BULLISH DIVERGENCE
+  // BULLISH DIVERGENCE: Lower low in price, higher low in CVD
   if (swingLows.length >= 2) {
     const recent = swingLows[swingLows.length - 1];
     const previous = swingLows[swingLows.length - 2];
@@ -343,14 +345,28 @@ function detectAdvancedCVDDivergence(candles, volumes, volumeProfile) {
 
 /**
  * ========================================
- * 4. S/R LEVELS (FIXED)
+ * 4. LEVEL STRENGTH CALCULATION
+ * ========================================
+ */
+function calculateLevelStrength(hvn, totalVolume) {
+  const volumeScore = (hvn.volume / totalVolume) * 40;
+  const normalizedTouches = Math.min(hvn.touches, 10);
+  const touchScore = (normalizedTouches / 10) * 30;
+  const imbalanceScore = Math.min(Math.abs(hvn.imbalance), 1) * 30;
+  
+  return Math.min(100, volumeScore + touchScore + imbalanceScore);
+}
+
+/**
+ * ========================================
+ * 5. SUPPORT/RESISTANCE LEVELS
  * ========================================
  */
 function identifyVolumeSRLevels(candles, volumes, volumeProfile, atr) {
   const currentPrice = parseFloat(candles[candles.length - 1].close);
   const supports = [], resistances = [];
   
-  // ✅ FIX #10: Dynamic distance threshold
+  // Dynamic distance threshold
   const pricePercent = currentPrice * 0.05;
   const maxDistanceATR = Math.min(5, Math.max(2, atr * 3));
   const maxDistance = Math.max(pricePercent, maxDistanceATR);
@@ -400,26 +416,12 @@ function identifyVolumeSRLevels(candles, volumes, volumeProfile, atr) {
 }
 
 /**
- * ✅ FIX #14: Better level strength
- */
-function calculateLevelStrength(hvn, totalVolume) {
-  const volumeScore = (hvn.volume / totalVolume) * 40;
-  const normalizedTouches = Math.min(hvn.touches, 10);
-  const touchScore = (normalizedTouches / 10) * 30;
-  const imbalanceScore = Math.min(Math.abs(hvn.imbalance), 1) * 30;
-  
-  return Math.min(100, volumeScore + touchScore + imbalanceScore);
-}
-
-/**
  * ========================================
- * 5. S/R BOUNCE DETECTION (FIXED)
+ * 6. SUPPORT/RESISTANCE BOUNCE DETECTION
  * ========================================
  */
 function detectVolumeSRBounce(candles, volumes, atr, regime) {
   if (candles.length < 50) return null;
-  
-  // ✅ FIX #6: Removed regime filter - S/R works in all conditions
   
   const closes = candles.map(c => parseFloat(c.close));
   const highs = candles.map(c => parseFloat(c.high));
@@ -444,9 +446,8 @@ function detectVolumeSRBounce(candles, volumes, atr, regime) {
     const lowerWick = Math.min(currentOpen, current) - currentLow;
     const wickPercent = totalRange > 0 ? lowerWick / totalRange : 0;
     
-    // ✅ FIX #7: Lower threshold to 25%
     if (wickPercent >= 0.25 && current > currentOpen) {
-      // ✅ FIX #8: Better volume analysis
+      // Volume analysis
       const last10Vol = volumes.slice(-10);
       const avgVolume = last10Vol.reduce((a, b) => a + b) / 10;
       const currentVolume = volumes[volumes.length - 1];
@@ -461,7 +462,7 @@ function detectVolumeSRBounce(candles, volumes, atr, regime) {
       const cvdTurning = cvdData.trend === 'BULLISH' || cvdData.delta > 0;
       if (!cvdTurning) return null;
       
-      // ✅ FIX #13: Multi-candle momentum
+      // Multi-candle momentum check
       const recent3 = closes.slice(-3);
       const priceChange = recent3[2] - recent3[0];
       const atrChange = priceChange / atr;
@@ -470,7 +471,7 @@ function detectVolumeSRBounce(candles, volumes, atr, regime) {
       
       if (atrChange < 0.2 || immediateATR < 0.25) return null;
       
-      // ✅ FIX #11: Probabilistic confidence
+      // Calculate confidence
       let confidence = 65;
       if (nearestSupport.isPOC) confidence += 15;
       else if (nearestSupport.strength >= 80) confidence += 10;
@@ -504,20 +505,16 @@ function detectVolumeSRBounce(candles, volumes, atr, regime) {
         levelStrength: nearestSupport.strength.toFixed(0),
         cvdTrend: cvdData.trend,
         cvdDivergence: cvdDivergence?.type || null,
-        imbalance: nearestResistance.imbalance.toFixed(2),
+        imbalance: nearestSupport.imbalance.toFixed(2),
         entryType: 'immediate',
         suggestedEntry: current,
-        suggestedSL: nearestResistance.level + (atr * 0.8),
-        suggestedTP1: current - (atr * 2.5),
-        suggestedTP2: srLevels.supports[0]?.level || current - (atr * 4.0),
+        suggestedSL: nearestSupport.level - (atr * 0.8),
+        suggestedTP1: current + (atr * 2.5),
+        suggestedTP2: srLevels.resistances[0]?.level || current + (atr * 4.0),
         volumeProfile: { poc: volumeProfile.poc.price, vah: volumeProfile.vah, val: volumeProfile.val }
       };
     }
   }
-  
-  return null;
-}
-
   
   // BEARISH REJECTION AT RESISTANCE
   const nearestResistance = srLevels.resistances[0];
@@ -583,20 +580,23 @@ function detectVolumeSRBounce(candles, volumes, atr, regime) {
         levelStrength: nearestResistance.strength.toFixed(0),
         cvdTrend: cvdData.trend,
         cvdDivergence: cvdDivergence?.type || null,
-        imbalance: nearestSupport.imbalance.toFixed(2),
+        imbalance: nearestResistance.imbalance.toFixed(2),
         entryType: 'immediate',
         suggestedEntry: current,
-        suggestedSL: nearestSupport.level - (atr * 0.8),
-        suggestedTP1: current + (atr * 2.5),
-        suggestedTP2: srLevels.resistances[0]?.level || current + (atr * 4.0),
+        suggestedSL: nearestResistance.level + (atr * 0.8),
+        suggestedTP1: current - (atr * 2.5),
+        suggestedTP2: srLevels.supports[0]?.level || current - (atr * 4.0),
         volumeProfile: { poc: volumeProfile.poc.price, vah: volumeProfile.vah, val: volumeProfile.val }
       };
     }
   }
+  
+  return null;
+}
 
 /**
  * ========================================
- * 6. MAIN ANALYSIS FUNCTION (FIXED)
+ * 7. MAIN ANALYSIS FUNCTION
  * ========================================
  */
 function analyzeVolumeProfileSignals(candles, volumes, atr, regime) {
@@ -617,7 +617,7 @@ function analyzeVolumeProfileSignals(candles, volumes, atr, regime) {
   
   const signals = [];
   
-  // ✅ FIX #12: Signal deduplication and prioritization
+  // Signal deduplication and prioritization
   if (srBounce && cvdDivergence) {
     // If both signals exist, check if they agree
     if (srBounce.direction === cvdDivergence.direction) {

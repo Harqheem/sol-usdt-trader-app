@@ -63,60 +63,60 @@ const assetProfiles = {
   },
   
   // Ethereum (ETH) - Moderate-high volatility, established smart contract platform
-ETHUSDT: {
-  name: 'Ethereum',
-  category: 'layer1',
-  
-  // Technical parameters
-  ema: {
-    fast: 7,
-    medium: 21,      // Responsive to ETH's moderate momentum
-    slow: 99
+  ETHUSDT: {
+    name: 'Ethereum',
+    category: 'layer1',
+    
+    // Technical parameters
+    ema: {
+      fast: 7,
+      medium: 21,      // Responsive to ETH's moderate momentum
+      slow: 99
+    },
+    sma: {
+      trend: 50,
+      major: 200
+    },
+    
+    // Volatility characteristics
+    volatility: {
+      atrPeriod: 14,
+      atrMultiplier: 1.1,  // Moderate-high volatility
+      highThreshold: 2.3,   // % of price
+      lowThreshold: 0.7
+    },
+    
+    // Momentum settings
+    momentum: {
+      rsiPeriod: 14,
+      rsiBullish: 43,      // Balanced entry threshold
+      rsiBearish: 57,
+      rsiOverbought: 70,   // Standard levels work well for ETH
+      rsiOversold: 30,
+      adxPeriod: 14,
+      adxStrong: 28,       // ETH shows clear trends
+      adxWeak: 19
+    },
+    
+    // Entry/Exit optimization
+    trade: {
+      entryPullbackATR: 0.35,   // Moderate pullback entry
+      slBufferATR: 0.55,        // Balanced stop loss
+      tpMultiplier1: 1.5,
+      tpMultiplier2: 3.2,       // Good upside potential
+      maxRiskPercent: 0.013,    // 1.3% max risk
+      minRiskPercent: 0.005
+    },
+    
+    // Scoring adjustments
+    scoring: {
+      baseThreshold: 12,
+      strongADXAdjust: -1,
+      weakADXAdjust: 1,
+      emaStackWeight: 2,
+      trendAlignmentBonus: 2
+    }
   },
-  sma: {
-    trend: 50,
-    major: 200
-  },
-  
-  // Volatility characteristics
-  volatility: {
-    atrPeriod: 14,
-    atrMultiplier: 1.1,  // Moderate-high volatility
-    highThreshold: 2.3,   // % of price
-    lowThreshold: 0.7
-  },
-  
-  // Momentum settings
-  momentum: {
-    rsiPeriod: 14,
-    rsiBullish: 43,      // Balanced entry threshold
-    rsiBearish: 57,
-    rsiOverbought: 70,   // Standard levels work well for ETH
-    rsiOversold: 30,
-    adxPeriod: 14,
-    adxStrong: 28,       // ETH shows clear trends
-    adxWeak: 19
-  },
-  
-  // Entry/Exit optimization
-  trade: {
-    entryPullbackATR: 0.35,   // Moderate pullback entry
-    slBufferATR: 0.55,        // Balanced stop loss
-    tpMultiplier1: 1.5,
-    tpMultiplier2: 3.2,       // Good upside potential
-    maxRiskPercent: 0.013,    // 1.3% max risk
-    minRiskPercent: 0.005
-  },
-  
-  // Scoring adjustments
-  scoring: {
-    baseThreshold: 12,
-    strongADXAdjust: -1,
-    weakADXAdjust: 1,
-    emaStackWeight: 2,
-    trendAlignmentBonus: 2
-  }
-},
 
   // BNB - Moderate volatility, exchange token dynamics
   BNBUSDT: {
@@ -322,7 +322,6 @@ ETHUSDT: {
     }
   },
 
-
   // ADA - Moderate-low volatility, established alt
   ADAUSDT: {
     name: 'Cardano',
@@ -476,14 +475,14 @@ ETHUSDT: {
     }
   },
 
-  // DOGE - Very high volatility, meme coin dynamics
-  DOGEUSDT: {
-    name: 'Dogecoin',
-    category: 'meme',
+  // ZEC - Moderate-high volatility, privacy-focused coin
+  ZECUSDT: {
+    name: 'Zcash',
+    category: 'privacy',
     
     ema: {
-      fast: 7,
-      medium: 21,
+      fast: 8,
+      medium: 21,       // Balanced for steady movements
       slow: 99
     },
     sma: {
@@ -493,40 +492,39 @@ ETHUSDT: {
     
     volatility: {
       atrPeriod: 14,
-      atrMultiplier: 1.4,   // Extremely volatile, sentiment-driven
-      highThreshold: 3.5,
-      lowThreshold: 1.2
+      atrMultiplier: 1.15,  // Moderate-high volatility
+      highThreshold: 2.4,
+      lowThreshold: 0.7
     },
     
     momentum: {
       rsiPeriod: 14,
-      rsiBullish: 46,       // Higher threshold for meme volatility
-      rsiBearish: 54,
-      rsiOverbought: 74,    // Can stay extended longer
-      rsiOversold: 26,
+      rsiBullish: 43,       // Standard balanced entry
+      rsiBearish: 57,
+      rsiOverbought: 71,    // Privacy coins can trend strongly
+      rsiOversold: 29,
       adxPeriod: 14,
-      adxStrong: 26,        // Lower threshold, trends fast
-      adxWeak: 16
+      adxStrong: 29,        // Decent trend strength required
+      adxWeak: 19
     },
     
     trade: {
-      entryPullbackATR: 0.55,   // Very wide entries
-      slBufferATR: 0.75,        // Very wide stops
+      entryPullbackATR: 0.38,   // Moderate-wide entries
+      slBufferATR: 0.58,        // Adequate stop buffer
       tpMultiplier1: 1.5,
-      tpMultiplier2: 4.5,       // Massive TP2 for viral moves
-      maxRiskPercent: 0.015,    // 1.5% max (high risk)
+      tpMultiplier2: 3.3,       // Good upside on trends
+      maxRiskPercent: 0.013,    // 1.3% max risk
       minRiskPercent: 0.005
     },
     
     scoring: {
-      baseThreshold: 10,        // Lower threshold (catch momentum)
-      strongADXAdjust: -2,
-      weakADXAdjust: 0,         // Don't penalize weak ADX as much
-      emaStackWeight: 1,        // Less weight on technicals
-      trendAlignmentBonus: 3    // Reward strong trends heavily
+      baseThreshold: 12,
+      strongADXAdjust: -1,
+      weakADXAdjust: 1,
+      emaStackWeight: 2,
+      trendAlignmentBonus: 2
     }
   }
-
 };
 
 /**

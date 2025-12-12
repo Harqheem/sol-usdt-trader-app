@@ -51,7 +51,7 @@ let sortDirection = 'desc';
 let currentTradeManagement = null;
 
 
-const symbols = ['SOLUSDT', 'ETHUSDT', 'SUIUSDT', 'ADAUSDT', 'BNBUSDT', 'XRPUSDT', 'LINKUSDT', 'TONUSDT', 'TRXUSDT', 'DOGEUSDT'];
+const symbols = ['SOLUSDT', 'ETHUSDT', 'SUIUSDT', 'ADAUSDT', 'BNBUSDT', 'XRPUSDT', 'LINKUSDT', 'TONUSDT', 'TRXUSDT', 'ZECUSDT'];
 symbols.forEach(sym => {
   const opt = document.createElement('option');
   opt.value = sym;
