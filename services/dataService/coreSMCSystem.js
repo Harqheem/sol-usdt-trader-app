@@ -177,11 +177,11 @@ else if (cvdDivergence && cvdDivergence.atHVN && structureStrength.score >= 30) 
   console.log(`   🎯 PRIORITY 1: CVD divergence at HVN/POC`);
 }
  //PRIORITY 2: Volume-based S/R Bounce with CVD confirmation
-else if (volumeSRBounce && volumeSRBounce.cvdDivergence) {
-  selectedSignal = volumeSRBounce;
-  signalSource = 'VOLUME_SR_CVD';
-  console.log(`   🎯 PRIORITY 2: Volume S/R Bounce + CVD`);
-}
+//else if (volumeSRBounce && volumeSRBounce.cvdDivergence) {
+  //selectedSignal = volumeSRBounce;
+  //signalSource = 'VOLUME_SR_CVD';
+  //console.log(`   🎯 PRIORITY 2: Volume S/R Bounce + CVD`);
+//}
 // PRIORITY 3: Volume-based S/R Bounce
 //else if (volumeSRBounce) {
   //selectedSignal = volumeSRBounce;
