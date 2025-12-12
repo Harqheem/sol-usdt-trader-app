@@ -10,7 +10,7 @@ const { identifySwingPoints, determineStructure } = require('./structureTracker'
  */
 function analyzeHTFStructure(candles4h, candles1d) {
   // ✅ FIX #3: Better data validation
-  if (!candles4h || candles4h.length < 50) {
+  if (!candles4h || candles4h.length < 70) {
     return {
       structure4h: 'INSUFFICIENT_DATA',
       structure1d: 'INSUFFICIENT_DATA',

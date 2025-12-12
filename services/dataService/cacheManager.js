@@ -11,6 +11,7 @@ function initializeSymbolCache(symbol) {
     candles30m: [],
     candles1h: [],
     candles4h: [],
+    candles1d: [],
     candles1m: [], // NEW: 1-minute candles for fast volume detection
     lastUpdate: null,
     isReady: false,
@@ -37,6 +38,7 @@ function updateCandleCache(symbol, kline, interval) {
   const cacheKey = interval === '30m' ? 'candles30m' : 
                    interval === '1h' ? 'candles1h' : 
                    interval === '4h' ? 'candles4h' :
+                   interval === '1d' ? 'candels1d' :
                    interval === '1m' ? 'candles1m' : null;
 
   if (!cacheKey) {
@@ -60,6 +62,8 @@ function updateCandleCache(symbol, kline, interval) {
       // Keep different amounts for different timeframes
       const maxCandles = interval === '30m' ? 200 : 
                         interval === '1m' ? 100 :  // Only keep last 100 minutes
+                        interval === '4h' ? 100 :
+                        interval === '1d' ? 100 :
                         100;
       if (candles.length > maxCandles) {
         candles.shift();
