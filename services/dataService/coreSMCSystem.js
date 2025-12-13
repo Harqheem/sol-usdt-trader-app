@@ -215,22 +215,22 @@ else if (smcSignals.length > 0 && smcSignals[0] && structureStrength.score >= SY
   }
 }
 // PRIORITY 5: CVD Divergence alone
-else if (cvdDivergence && structureStrength.score >= 30) {
-  selectedSignal = cvdDivergence;
-  signalSource = 'CVD_DIVERGENCE';
-  console.log(`   🎯 PRIORITY 5: CVD Divergence`);
-  console.log(`   🔍 Signal object keys:`, Object.keys(selectedSignal));
-}
+// else if (cvdDivergence && structureStrength.score >= 30) {
+//  selectedSignal = cvdDivergence;
+//  signalSource = 'CVD_DIVERGENCE';
+//  console.log(`   🎯 PRIORITY 5: CVD Divergence`);
+//  console.log(`   🔍 Signal object keys:`, Object.keys(selectedSignal));
+//}
 // PRIORITY 6: 1m Liquidity sweep
-else if (sweep1m) {
-  selectedSignal = sweep1m;
-  if (!selectedSignal.strategy) {
-    selectedSignal.strategy = 'reversal';
-  }
-  signalSource = sweep1m.direction === 'LONG' ? 'LIQUIDITY_SWEEP_BULLISH' : 'LIQUIDITY_SWEEP_BEARISH';
-  console.log(`   🎯 PRIORITY 6: 1m Liquidity Sweep (${sweep1m.direction})`);
-  console.log(`   🔍 Signal object keys:`, Object.keys(selectedSignal));
-}
+//else if (sweep1m) {
+//  selectedSignal = sweep1m;
+//  if (!selectedSignal.strategy) {
+//    selectedSignal.strategy = 'reversal';
+//  }
+//  signalSource = sweep1m.direction === 'LONG' ? 'LIQUIDITY_SWEEP_BULLISH' : 'LIQUIDITY_SWEEP_BEARISH';
+//  console.log(`   🎯 PRIORITY 6: 1m Liquidity Sweep (${sweep1m.direction})`);
+//  console.log(`   🔍 Signal object keys:`, Object.keys(selectedSignal));
+//}
 
 if (!selectedSignal) {
   return {
@@ -242,12 +242,6 @@ if (!selectedSignal) {
     volumeProfile: volumeAnalysis.summary
   };
 }
-
-// Debug: Log selected signal details
-console.log(`   🔍 Selected signal source: ${signalSource}`);
-console.log(`   🔍 Selected signal type:`, selectedSignal?.type || 'N/A');
-console.log(`   🔍 Selected signal direction:`, selectedSignal?.direction || 'N/A');
-console.log(`   🔍 Selected signal strategy:`, selectedSignal?.strategy || 'N/A');
 
 // ============================================
 // STEP 8: VALIDATE WITH REGIME
