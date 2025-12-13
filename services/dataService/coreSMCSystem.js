@@ -10,12 +10,15 @@ const {
 const {
   calculateVolumeProfile,
   calculateEnhancedCVD,
-  detectAdvancedCVDDivergence,
-  identifyVolumeSRLevels,
-  detectVolumeSRBounce,
-  analyzeVolumeProfileSignals
+  detectAdvancedCVDDivergence
 } = require('./volumeProfileSystem');
 const { wsCache } = require('./cacheManager');
+
+// ✅ NEW: Import trendline system
+const {
+  detectTrendlineBounce,
+  analyzeTrendlineContext
+} = require('./trendlineSRSystem');
 
 // Configuration
 const SYSTEM_CONFIG = {
@@ -52,7 +55,7 @@ const { checkForSweep } = require('./liquiditySweepDetector');
 
 /**
  * ========================================
- * MAIN ANALYSIS FUNCTION - FIXED
+ * MAIN ANALYSIS FUNCTION - WITH TRENDLINE S/R
  * ========================================
  */
 async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, decimals, candles1m, volumes1m) {
@@ -61,33 +64,28 @@ async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, dec
 
     
     // ============================================
-    // STEP 0: DETERMINE REGIME EARLY (FIXED)
+    // STEP 0: DETERMINE REGIME EARLY
     // ============================================
   
     const regime = determineRegime(currentPrice, indicators);
 
         
     // ============================================
-    // STEP 1: VOLUME PROFILE ANALYSIS (FIXED - regime now defined)
+    // STEP 1: VOLUME PROFILE ANALYSIS (for CVD only)
     // ============================================
       
-    const volumeAnalysis = analyzeVolumeProfileSignals(
+    const volumeProfile = calculateVolumeProfile(
       candles.slice(-100),
       volumes.slice(-100),
-      indicators.atr,
-      regime // ✅ NOW DEFINED
+      SYSTEM_CONFIG.volumeProfileBins
     );
     
-    if (volumeAnalysis.volumeProfile) {
-        
-      if (volumeAnalysis.srLevels.supports.length > 0) {
-        const sup = volumeAnalysis.srLevels.supports[0];
-        }
-      
-      if (volumeAnalysis.srLevels.resistances.length > 0) {
-        const res = volumeAnalysis.srLevels.resistances[0];
-        }
-    }
+    const cvdData = calculateEnhancedCVD(
+      candles.slice(-50),
+      volumes.slice(-50)
+    );
+    
+    console.log(`   📊 Volume Profile POC: $${volumeProfile.poc.price.toFixed(2)}`);
 
     const sweep1m = checkForSweep(symbol, wsCache);
     
@@ -109,13 +107,11 @@ async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, dec
     const cvdDivergence = detectAdvancedCVDDivergence(
       candles.slice(-20),
       volumes.slice(-20),
-      volumeAnalysis.volumeProfile
+      volumeProfile
     );
     
     if (cvdDivergence) {
-  
-    } else {
-      
+      console.log(`   💎 CVD Divergence: ${cvdDivergence.type} (${cvdDivergence.confidence}%)`);
     }
     
     // ============================================
@@ -141,20 +137,28 @@ async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, dec
 
    
     // ============================================
-    // STEP 6: VOLUME-BASED S/R BOUNCE
+    // STEP 6: TRENDLINE S/R BOUNCE (REPLACES VOLUME S/R)
     // ============================================
-
+    console.log(`   📈 Analyzing trendlines...`);
     
-    const volumeSRBounce = detectVolumeSRBounce(
+    const trendlineBounce = detectTrendlineBounce(
       candles.slice(-100),
       volumes.slice(-100),
       indicators.atr,
       regime
     );
     
+    if (trendlineBounce) {
+      console.log(`   ✅ Trendline bounce detected: ${trendlineBounce.direction}`);
+      console.log(`   📊 Trendline: ${trendlineBounce.trendline.touches} touches, ${trendlineBounce.trendline.strength}% strength`);
+    }
 
-   // services/dataService/coreSMCSystem.js - PARTIAL UPDATE
-// ONLY SHOWING THE SIGNAL SELECTION LOGIC (Step 7) that needs updating
+    // Get trendline context for notes
+    const trendlineContext = analyzeTrendlineContext(
+      candles.slice(-100),
+      volumes.slice(-100),
+      indicators.atr
+    );
 
 // ============================================
 // STEP 7: SELECT BEST SIGNAL - UPDATED
@@ -176,18 +180,24 @@ else if (cvdDivergence && cvdDivergence.atHVN && structureStrength.score >= 30) 
   signalSource = 'CVD_AT_HVN';
   console.log(`   🎯 PRIORITY 1: CVD divergence at HVN/POC`);
 }
- //PRIORITY 2: Volume-based S/R Bounce with CVD confirmation
-//else if (volumeSRBounce && volumeSRBounce.cvdDivergence) {
-  //selectedSignal = volumeSRBounce;
-  //signalSource = 'VOLUME_SR_CVD';
-  //console.log(`   🎯 PRIORITY 2: Volume S/R Bounce + CVD`);
-//}
-// PRIORITY 3: Volume-based S/R Bounce
-//else if (volumeSRBounce) {
-  //selectedSignal = volumeSRBounce;
-  //signalSource = 'VOLUME_SR_BOUNCE';
-  //console.log(`   🎯 PRIORITY 3: Volume S/R Bounce`);
-//}
+
+// PRIORITY 2: Trendline Bounce with CVD confirmation
+else if (trendlineBounce && cvdDivergence && trendlineBounce.direction === cvdDivergence.direction) {
+  selectedSignal = {trendlineBounce,
+    confidence: Math.min(98, trendlineBounce.confidence + 8),
+    cvdDivergence: cvdDivergence.type,
+    cvdStrength: cvdDivergence.strength
+  };
+  signalSource = 'TRENDLINE_BOUNCE_CVD';
+  console.log(`   🎯 PRIORITY 2: Trendline bounce + CVD confirmation`);
+}
+
+// PRIORITY 3: Trendline Bounce alone (NEW - REPLACES VOLUME S/R)
+else if (trendlineBounce && trendlineBounce.confidence >= 75) {
+  selectedSignal = trendlineBounce;
+  signalSource = 'TRENDLINE_BOUNCE';
+  console.log(`   🎯 PRIORITY 3: Trendline bounce (${trendlineBounce.confidence}%)`);
+}
 
 // PRIORITY 5: 1 min Liquidity sweep check
 //else if (sweep1m) {
@@ -218,11 +228,10 @@ if (!selectedSignal) {
 }
 
 // ============================================
-// STEP 11: CALCULATE TRADE PARAMETERS
+// STEP 9: CALCULATE TRADE PARAMETERS
 // ============================================
 console.log(`   ✅ Building trade signal...`);
 
-// Extract highs and lows from candles for trade calculation
 const highs = candles.map(c => parseFloat(c.high));
 const lows = candles.map(c => parseFloat(c.low));
 
@@ -234,10 +243,9 @@ const trade = calculateEnhancedTrade(
   lows,
   decimals,
   regime,
-  volumeAnalysis
+  trendlineContext
 );
 
-// Check if trade calculation failed
 if (!trade.valid) {
   console.log(`   ⚠️ Trade calculation failed: ${trade.reason}`);
   return {
@@ -249,153 +257,36 @@ if (!trade.valid) {
 }
 
 // ============================================
-// STEP 12: BUILD FINAL SIGNAL
+// STEP 10: BUILD FINAL SIGNAL
 // ============================================
 
 return {
   signal: selectedSignal.direction === 'LONG' ? 'Enter Long' : 'Enter Short',
-  signalType: signalSource, // ✅ THIS is what gets stored in trade.notes
+  signalType: signalSource,
   signalSource: 'default',
   confidence: selectedSignal.confidence,
-  
-  // Regime & Structure
+  entry: trade.entry,
+  tp1: trade.tp1,
+  tp2: trade.tp2,
+  sl: trade.sl,
+  positionSize: trade.quantity,
+  notes: buildComprehensiveNotes(
+    selectedSignal, 
+    signalSource, 
+    regime, 
+    marketStructure, 
+    trade, 
+    htfAnalysis, 
+    volumeProfile,
+    cvdData,
+    cvdDivergence,
+    trendlineContext
+  ),
   regime: regime.type,
   structure: marketStructure.structure,
   structureConfidence: marketStructure.confidence,
-  
-  // HTF Analysis
-  htfBias: htfAnalysis.tradingBias,
-  htfStructure4h: htfAnalysis.structure4h,
-  htfStructure1d: htfAnalysis.structure1d,
-  htfConfidence: htfAnalysis.confidence,
-  
-  // Volume Profile
-  volumeProfile: {
-    poc: volumeAnalysis.summary.poc,
-    vah: volumeAnalysis.summary.vah,
-    val: volumeAnalysis.summary.val,
-    nearestSupport: volumeAnalysis.summary.nearestSupport,
-    nearestResistance: volumeAnalysis.summary.nearestResistance
-  },
-  
-  // CVD Data
-  cvdTrend: volumeAnalysis.summary.cvdTrend,
-  cvdDivergence: cvdDivergence ? cvdDivergence.type : null,
-  
-  // Trade details
-  entry: trade.entry,
-  sl: trade.sl,
-  tp1: trade.tp1,
-  tp2: trade.tp2,
-  positionSize: trade.positionSize,
-  riskAmount: trade.riskAmount,
-  strategy: selectedSignal.strategy.toUpperCase(),
-  strategyType: signalSource, // ✅ Also include for clarity
-  
-  notes: buildComprehensiveNotes(
-    selectedSignal,
-    signalSource,
-    regime,
-    marketStructure,
-    trade,
-    htfAnalysis,
-    volumeAnalysis,
-    cvdDivergence
-  )
+  strategy: trade.strategy
 };
-
-// ============================================
-// UPDATED NOTES BUILDER
-// ============================================
-function buildComprehensiveNotes(signal, signalSource, regime, marketStructure, trade, htfAnalysis, volumeAnalysis, cvdDivergence) {
-  let notes = `[SIGNAL_SOURCE:${signalSource}]\n\n`;
-  notes = `✅ SIGNAL APPROVED\n\n`;
-  
-  // Signal Type - UPDATED to show proper names
-  const signalTypeNames = {
-    'CVD_AT_HVN': 'CVD Divergence at HVN/POC',
-    'VOLUME_SR_CVD': 'Volume S/R Bounce + CVD Confirmation',
-    'VOLUME_SR_BOUNCE': 'Volume-Based S/R Bounce',
-    'LIQUIDITY_SWEEP_BULLISH': '1m Liquidity Sweep - Bullish',
-    'LIQUIDITY_SWEEP_BEARISH': '1m Liquidity Sweep - Bearish',
-    'SMC': 'Smart Money Concepts',
-    'CVD_DIVERGENCE': 'CVD Divergence'
-  };
-  
-  notes += `🎯 SIGNAL TYPE: ${signalTypeNames[signalSource] || signalSource}\n`;
-  notes += `Confidence: ${signal.confidence}%\n`;
-  notes += `${signal.reason}\n\n`;
-  
-  // Volume Profile Context (for volume-based signals)
-  if (signalSource.includes('VOLUME') || signalSource.includes('CVD_AT_HVN')) {
-    notes += `📊 VOLUME PROFILE:\n`;
-    notes += `• POC (Point of Control): $${volumeAnalysis.summary.poc.toFixed(2)}\n`;
-    notes += `• Value Area High: $${volumeAnalysis.summary.vah.toFixed(2)}\n`;
-    notes += `• Value Area Low: $${volumeAnalysis.summary.val.toFixed(2)}\n`;
-    if (volumeAnalysis.summary.nearestSupport) {
-      notes += `• Nearest Support: $${volumeAnalysis.summary.nearestSupport.toFixed(2)}\n`;
-    }
-    if (volumeAnalysis.summary.nearestResistance) {
-      notes += `• Nearest Resistance: $${volumeAnalysis.summary.nearestResistance.toFixed(2)}\n`;
-    }
-    notes += `\n`;
-  }
-  
-  // CVD Analysis (for CVD signals)
-  if (signalSource.includes('CVD')) {
-    notes += `💎 ORDER FLOW (CVD):\n`;
-    notes += `• CVD Trend: ${volumeAnalysis.summary.cvdTrend}\n`;
-    if (cvdDivergence) {
-      notes += `• Divergence: ${cvdDivergence.type} (${cvdDivergence.strength})\n`;
-      notes += `• Divergence Strength: ${(cvdDivergence.divergenceStrength * 100).toFixed(1)}%\n`;
-    } else {
-      notes += `• No divergence detected\n`;
-    }
-    notes += `\n`;
-  }
-  
-  // Liquidity Sweep Details (for sweep signals)
-  if (signalSource.includes('LIQUIDITY_SWEEP')) {
-    notes += `⚡ LIQUIDITY SWEEP:\n`;
-    if (signal.level) {
-      notes += `• Swept Level: $${signal.level.toFixed(2)}\n`;
-    }
-    if (signal.volumeRatio) {
-      notes += `• Volume Spike: ${signal.volumeRatio}x average\n`;
-    }
-    if (signal.wickPercent) {
-      notes += `• Rejection Wick: ${signal.wickPercent}%\n`;
-    }
-    notes += `\n`;
-  }
-  
-  // HTF Analysis
-  notes += `🏔️ HIGHER TIMEFRAME:\n`;
-  notes += `• 4H Structure: ${htfAnalysis.structure4h} (${htfAnalysis.confidence4h}%)\n`;
-  notes += `• 1D Structure: ${htfAnalysis.structure1d} (${htfAnalysis.confidence1d}%)\n`;
-  notes += `• Trading Bias: ${htfAnalysis.tradingBias}\n\n`;
-  
-  // Market Context
-  notes += `📈 MARKET CONTEXT:\n`;
-  notes += `• 30m Structure: ${marketStructure.structure} (${marketStructure.confidence}%)\n`;
-  notes += `• Regime: ${regime.type}\n`;
-  notes += `• Strategy: ${signal.strategy.toUpperCase()}\n\n`;
-  
-  // Trade Details
-  notes += `💰 TRADE DETAILS:\n`;
-  notes += `• Entry: ${trade.entry}\n`;
-  notes += `• Stop Loss: ${trade.sl}\n`;
-  notes += `• TP1: ${trade.tp1} (50% exit)\n`;
-  notes += `• TP2: ${trade.tp2} (50% exit)\n`;
-  notes += `• Risk: ${trade.riskAmount}\n`;
-  notes += `• Position Size: ${(regime.positionSize * 100).toFixed(0)}%\n`;
-  
-  if (regime.positionSize < 1.0) {
-    notes += `\n⚠️ CHOPPY MARKET - REDUCED POSITION SIZE`;
-  }
-  
-  return notes;
-}
     
   } catch (error) {
     console.error(`❌ SMC analysis error for ${symbol}:`, error.message);
@@ -409,14 +300,42 @@ function buildComprehensiveNotes(signal, signalSource, regime, marketStructure, 
 }
 
 /**
- * ENHANCED TRADE CALCULATION
- * Uses volume profile levels for better TP targets
+ * BUILD WAIT REASON WITH TRENDLINE CONTEXT
  */
-function calculateEnhancedTrade(signal, currentPrice, atr, highs, lows, decimals, regime, volumeAnalysis) {
-  let entry, sl, tp1, tp2;
-   const strategy = signal.strategy || 'reversal';
+function buildWaitReason(trendlineContext, cvdData, marketStructure) {
+  let reason = 'No clear trading signals\n\n';
   
-  // Use signal's suggested entry if available (from volume SR bounce)
+  reason += `📈 TRENDLINE ANALYSIS:\n`;
+  if (trendlineContext.supports.length > 0) {
+    reason += `• Support: ${trendlineContext.supports[0].projectedPrice} (${trendlineContext.supports[0].strength}% strength, ${trendlineContext.supports[0].touches} touches)\n`;
+  } else {
+    reason += `• No strong support trendlines detected\n`;
+  }
+  
+  if (trendlineContext.resistances.length > 0) {
+    reason += `• Resistance: ${trendlineContext.resistances[0].projectedPrice} (${trendlineContext.resistances[0].strength}% strength, ${trendlineContext.resistances[0].touches} touches)\n`;
+  } else {
+    reason += `• No strong resistance trendlines detected\n`;
+  }
+  
+  reason += `\n💎 ORDER FLOW:\n`;
+  reason += `• CVD Trend: ${cvdData.trend}\n`;
+  reason += `• CVD Delta: ${cvdData.delta.toFixed(0)}\n`;
+  
+  reason += `\n📊 MARKET STRUCTURE:\n`;
+  reason += `• Structure: ${marketStructure.structure} (${marketStructure.confidence}%)\n`;
+  
+  return reason;
+}
+
+/**
+ * ENHANCED TRADE CALCULATION WITH TRENDLINE SUPPORT
+ */
+function calculateEnhancedTrade(signal, currentPrice, atr, highs, lows, decimals, regime, trendlineContext) {
+  let entry, sl, tp1, tp2;
+  const strategy = signal.strategy || 'reversal';
+  
+  // Use signal's suggested entry if available (from trendline bounce)
   if (signal.suggestedEntry) {
     entry = signal.suggestedEntry;
   } else {
@@ -436,7 +355,7 @@ function calculateEnhancedTrade(signal, currentPrice, atr, highs, lows, decimals
     }
   }
   
-  // Stop Loss
+  // Stop Loss - use suggested SL from trendline if available
   if (signal.direction === 'LONG') {
     if (signal.suggestedSL) {
       sl = signal.suggestedSL;
@@ -456,13 +375,26 @@ function calculateEnhancedTrade(signal, currentPrice, atr, highs, lows, decimals
       return { valid: false, reason: 'Stop too tight' };
     }
     
-    tp1 = entry + (risk * SYSTEM_CONFIG.minRR);
-    tp2 = entry + (risk * 3.0);
-  
+    // Take Profit - use suggested TPs or calculate
+    if (signal.suggestedTP1 && signal.suggestedTP2) {
+      tp1 = signal.suggestedTP1;
+      tp2 = signal.suggestedTP2;
+    } else {
+      tp1 = entry + (risk * SYSTEM_CONFIG.minRR);
+      tp2 = entry + (risk * 3.0);
+      
+      // Use resistance trendline as TP2 if available and closer
+      if (trendlineContext.resistances.length > 0) {
+        const resistancePrice = parseFloat(trendlineContext.resistances[0].projectedPrice);
+        if (resistancePrice > entry && resistancePrice < tp2 * 1.1) {
+          tp2 = resistancePrice * 0.995; // Just below the resistance
+        }
+      }
+    }
     
   } else { // SHORT
     
-  if (signal.suggestedSL) {
+    if (signal.suggestedSL) {
       sl = signal.suggestedSL;
     } else {
       const recentHigh = Math.max(...highs.slice(-20));
@@ -480,9 +412,21 @@ function calculateEnhancedTrade(signal, currentPrice, atr, highs, lows, decimals
       return { valid: false, reason: 'Stop too tight' };
     }
     
-    tp1 = entry - (risk * SYSTEM_CONFIG.minRR);
-    tp2 = entry - (risk * 3.0);
-  
+    if (signal.suggestedTP1 && signal.suggestedTP2) {
+      tp1 = signal.suggestedTP1;
+      tp2 = signal.suggestedTP2;
+    } else {
+      tp1 = entry - (risk * SYSTEM_CONFIG.minRR);
+      tp2 = entry - (risk * 3.0);
+      
+      // Use support trendline as TP2 if available
+      if (trendlineContext.supports.length > 0) {
+        const supportPrice = parseFloat(trendlineContext.supports[0].projectedPrice);
+        if (supportPrice < entry && supportPrice > tp2 * 0.9) {
+          tp2 = supportPrice * 1.005; // Just above the support
+        }
+      }
+    }
   }
   
   const riskAmount = SYSTEM_CONFIG.accountBalance * SYSTEM_CONFIG.riskPerTrade * regime.positionSize;
@@ -503,9 +447,9 @@ function calculateEnhancedTrade(signal, currentPrice, atr, highs, lows, decimals
 }
 
 /**
- * BUILD COMPREHENSIVE NOTES
+ * BUILD COMPREHENSIVE NOTES WITH TRENDLINE INFO
  */
-function buildComprehensiveNotes(signal, signalSource, regime, marketStructure, trade, htfAnalysis, volumeAnalysis, cvdDivergence) {
+function buildComprehensiveNotes(signal, signalSource, regime, marketStructure, trade, htfAnalysis, volumeProfile, cvdData, cvdDivergence, trendlineContext) {
   let notes = `✅ SIGNAL APPROVED\n\n`;
   
   // Signal Type
@@ -513,27 +457,50 @@ function buildComprehensiveNotes(signal, signalSource, regime, marketStructure, 
   notes += `Confidence: ${signal.confidence}%\n`;
   notes += `${signal.reason}\n\n`;
   
+  // Trendline info (if trendline signal)
+  if (signal.trendline) {
+    notes += `📈 TRENDLINE DETAILS:\n`;
+    notes += `• Type: ${signal.trendline.type.toUpperCase()}\n`;
+    notes += `• Touches: ${signal.trendline.touches}\n`;
+    notes += `• Strength: ${signal.trendline.strength}%\n`;
+    notes += `• Slope: ${signal.trendline.slopePercent}%\n`;
+    notes += `• Last Touch: ${signal.trendline.lastTouchCandles} candles ago\n`;
+    if (signal.volumeRatio) {
+      notes += `• Volume Spike: ${signal.volumeRatio}x average\n`;
+    }
+    if (signal.wickPercent) {
+      notes += `• Rejection Wick: ${signal.wickPercent}%\n`;
+    }
+    if (signal.cvdDivergence) {
+      notes += `• CVD Confirmation: ${signal.cvdDivergence}\n`;
+    }
+    notes += `\n`;
+  }
+  
   // Volume Profile Context
   notes += `📊 VOLUME PROFILE:\n`;
-  notes += `• POC (Point of Control): $${volumeAnalysis.summary.poc.toFixed(2)}\n`;
-  notes += `• Value Area High: $${volumeAnalysis.summary.vah.toFixed(2)}\n`;
-  notes += `• Value Area Low: $${volumeAnalysis.summary.val.toFixed(2)}\n`;
-  if (volumeAnalysis.summary.nearestSupport) {
-    notes += `• Nearest Support: $${volumeAnalysis.summary.nearestSupport.toFixed(2)}\n`;
-  }
-  if (volumeAnalysis.summary.nearestResistance) {
-    notes += `• Nearest Resistance: $${volumeAnalysis.summary.nearestResistance.toFixed(2)}\n`;
-  }
-  notes += `\n`;
+  notes += `• POC (Point of Control): $${volumeProfile.poc.price.toFixed(2)}\n`;
+  notes += `• Value Area High: $${volumeProfile.vah.toFixed(2)}\n`;
+  notes += `• Value Area Low: $${volumeProfile.val.toFixed(2)}\n\n`;
   
   // CVD Analysis
   notes += `💎 ORDER FLOW (CVD):\n`;
-  notes += `• CVD Trend: ${volumeAnalysis.summary.cvdTrend}\n`;
+  notes += `• CVD Trend: ${cvdData.trend}\n`;
   if (cvdDivergence) {
     notes += `• Divergence: ${cvdDivergence.type} (${cvdDivergence.strength})\n`;
     notes += `• Divergence Strength: ${(cvdDivergence.divergenceStrength * 100).toFixed(1)}%\n`;
   } else {
     notes += `• No divergence detected\n`;
+  }
+  notes += `\n`;
+  
+  // Active Trendlines Context
+  notes += `📐 ACTIVE TRENDLINES:\n`;
+  if (trendlineContext.supports.length > 0) {
+    notes += `• Support: $${trendlineContext.supports[0].projectedPrice} (${trendlineContext.supports[0].strength}%, ${trendlineContext.supports[0].touches} touches)\n`;
+  }
+  if (trendlineContext.resistances.length > 0) {
+    notes += `• Resistance: $${trendlineContext.resistances[0].projectedPrice} (${trendlineContext.resistances[0].strength}%, ${trendlineContext.resistances[0].touches} touches)\n`;
   }
   notes += `\n`;
   
