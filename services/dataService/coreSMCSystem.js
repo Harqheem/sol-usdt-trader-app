@@ -180,11 +180,13 @@ else if (cvdDivergence && cvdDivergence.atHVN && structureStrength.score >= 30) 
 
 // PRIORITY 2: Trendline Bounce with CVD confirmation
 else if (trendlineBounce && cvdDivergence && trendlineBounce.direction === cvdDivergence.direction) {
-  selectedSignal = {
+selectedSignal = {
     ...trendlineBounce,
     confidence: Math.min(98, trendlineBounce.confidence + 8),
     cvdDivergence: cvdDivergence.type,
-    cvdStrength: cvdDivergence.strength
+    cvdStrength: cvdDivergence.strength,
+    strategy: trendlineBounce.strategy || 'reversal',
+    direction: trendlineBounce.direction
   };
   signalSource = 'TRENDLINE_BOUNCE_CVD';
   console.log(`   🎯 PRIORITY 2: Trendline bounce + CVD confirmation`);
@@ -192,7 +194,11 @@ else if (trendlineBounce && cvdDivergence && trendlineBounce.direction === cvdDi
 
 // PRIORITY 3: Trendline Bounce alone (NEW - REPLACES VOLUME S/R)
 else if (trendlineBounce && trendlineBounce.confidence >= 75) {
-  selectedSignal = trendlineBounce;
+  selectedSignal = {
+    ...trendlineBounce,
+    // Ensure required fields
+    strategy: trendlineBounce.strategy || 'reversal'
+  };
   signalSource = 'TRENDLINE_BOUNCE';
   console.log(`   🎯 PRIORITY 3: Trendline bounce (${trendlineBounce.confidence}%)`);
 }
@@ -234,6 +240,17 @@ if (!regimeCheck.allowed) {
 // STEP 9: CALCULATE TRADE PARAMETERS
 // ============================================
 console.log(`   ✅ Building trade signal...`);
+
+// Safety check - ensure signal is valid
+if (!selectedSignal || !selectedSignal.direction) {
+  console.error(`   ❌ Invalid signal object:`, selectedSignal);
+  return {
+    signal: 'WAIT',
+    reason: 'Invalid signal object detected',
+    regime: regime.type,
+    structure: marketStructure.structure
+  };
+}
 
 const highs = candles.map(c => parseFloat(c.high));
 const lows = candles.map(c => parseFloat(c.low));
@@ -334,6 +351,17 @@ function buildWaitReason(trendlineContext, volumeAnalysis, marketStructure) {
  * ENHANCED TRADE CALCULATION WITH TRENDLINE SUPPORT
  */
 function calculateEnhancedTrade(signal, currentPrice, atr, highs, lows, decimals, regime, trendlineContext) {
+  // Safety checks
+  if (!signal) {
+    console.error('   ❌ calculateEnhancedTrade: signal is null/undefined');
+    return { valid: false, reason: 'Invalid signal object' };
+  }
+  
+  if (!signal.direction) {
+    console.error('   ❌ calculateEnhancedTrade: signal.direction is missing', signal);
+    return { valid: false, reason: 'Signal missing direction' };
+  }
+  
   let entry, sl, tp1, tp2;
   const strategy = signal.strategy || 'reversal';
   
