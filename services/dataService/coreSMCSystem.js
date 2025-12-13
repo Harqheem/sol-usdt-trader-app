@@ -1,5 +1,5 @@
-// services/dataService/coreSMCSystem.js - FIXED: Null regime handling
-// Volume Profile + CVD + Enhanced S/R System
+// services/dataService/coreSMCSystem.js - FIXED INTEGRATION WITH TRENDLINES
+// Volume Profile + CVD + Trendline S/R System
 
 const { identifySwingPoints, determineStructure, calculateStructureStrength } = require('./structureTracker');
 const { detectAllSMCSignals } = require('./smcDetection');
@@ -158,40 +158,41 @@ async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, dec
     );
 
 // ============================================
-// STEP 7: SELECT BEST SIGNAL - UPDATED
+// STEP 7: SELECT BEST SIGNAL - UPDATED WITH TRENDLINE PRIORITY
 // ============================================
 let selectedSignal = null;
 let signalSource = null;
 
-// PRIORITY 4: SMC signals
-if (smcSignals.length > 0 && structureStrength.score >= SYSTEM_CONFIG.minStructureConfidence) {
-  selectedSignal = smcSignals[0];
-  signalSource = 'SMC';
-  console.log(`   🎯 PRIORITY 4: SMC Signal (${smcSignals[0].type})`);
-}
+console.log(`   🔍 Signal evaluation starting...`);
+console.log(`   🔍 CVD divergence:`, cvdDivergence ? `YES (${cvdDivergence.type})` : 'NO');
+console.log(`   🔍 Trendline bounce:`, trendlineBounce ? `YES (${trendlineBounce.direction})` : 'NO');
+console.log(`   🔍 SMC signals:`, smcSignals.length > 0 ? `YES (${smcSignals.length} signals)` : 'NO');
+console.log(`   🔍 Liquidity sweep:`, sweep1m ? `YES (${sweep1m.direction})` : 'NO');
+console.log(`   🔍 Structure strength:`, structureStrength.score);
 
-//rearrange priorities when removing the comments
-// PRIORITY 1: CVD Divergence at HVN/POC (HIGHEST)
-else if (cvdDivergence && cvdDivergence.atHVN && structureStrength.score >= 30) {
+// PRIORITY 1: CVD Divergence at HVN/POC (HIGHEST - unchanged)
+if (cvdDivergence && cvdDivergence.atHVN && structureStrength.score >= 30) {
   selectedSignal = cvdDivergence;
   signalSource = 'CVD_AT_HVN';
   console.log(`   🎯 PRIORITY 1: CVD divergence at HVN/POC`);
+  console.log(`   🔍 Signal object keys:`, Object.keys(selectedSignal));
 }
-
-// PRIORITY 2: Trendline Bounce with CVD confirmation
+// PRIORITY 2: Trendline Bounce with CVD confirmation (NEW - VERY STRONG)
 else if (trendlineBounce && cvdDivergence && trendlineBounce.direction === cvdDivergence.direction) {
-selectedSignal = {
+  // Merge signals - trendline bounce confirmed by CVD
+  selectedSignal = {
     ...trendlineBounce,
     confidence: Math.min(98, trendlineBounce.confidence + 8),
     cvdDivergence: cvdDivergence.type,
     cvdStrength: cvdDivergence.strength,
+    // Ensure required fields are present
     strategy: trendlineBounce.strategy || 'reversal',
     direction: trendlineBounce.direction
   };
   signalSource = 'TRENDLINE_BOUNCE_CVD';
   console.log(`   🎯 PRIORITY 2: Trendline bounce + CVD confirmation`);
+  console.log(`   🔍 Signal object keys:`, Object.keys(selectedSignal));
 }
-
 // PRIORITY 3: Trendline Bounce alone (NEW - REPLACES VOLUME S/R)
 else if (trendlineBounce && trendlineBounce.confidence >= 75) {
   selectedSignal = {
@@ -201,25 +202,64 @@ else if (trendlineBounce && trendlineBounce.confidence >= 75) {
   };
   signalSource = 'TRENDLINE_BOUNCE';
   console.log(`   🎯 PRIORITY 3: Trendline bounce (${trendlineBounce.confidence}%)`);
+  console.log(`   🔍 Signal object keys:`, Object.keys(selectedSignal));
+}
+// PRIORITY 4: SMC signals
+else if (smcSignals.length > 0 && smcSignals[0] && structureStrength.score >= SYSTEM_CONFIG.minStructureConfidence) {
+  selectedSignal = smcSignals[0];
+  signalSource = 'SMC';
+  console.log(`   🎯 PRIORITY 4: SMC Signal (${smcSignals[0]?.type || 'unknown'})`);
+  console.log(`   🔍 SMC signal[0]:`, smcSignals[0]);
+  console.log(`   🔍 Signal is null?`, selectedSignal === null);
+  console.log(`   🔍 Signal is undefined?`, selectedSignal === undefined);
+  if (selectedSignal) {
+    console.log(`   🔍 Signal object keys:`, Object.keys(selectedSignal));
+  }
+  
+  // Extra safety: if SMC signal is somehow null/undefined, skip it
+  if (!selectedSignal || selectedSignal === null || selectedSignal === undefined) {
+    console.error(`   ❌ SMC signal[0] is null/undefined despite array check!`);
+    selectedSignal = null;
+    signalSource = null;
+  }
+}
+// PRIORITY 5: CVD Divergence alone
+else if (cvdDivergence && structureStrength.score >= 30) {
+  selectedSignal = cvdDivergence;
+  signalSource = 'CVD_DIVERGENCE';
+  console.log(`   🎯 PRIORITY 5: CVD Divergence`);
+  console.log(`   🔍 Signal object keys:`, Object.keys(selectedSignal));
+}
+// PRIORITY 6: 1m Liquidity sweep
+else if (sweep1m) {
+  selectedSignal = sweep1m;
+  if (!selectedSignal.strategy) {
+    selectedSignal.strategy = 'reversal';
+  }
+  signalSource = sweep1m.direction === 'LONG' ? 'LIQUIDITY_SWEEP_BULLISH' : 'LIQUIDITY_SWEEP_BEARISH';
+  console.log(`   🎯 PRIORITY 6: 1m Liquidity Sweep (${sweep1m.direction})`);
+  console.log(`   🔍 Signal object keys:`, Object.keys(selectedSignal));
 }
 
-// PRIORITY 5: 1 min Liquidity sweep check
-//else if (sweep1m) {
-  //selectedSignal = sweep1m;
-  // Ensure strategy is set (should already be 'reversal' from detector)
-  //if (!selectedSignal.strategy) {
-    //selectedSignal.strategy = 'reversal';
-  //}
-  // Set proper signal type based on direction
-  //signalSource = sweep1m.direction === 'LONG' ? 'LIQUIDITY_SWEEP_BULLISH' : 'LIQUIDITY_SWEEP_BEARISH';
-  //console.log(`   🎯 PRIORITY 5: 1m Liquidity Sweep (${sweep1m.direction})`);
-//}
-// PRIORITY 6: CVD Divergence alone
-//else if (cvdDivergence && structureStrength.score >= 30) {
-  //selectedSignal = cvdDivergence;
-  //signalSource = 'CVD_DIVERGENCE';
-  //console.log(`   🎯 PRIORITY 6: CVD Divergence`);
-//}
+console.log(`   🔍 Final selectedSignal:`, selectedSignal ? 'VALID' : 'NULL');
+console.log(`   🔍 Final signalSource:`, signalSource || 'NONE');
+
+if (!selectedSignal) {
+  return {
+    signal: 'WAIT',
+    reason: buildWaitReason(trendlineContext, volumeAnalysis, marketStructure),
+    regime: regime.type,
+    structure: marketStructure.structure,
+    trendlineContext,
+    volumeProfile: volumeAnalysis.summary
+  };
+}
+
+// Debug: Log selected signal details
+console.log(`   🔍 Selected signal source: ${signalSource}`);
+console.log(`   🔍 Selected signal type:`, selectedSignal?.type || 'N/A');
+console.log(`   🔍 Selected signal direction:`, selectedSignal?.direction || 'N/A');
+console.log(`   🔍 Selected signal strategy:`, selectedSignal?.strategy || 'N/A');
 
 // ============================================
 // STEP 8: VALIDATE WITH REGIME
