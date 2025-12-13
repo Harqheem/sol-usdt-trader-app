@@ -82,8 +82,6 @@ async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, dec
       regime
     );
     
-    console.log(`   📊 Volume Profile POC: $${volumeAnalysis.summary.poc.toFixed(2)}`);
-
     const sweep1m = checkForSweep(symbol, wsCache);
     
     // ============================================
@@ -136,7 +134,6 @@ async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, dec
     // ============================================
     // STEP 6: TRENDLINE S/R BOUNCE (NEW - REPLACES VOLUME S/R)
     // ============================================
-    console.log(`   📈 Analyzing trendlines...`);
     
     const trendlineBounce = detectTrendlineBounce(
       candles.slice(-100),
@@ -163,12 +160,6 @@ async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, dec
 let selectedSignal = null;
 let signalSource = null;
 
-console.log(`   🔍 Signal evaluation starting...`);
-console.log(`   🔍 CVD divergence:`, cvdDivergence ? `YES (${cvdDivergence.type})` : 'NO');
-console.log(`   🔍 Trendline bounce:`, trendlineBounce ? `YES (${trendlineBounce.direction})` : 'NO');
-console.log(`   🔍 SMC signals:`, smcSignals.length > 0 ? `YES (${smcSignals.length} signals)` : 'NO');
-console.log(`   🔍 Liquidity sweep:`, sweep1m ? `YES (${sweep1m.direction})` : 'NO');
-console.log(`   🔍 Structure strength:`, structureStrength.score);
 
 // PRIORITY 1: CVD Divergence at HVN/POC (HIGHEST - unchanged)
 if (cvdDivergence && cvdDivergence.atHVN && structureStrength.score >= 30) {
@@ -240,9 +231,6 @@ else if (sweep1m) {
   console.log(`   🎯 PRIORITY 6: 1m Liquidity Sweep (${sweep1m.direction})`);
   console.log(`   🔍 Signal object keys:`, Object.keys(selectedSignal));
 }
-
-console.log(`   🔍 Final selectedSignal:`, selectedSignal ? 'VALID' : 'NULL');
-console.log(`   🔍 Final signalSource:`, signalSource || 'NONE');
 
 if (!selectedSignal) {
   return {
