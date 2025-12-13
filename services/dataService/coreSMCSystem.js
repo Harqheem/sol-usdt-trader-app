@@ -10,7 +10,8 @@ const {
 const {
   calculateVolumeProfile,
   calculateEnhancedCVD,
-  detectAdvancedCVDDivergence
+  detectAdvancedCVDDivergence,
+  analyzeVolumeProfileSignals
 } = require('./volumeProfileSystem');
 const { wsCache } = require('./cacheManager');
 
@@ -71,21 +72,17 @@ async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, dec
 
         
     // ============================================
-    // STEP 1: VOLUME PROFILE ANALYSIS (for CVD only)
+    // STEP 1: VOLUME PROFILE ANALYSIS (KEEP FOR CVD)
     // ============================================
       
-    const volumeProfile = calculateVolumeProfile(
+    const volumeAnalysis = analyzeVolumeProfileSignals(
       candles.slice(-100),
       volumes.slice(-100),
-      SYSTEM_CONFIG.volumeProfileBins
+      indicators.atr,
+      regime
     );
     
-    const cvdData = calculateEnhancedCVD(
-      candles.slice(-50),
-      volumes.slice(-50)
-    );
-    
-    console.log(`   📊 Volume Profile POC: $${volumeProfile.poc.price.toFixed(2)}`);
+    console.log(`   📊 Volume Profile POC: $${volumeAnalysis.summary.poc.toFixed(2)}`);
 
     const sweep1m = checkForSweep(symbol, wsCache);
     
@@ -107,7 +104,7 @@ async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, dec
     const cvdDivergence = detectAdvancedCVDDivergence(
       candles.slice(-20),
       volumes.slice(-20),
-      volumeProfile
+      volumeAnalysis.volumeProfile
     );
     
     if (cvdDivergence) {
@@ -137,7 +134,7 @@ async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, dec
 
    
     // ============================================
-    // STEP 6: TRENDLINE S/R BOUNCE (REPLACES VOLUME S/R)
+    // STEP 6: TRENDLINE S/R BOUNCE (NEW - REPLACES VOLUME S/R)
     // ============================================
     console.log(`   📈 Analyzing trendlines...`);
     
@@ -183,7 +180,8 @@ else if (cvdDivergence && cvdDivergence.atHVN && structureStrength.score >= 30) 
 
 // PRIORITY 2: Trendline Bounce with CVD confirmation
 else if (trendlineBounce && cvdDivergence && trendlineBounce.direction === cvdDivergence.direction) {
-  selectedSignal = {trendlineBounce,
+  selectedSignal = {
+    ...trendlineBounce,
     confidence: Math.min(98, trendlineBounce.confidence + 8),
     cvdDivergence: cvdDivergence.type,
     cvdStrength: cvdDivergence.strength
@@ -217,13 +215,18 @@ else if (trendlineBounce && trendlineBounce.confidence >= 75) {
   //console.log(`   🎯 PRIORITY 6: CVD Divergence`);
 //}
 
-if (!selectedSignal) {
+// ============================================
+// STEP 8: VALIDATE WITH REGIME
+// ============================================
+const regimeCheck = validateWithRegime(selectedSignal, regime);
+if (!regimeCheck.allowed) {
+  console.log(`   ⚠️ Signal rejected by regime: ${regimeCheck.reason}`);
   return {
     signal: 'WAIT',
-    reason: 'No trading signals detected',
+    reason: regimeCheck.reason,
     regime: regime.type,
     structure: marketStructure.structure,
-    volumeProfile: volumeAnalysis.summary
+    detectedSignal: selectedSignal.type || selectedSignal.direction
   };
 }
 
@@ -277,8 +280,7 @@ return {
     marketStructure, 
     trade, 
     htfAnalysis, 
-    volumeProfile,
-    cvdData,
+    volumeAnalysis,
     cvdDivergence,
     trendlineContext
   ),
@@ -302,7 +304,7 @@ return {
 /**
  * BUILD WAIT REASON WITH TRENDLINE CONTEXT
  */
-function buildWaitReason(trendlineContext, cvdData, marketStructure) {
+function buildWaitReason(trendlineContext, volumeAnalysis, marketStructure) {
   let reason = 'No clear trading signals\n\n';
   
   reason += `📈 TRENDLINE ANALYSIS:\n`;
@@ -319,8 +321,8 @@ function buildWaitReason(trendlineContext, cvdData, marketStructure) {
   }
   
   reason += `\n💎 ORDER FLOW:\n`;
-  reason += `• CVD Trend: ${cvdData.trend}\n`;
-  reason += `• CVD Delta: ${cvdData.delta.toFixed(0)}\n`;
+  reason += `• CVD Trend: ${volumeAnalysis.cvdData.trend}\n`;
+  reason += `• CVD Delta: ${volumeAnalysis.cvdData.delta.toFixed(0)}\n`;
   
   reason += `\n📊 MARKET STRUCTURE:\n`;
   reason += `• Structure: ${marketStructure.structure} (${marketStructure.confidence}%)\n`;
@@ -449,7 +451,7 @@ function calculateEnhancedTrade(signal, currentPrice, atr, highs, lows, decimals
 /**
  * BUILD COMPREHENSIVE NOTES WITH TRENDLINE INFO
  */
-function buildComprehensiveNotes(signal, signalSource, regime, marketStructure, trade, htfAnalysis, volumeProfile, cvdData, cvdDivergence, trendlineContext) {
+function buildComprehensiveNotes(signal, signalSource, regime, marketStructure, trade, htfAnalysis, volumeAnalysis, cvdDivergence, trendlineContext) {
   let notes = `✅ SIGNAL APPROVED\n\n`;
   
   // Signal Type
@@ -479,13 +481,13 @@ function buildComprehensiveNotes(signal, signalSource, regime, marketStructure, 
   
   // Volume Profile Context
   notes += `📊 VOLUME PROFILE:\n`;
-  notes += `• POC (Point of Control): $${volumeProfile.poc.price.toFixed(2)}\n`;
-  notes += `• Value Area High: $${volumeProfile.vah.toFixed(2)}\n`;
-  notes += `• Value Area Low: $${volumeProfile.val.toFixed(2)}\n\n`;
+  notes += `• POC (Point of Control): $${volumeAnalysis.summary.poc.toFixed(2)}\n`;
+  notes += `• Value Area High: $${volumeAnalysis.summary.vah.toFixed(2)}\n`;
+  notes += `• Value Area Low: $${volumeAnalysis.summary.val.toFixed(2)}\n\n`;
   
   // CVD Analysis
   notes += `💎 ORDER FLOW (CVD):\n`;
-  notes += `• CVD Trend: ${cvdData.trend}\n`;
+  notes += `• CVD Trend: ${volumeAnalysis.summary.cvdTrend}\n`;
   if (cvdDivergence) {
     notes += `• Divergence: ${cvdDivergence.type} (${cvdDivergence.strength})\n`;
     notes += `• Divergence Strength: ${(cvdDivergence.divergenceStrength * 100).toFixed(1)}%\n`;
