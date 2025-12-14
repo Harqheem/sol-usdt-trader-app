@@ -10,7 +10,7 @@
 const TRENDLINE_CONFIG = {
   // Trendline detection
   minTouches: 3,                    // Minimum touches to validate a trendline
-  touchTolerance: 0.003,            // 0.3% tolerance for touch detection
+  touchTolerance: 0.0015,           // 0.15% tolerance (was 0.3% - too loose)
   maxLineSlope: 0.05,               // Max 5% slope to avoid overly steep lines
   minLineLength: 10,                // Minimum candles spanning the line
   
@@ -24,6 +24,7 @@ const TRENDLINE_CONFIG = {
   recentTouchBonus: 10,             // Bonus for recent touches
   slopeQualityBonus: 15,            // Bonus for good slope angle
   lengthBonus: 10,                  // Bonus for longer lines
+  maxTouchesForScoring: 8,          // Cap touch count for scoring to prevent inflation
   
   // Analysis windows
   lookbackPeriod: 100,              // Candles to analyze
@@ -238,16 +239,19 @@ function validateTrendline(slope, intercept, startIdx, endIdx, candles, type, hi
  * Score trendline quality and reliability
  */
 function scoreTrendlineStrength(trendline, candles, currentPrice) {
-  let strength = 50; // Base strength
+  let strength = 40; // Base strength (lowered from 50)
   
-  // 1. Touch count (most important)
-  strength += Math.min(30, (trendline.touches - 3) * 8);
+  // 1. Touch count (most important) - but cap it to prevent inflation
+  const effectiveTouches = Math.min(trendline.touches, TRENDLINE_CONFIG.maxTouchesForScoring);
+  strength += Math.min(25, (effectiveTouches - 3) * 5); // Max +25 for 8 touches
   
   // 2. Recent touches (more relevant)
   if (trendline.lastTouchCandles <= 5) {
     strength += TRENDLINE_CONFIG.recentTouchBonus;
   } else if (trendline.lastTouchCandles <= 10) {
     strength += TRENDLINE_CONFIG.recentTouchBonus * 0.6;
+  } else if (trendline.lastTouchCandles <= 20) {
+    strength += TRENDLINE_CONFIG.recentTouchBonus * 0.3;
   }
   
   // 3. Line length (longer = more established)
@@ -260,7 +264,11 @@ function scoreTrendlineStrength(trendline, candles, currentPrice) {
   // 4. Slope quality (not too flat, not too steep)
   const optimalSlope = 0.015; // 1.5% is ideal
   const slopeDiff = Math.abs(trendline.slopePercent - optimalSlope);
-  if (slopeDiff < 0.005) {
+  
+  // Penalize extremely flat lines (< 0.002 = 0.2%)
+  if (trendline.slopePercent < 0.002) {
+    strength -= 10; // Penalty for nearly horizontal lines
+  } else if (slopeDiff < 0.005) {
     strength += TRENDLINE_CONFIG.slopeQualityBonus;
   } else if (slopeDiff < 0.015) {
     strength += TRENDLINE_CONFIG.slopeQualityBonus * 0.5;
@@ -279,7 +287,8 @@ function scoreTrendlineStrength(trendline, candles, currentPrice) {
     strength += 5;
   }
   
-  return Math.min(100, Math.max(0, strength));
+  // Cap at 95 (not 100) to show room for improvement
+  return Math.min(95, Math.max(0, strength));
 }
 
 /**
@@ -340,6 +349,62 @@ function identifyActiveTrendlines(candles, atr) {
     resistances: activeResistances,
     swingPoints
   };
+}
+
+/**
+ * ========================================
+ * HELPER: Calculate Safe TP2
+ * ========================================
+ * Ensures TP2 is always further from entry than TP1
+ */
+function calculateSafeTP2(currentPrice, atr, oppositeTrendlines, direction) {
+  const tp1Distance = atr * 1.5;
+  const defaultTP2Distance = atr * 3.0;
+  
+  if (direction === 'LONG') {
+    // For LONG, TP2 should be ABOVE TP1
+    const tp1Price = currentPrice + tp1Distance;
+    const defaultTP2 = currentPrice + defaultTP2Distance;
+    
+    // Check if we have a resistance trendline to use
+    if (oppositeTrendlines.length > 0) {
+      const resistancePrice = oppositeTrendlines[0].projectedPrice;
+      
+      // Only use it if it's:
+      // 1. Above current price (makes sense for LONG)
+      // 2. Above TP1 (further target)
+      // 3. Within reasonable range (< 6 ATR away)
+      if (resistancePrice > currentPrice && 
+          resistancePrice > tp1Price && 
+          resistancePrice < currentPrice + (atr * 4)) {
+        return resistancePrice * 0.995; // Just below resistance
+      }
+    }
+    
+    return defaultTP2;
+    
+  } else {
+    // For SHORT, TP2 should be BELOW TP1
+    const tp1Price = currentPrice - tp1Distance;
+    const defaultTP2 = currentPrice - defaultTP2Distance;
+    
+    // Check if we have a support trendline to use
+    if (oppositeTrendlines.length > 0) {
+      const supportPrice = oppositeTrendlines[0].projectedPrice;
+      
+      // Only use it if it's:
+      // 1. Below current price (makes sense for SHORT)
+      // 2. Below TP1 (further target)
+      // 3. Within reasonable range (< 6 ATR away)
+      if (supportPrice < currentPrice && 
+          supportPrice < tp1Price && 
+          supportPrice > currentPrice - (atr * 4)) {
+        return supportPrice * 1.005; // Just above support
+      }
+    }
+    
+    return defaultTP2;
+  }
 }
 
 /**
@@ -420,8 +485,8 @@ function detectTrendlineBounce(candles, volumes, atr, regime) {
             entryType: 'immediate',
             suggestedEntry: currentPrice,
             suggestedSL: nearestSupport.projectedPrice - (atr * 1.0),
-            suggestedTP1: currentPrice + (atr * 2.5),
-            suggestedTP2: trendlines.resistances[0]?.projectedPrice || currentPrice + (atr * 4.0)
+            suggestedTP1: currentPrice + (atr * 1.5),
+            suggestedTP2: calculateSafeTP2(currentPrice, atr, trendlines.resistances, 'LONG')
           };
         }
       }
@@ -481,8 +546,8 @@ function detectTrendlineBounce(candles, volumes, atr, regime) {
             entryType: 'immediate',
             suggestedEntry: currentPrice,
             suggestedSL: nearestResistance.projectedPrice + (atr * 1.0),
-            suggestedTP1: currentPrice - (atr * 2.5),
-            suggestedTP2: trendlines.supports[0]?.projectedPrice || currentPrice - (atr * 4.0)
+            suggestedTP1: currentPrice - (atr * 1.5),
+            suggestedTP2: calculateSafeTP2(currentPrice, atr, trendlines.supports, 'SHORT')
           };
         }
       }
