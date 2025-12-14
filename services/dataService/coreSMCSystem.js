@@ -18,6 +18,7 @@ const { wsCache } = require('./cacheManager');
 // ✅ NEW: Import trendline system
 const {
   detectTrendlineBounce,
+  detectTrendlineBreakout,
   analyzeTrendlineContext
 } = require('./trendlineSRSystem');
 
@@ -82,6 +83,8 @@ async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, dec
       regime
     );
     
+    console.log(`   📊 Volume Profile POC: $${volumeAnalysis.summary.poc.toFixed(2)}`);
+
     const sweep1m = checkForSweep(symbol, wsCache);
     
     // ============================================
@@ -134,8 +137,7 @@ async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, dec
     // ============================================
     // STEP 6: TRENDLINE S/R BOUNCE (NEW - REPLACES VOLUME S/R)
     // ============================================
-    
-    const trendlineBounce = detectTrendlineBounce(
+   const trendlineBounce = detectTrendlineBounce(
       candles.slice(-100),
       volumes.slice(-100),
       indicators.atr,
@@ -185,16 +187,16 @@ else if (trendlineBounce && cvdDivergence && trendlineBounce.direction === cvdDi
   console.log(`   🔍 Signal object keys:`, Object.keys(selectedSignal));
 }
 // PRIORITY 3: Trendline Bounce alone (NEW - REPLACES VOLUME S/R)
-//else if (trendlineBounce && trendlineBounce.confidence >= 75) {
- // selectedSignal = {
-  //  ...trendlineBounce,
+else if (trendlineBounce && trendlineBounce.confidence >= 75) {
+  selectedSignal = {
+    ...trendlineBounce,
     // Ensure required fields
-   // strategy: trendlineBounce.strategy || 'reversal'
- // };
-  //signalSource = 'TRENDLINE_BOUNCE';
-  //console.log(`   🎯 PRIORITY 3: Trendline bounce (${trendlineBounce.confidence}%)`);
-  //console.log(`   🔍 Signal object keys:`, Object.keys(selectedSignal));
-//}
+    strategy: trendlineBounce.strategy || 'reversal'
+  };
+  signalSource = 'TRENDLINE_BOUNCE';
+  console.log(`   🎯 PRIORITY 3: Trendline bounce (${trendlineBounce.confidence}%)`);
+  console.log(`   🔍 Signal object keys:`, Object.keys(selectedSignal));
+}
 // PRIORITY 4: SMC signals
 else if (smcSignals.length > 0 && smcSignals[0] && structureStrength.score >= SYSTEM_CONFIG.minStructureConfidence) {
   selectedSignal = smcSignals[0];
@@ -435,11 +437,13 @@ function calculateEnhancedTrade(signal, currentPrice, atr, highs, lows, decimals
       tp1 = entry + (risk * SYSTEM_CONFIG.minRR);
       tp2 = entry + (risk * 3.0);
       
-      // Use resistance trendline as TP2 if available and closer
-      if (trendlineContext.resistances.length > 0) {
+      // ✅ FIXED: Only use trendline TP2 for TRENDLINE_BOUNCE signals
+      // Other signals use fixed 3.0 ATR
+      if (signal.type === 'TRENDLINE_BOUNCE' && trendlineContext.resistances.length > 0) {
         const resistancePrice = parseFloat(trendlineContext.resistances[0].projectedPrice);
-        if (resistancePrice > entry && resistancePrice < tp2 * 1.1) {
-          tp2 = resistancePrice * 0.995; // Just below the resistance
+        // Must be ABOVE entry and ABOVE TP1
+        if (resistancePrice > entry && resistancePrice > tp1) {
+          tp2 = Math.min(tp2, resistancePrice * 0.995); // Use closer target
         }
       }
     }
@@ -471,11 +475,12 @@ function calculateEnhancedTrade(signal, currentPrice, atr, highs, lows, decimals
       tp1 = entry - (risk * SYSTEM_CONFIG.minRR);
       tp2 = entry - (risk * 3.0);
       
-      // Use support trendline as TP2 if available
-      if (trendlineContext.supports.length > 0) {
+      // ✅ FIXED: Only use trendline TP2 for TRENDLINE_BOUNCE signals
+      if (signal.type === 'TRENDLINE_BOUNCE' && trendlineContext.supports.length > 0) {
         const supportPrice = parseFloat(trendlineContext.supports[0].projectedPrice);
-        if (supportPrice < entry && supportPrice > tp2 * 0.9) {
-          tp2 = supportPrice * 1.005; // Just above the support
+        // Must be BELOW entry and BELOW TP1
+        if (supportPrice < entry && supportPrice < tp1) {
+          tp2 = Math.max(tp2, supportPrice * 1.005); // Use closer target
         }
       }
     }
