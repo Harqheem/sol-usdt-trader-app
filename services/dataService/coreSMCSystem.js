@@ -185,16 +185,16 @@ else if (trendlineBounce && cvdDivergence && trendlineBounce.direction === cvdDi
   console.log(`   🔍 Signal object keys:`, Object.keys(selectedSignal));
 }
 // PRIORITY 3: Trendline Bounce alone (NEW - REPLACES VOLUME S/R)
-else if (trendlineBounce && trendlineBounce.confidence >= 75) {
-  selectedSignal = {
-    ...trendlineBounce,
+//else if (trendlineBounce && trendlineBounce.confidence >= 75) {
+ // selectedSignal = {
+  //  ...trendlineBounce,
     // Ensure required fields
-    strategy: trendlineBounce.strategy || 'reversal'
-  };
-  signalSource = 'TRENDLINE_BOUNCE';
-  console.log(`   🎯 PRIORITY 3: Trendline bounce (${trendlineBounce.confidence}%)`);
-  console.log(`   🔍 Signal object keys:`, Object.keys(selectedSignal));
-}
+   // strategy: trendlineBounce.strategy || 'reversal'
+ // };
+  //signalSource = 'TRENDLINE_BOUNCE';
+  //console.log(`   🎯 PRIORITY 3: Trendline bounce (${trendlineBounce.confidence}%)`);
+  //console.log(`   🔍 Signal object keys:`, Object.keys(selectedSignal));
+//}
 // PRIORITY 4: SMC signals
 else if (smcSignals.length > 0 && smcSignals[0] && structureStrength.score >= SYSTEM_CONFIG.minStructureConfidence) {
   selectedSignal = smcSignals[0];
