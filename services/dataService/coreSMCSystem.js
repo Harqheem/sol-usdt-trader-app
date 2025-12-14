@@ -83,7 +83,6 @@ async function analyzeWithSMC(symbol, candles, volumes, indicators, htfData, dec
       regime
     );
     
-    console.log(`   📊 Volume Profile POC: $${volumeAnalysis.summary.poc.toFixed(2)}`);
 
     const sweep1m = checkForSweep(symbol, wsCache);
     
