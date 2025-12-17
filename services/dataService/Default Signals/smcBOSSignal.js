@@ -1,6 +1,5 @@
-// signals/smcBOSSignal.js - PRODUCTION VERSION v2.0
-// Break of Structure Strategy with Asset-Specific Configuration
-// Based on backtest results: 43.1% WR, 1.32 PF on LONG trades
+// services/dataService/Default Signals/smcBOSSignal.js
+// CONSOLIDATED BOS SIGNAL - Uses cached data efficiently
 
 const technicalIndicators = require('technicalindicators');
 const { getAssetConfig } = require('../../../config/assetConfig');
@@ -10,87 +9,89 @@ const { getAssetConfig } = require('../../../config/assetConfig');
 // ============================================
 
 const BOS_CONFIG = {
-  // Direction filters - Comment out to disable
-  enableLong: true,   // ✅ 43.1% WR, PF 1.32 (PROVEN)
-  enableShort: true,  // ⚠️  39.9% WR, PF 1.13 (MARGINAL) - Comment this out if you want LONG only
+  // Direction filters
+  enableLong: true,
+  enableShort: true,
   
   // Risk Management
   risk: {
-    maxLossPercent: 0.30,        // 30% max loss per trade ($3 on $10 position)
-    leverage: 20,                 // 20x leverage
-    minRiskRewardRatio: 1.5       // Minimum 1.5R target
+    maxLossPercent: 0.30,
+    leverage: 20,
+    minRiskRewardRatio: 1.5
   },
   
   // Structure Detection
   structure: {
-    swingLookback: 50,            // Bars to look back for swings
-    minSwingDistance: 0.015,      // 1.5% minimum between swing points
-    minADX: 15,                   // Minimum trend strength
-    htfBiasRequired: false        // Set to true to only trade with HTF trend
+    swingLookback: 50,
+    minSwingDistance: 0.015,
+    minADX: 15,
+    htfBiasRequired: true
   },
   
   // Break Validation
   break: {
-    minPriceMove: 0.003,          // 0.3% minimum break size
-    closeConfirmation: 0.998,     // Must close 0.2% beyond level
-    consecutiveBars: 1            // Bars of displacement needed
+    minPriceMove: 0.003,
+    closeConfirmation: 0.998,
+    consecutiveBars: 1
   },
   
   // Volume Confirmation
   volume: {
-    multiplier: 1.3,              // 1.3x average volume required
-    lookback: 20                  // Bars for volume average
+    multiplier: 1.3,
+    lookback: 20
   },
   
   // Displacement Requirements
   displacement: {
-    minCandleBodyPercent: 0.60,   // 60% candle body minimum
-    maxWickPercent: 0.30          // 30% max wick allowed
+    minCandleBodyPercent: 0.60,
+    maxWickPercent: 0.30
   },
   
-  // Optional Confluence Filters (set to false to disable)
+  // Optional Confluence Filters
   confluence: {
-    requireLiquiditySweep: false,  // Require opposite side sweep first
-    requireOrderBlock: false,       // Require valid order block
-    requireFVG: false,              // Require fair value gap
+    requireLiquiditySweep: false,
+    requireOrderBlock: false,
+    requireFVG: false,
     
-    // If enabled, these are the settings:
     liquiditySweep: {
       lookback: 10,
-      minWickBeyond: 0.003        // 0.3% wick beyond level
+      minWickBeyond: 0.003
     },
     orderBlock: {
       lookback: 15,
-      minBodyPercent: 0.60        // 60% body for valid OB
+      minBodyPercent: 0.60
     },
     fvg: {
-      minGap: 0.002               // 0.2% gap required
+      minGap: 0.002
     }
   },
   
   // Stop Loss & Take Profit
   stopLoss: {
-    atrMultiplier: 0.5            // SL = broken level ± 0.5 ATR
+    atrMultiplier: 0.5
   },
   
-  // Asset-specific overrides (from assetConfig.js)
+  // Asset-specific overrides
   assetOverrides: {
     SOLUSDT: {
       minADX: 15,
-      volumeMultiplier: 1.3,
-      atrMultiplier: 0.5
+      minBreak: 0.003,
+      minVolume: 1.3,
+      minSwingDistance: 0.015
     },
-    /*ETHUSDT: {
+    ETHUSDT: {
       minADX: 18,
-      volumeMultiplier: 1.4,
-      atrMultiplier: 0.55
+      minBreak: 0.003,
+      minVolume: 1.4,
+      minSwingDistance: 0.015
     },
     BTCUSDT: {
       minADX: 20,
-      volumeMultiplier: 1.5,
-      atrMultiplier: 0.6
-    }*/
+      minBreak: 0.003,
+      minVolume: 1.5,
+      minSwingDistance: 0.015
     }
+  }
 };
 
 // ============================================
@@ -99,9 +100,15 @@ const BOS_CONFIG = {
 
 /**
  * Main entry point called by coordinator
- * Adapts coordinator parameters to BOS signal generator
+ * @param {Array} candles - Full candle array (200+) from wsCache
+ * @param {Object} position - Current position (or null)
+ * @param {String} symbol - Trading pair
+ * @param {Object} indicators - Pre-calculated indicators from indicatorCalculator (PREFERRED)
+ * @param {Object} htfData - Higher timeframe data (1h, 4h trends)
+ * @param {Object} wsCache - Cache reference for accessing additional data
+ * @returns {Object|null} Signal object or null
  */
-function detectBOS(candles, swingPoints, marketStructure, volumes, indicators, htf, symbol = 'UNKNOWN') {
+function detectBOS(candles, position, symbol, indicators = null, htfData = null, wsCache = null) {
   // ✅ VALIDATION
   if (!Array.isArray(candles)) {
     console.error(`❌ BOS ${symbol}: candles is not an array! Type: ${typeof candles}`);
@@ -120,8 +127,20 @@ function detectBOS(candles, swingPoints, marketStructure, volumes, indicators, h
     return null;
   }
   
-  // Call the core BOS signal generator
-  return generateBOSSignal(candles, null, symbol);
+  // ✅ USE CACHED INDICATORS - Avoid duplicate calculations
+  if (!indicators) {
+    console.log(`⚠️ BOS ${symbol}: No indicators provided, calculating from candles (not recommended)`);
+    indicators = calculateIndicators(candles);
+    if (!indicators) {
+      console.error(`❌ BOS ${symbol}: Failed to calculate indicators`);
+      return null;
+    }
+  } else {
+    console.log(`✅ BOS ${symbol}: Using pre-calculated indicators from cache`);
+  }
+  
+  // Call the core BOS signal generator with cached data
+  return generateBOSSignal(candles, position, symbol, indicators, htfData);
 }
 
 // ============================================
@@ -133,11 +152,14 @@ function detectBOS(candles, swingPoints, marketStructure, volumes, indicators, h
  * @param {Array} candles - Historical candle data (needs 200+)
  * @param {Object} position - Current position info
  * @param {String} symbol - Trading pair
+ * @param {Object} indicators - Pre-calculated indicators (ATR, ADX, EMA99, SMA200)
+ * @param {Object} htfData - Higher timeframe data (optional)
  * @returns {Object|null} Signal or null
  */
-function generateBOSSignal(candles, position, symbol) {
+function generateBOSSignal(candles, position, symbol, indicators, htfData = null) {
   // Don't generate new signals if we have an open position
   if (position?.isOpen) {
+    console.log(`   ⏸️ BOS ${symbol}: Position already open`);
     return null;
   }
   
@@ -145,22 +167,33 @@ function generateBOSSignal(candles, position, symbol) {
   const config = getAssetConfig(symbol);
   const assetOverride = BOS_CONFIG.assetOverrides[symbol] || {};
   
-  // Calculate indicators
-  const indicators = calculateIndicators(candles);
-  if (!indicators) {
-    console.log(`⚠️ BOS ${symbol}: Could not calculate indicators`);
-    return null;
-  }
+  console.log(`\n   🔍 BOS ${symbol}: Starting detection...`);
+  
+  // ✅ Extract indicators (already calculated - no recalculation needed!)
+  // Handle different indicator formats from indicatorCalculator vs internal calculator
+  const adxValue = typeof indicators.adx === 'object' ? indicators.adx.adx : indicators.adx;
+  const atrValue = indicators.atr;
+  const ema99 = indicators.ema99;
+  const sma200 = indicators.sma200;
+  const currentPrice = indicators.currentPrice || parseFloat(candles[idx].close);
+  
+  console.log(`   📊 Indicators (from cache): ADX=${adxValue.toFixed(1)}, ATR=${atrValue.toFixed(2)}`);
   
   // Check minimum ADX
   const minADX = assetOverride.minADX || BOS_CONFIG.structure.minADX;
-  if (indicators.adx < minADX) {
+  if (adxValue < minADX) {
+    console.log(`   ❌ BOS ${symbol}: ADX too low (${adxValue.toFixed(1)} < ${minADX})`);
     return null;
   }
   
-  // Get swing points
-  const swings = identifyExternalSwings(candles, BOS_CONFIG.structure.swingLookback);
+  console.log(`   ✅ ADX check passed (${adxValue.toFixed(1)} >= ${minADX})`);
+  
+  // Get swing points with asset-specific minSwingDistance
+  const minSwingDistance = assetOverride.minSwingDistance || BOS_CONFIG.structure.minSwingDistance;
+  const minBreak = assetOverride.minBreak || BOS_CONFIG.break.minPriceMove;
+  const swings = identifyExternalSwings(candles, BOS_CONFIG.structure.swingLookback, minSwingDistance);
   if (!swings || swings.length < 4) {
+    console.log(`   ❌ BOS ${symbol}: Insufficient swing points (${swings?.length || 0}/4)`);
     return null;
   }
   
@@ -169,8 +202,11 @@ function generateBOSSignal(candles, position, symbol) {
   const lows = swings.filter(s => s.type === 'low');
   
   if (!highs.length || !lows.length) {
+    console.log(`   ❌ BOS ${symbol}: No swing highs or lows`);
     return null;
   }
+  
+  console.log(`   ✅ Swing points: ${highs.length} highs, ${lows.length} lows`);
   
   const lastHigh = highs[highs.length - 1].price;
   const lastLow = lows[lows.length - 1].price;
@@ -180,55 +216,54 @@ function generateBOSSignal(candles, position, symbol) {
   const currentLow = parseFloat(currentCandle.low);
   const currentClose = parseFloat(currentCandle.close);
   
-  // Check volume
-  const volumeMultiplier = assetOverride.volumeMultiplier || BOS_CONFIG.volume.multiplier;
+  console.log(`   📍 Last High: ${lastHigh.toFixed(2)}, Last Low: ${lastLow.toFixed(2)}`);
+  console.log(`   📍 Current: H=${currentHigh.toFixed(2)}, L=${currentLow.toFixed(2)}, C=${currentClose.toFixed(2)}`);
+  
+  // Check volume with asset-specific multiplier
+  const volumeMultiplier = assetOverride.minVolume || BOS_CONFIG.volume.multiplier;
   const avgVolume = calculateAverageVolume(candles, BOS_CONFIG.volume.lookback);
   if (currentCandle.volume < avgVolume * volumeMultiplier) {
+    console.log(`   ❌ BOS ${symbol}: Volume too low (${(currentCandle.volume / avgVolume).toFixed(2)}x < ${volumeMultiplier}x)`);
     return null;
   }
   
+  console.log(`   ✅ Volume check passed (${(currentCandle.volume / avgVolume).toFixed(2)}x >= ${volumeMultiplier}x)`);
+  
   // Check for BULLISH BOS
   if (BOS_CONFIG.enableLong && currentHigh > lastHigh) {
-    const breakAmount = (currentHigh - lastHigh) / lastHigh;
+    console.log(`   🟢 BULLISH BOS detected! High ${currentHigh.toFixed(2)} > ${lastHigh.toFixed(2)}`);
     
-    // Validate break size
-    if (breakAmount < BOS_CONFIG.break.minPriceMove) {
+    const breakAmount = (currentHigh - lastHigh) / lastHigh;
+    console.log(`   📊 Break amount: ${(breakAmount * 100).toFixed(2)}%`);
+    
+    // Validate break size with asset-specific minBreak
+    if (breakAmount < minBreak) {
+      console.log(`   ❌ Break too small (${(breakAmount * 100).toFixed(2)}% < ${(minBreak * 100).toFixed(2)}%)`);
       return null;
     }
     
     // Confirm close beyond level
-    if (currentClose <= lastHigh * BOS_CONFIG.break.closeConfirmation) {
+    const closeThreshold = lastHigh * BOS_CONFIG.break.closeConfirmation;
+    if (currentClose <= closeThreshold) {
+      console.log(`   ❌ Close not beyond level (${currentClose.toFixed(2)} <= ${closeThreshold.toFixed(2)})`);
       return null;
     }
+    
+    console.log(`   ✅ Break size valid, checking displacement...`);
     
     // Check displacement
     if (!checkDisplacement(candles, idx, 'LONG')) {
+      console.log(`   ❌ Displacement check failed`);
       return null;
     }
     
-    // Check HTF bias if required
-    if (BOS_CONFIG.structure.htfBiasRequired) {
-      if (!checkHTFBias(indicators, 'LONG')) {
-        return null;
-      }
-    }
+    console.log(`   ✅ Displacement confirmed`);
     
-    // Check confluence filters
-    if (BOS_CONFIG.confluence.requireLiquiditySweep) {
-      if (!checkLiquiditySweep(candles, swings, idx, 'LONG')) {
-        return null;
-      }
-    }
+    // Calculate stop loss using provided ATR
+    const atrMultiplier = BOS_CONFIG.stopLoss.atrMultiplier;
+    const stopLoss = lastHigh - (atrValue * atrMultiplier);
     
-    if (BOS_CONFIG.confluence.requireOrderBlock) {
-      if (!checkOrderBlock(candles, idx, 'LONG')) {
-        return null;
-      }
-    }
-    
-    // Calculate stop loss
-    const atrMultiplier = assetOverride.atrMultiplier || BOS_CONFIG.stopLoss.atrMultiplier;
-    const stopLoss = lastHigh - (indicators.atr * atrMultiplier);
+    console.log(`   💰 Entry: ${currentClose.toFixed(2)}, SL: ${stopLoss.toFixed(2)}`);
     
     // Validate risk
     const riskValidation = validateRisk(
@@ -239,76 +274,73 @@ function generateBOSSignal(candles, position, symbol) {
       BOS_CONFIG.risk.leverage
     );
     
+    console.log(`   🎲 Risk: ${riskValidation.riskDollar.toFixed(2)} (${(riskValidation.riskPercent * 100).toFixed(1)}%)`);
+    
     if (!riskValidation.isValid) {
-      console.log(`🚫 BOS ${symbol} LONG rejected: Risk ${riskValidation.riskPercent.toFixed(1)}% > ${BOS_CONFIG.risk.maxLossPercent * 100}%`);
+      console.log(`   🚫 Risk too high! ${(riskValidation.riskPercent * 100).toFixed(1)}% > ${BOS_CONFIG.risk.maxLossPercent * 100}%`);
       return null;
     }
     
-    console.log(`✅ BOS ${symbol}: LONG signal generated at ${currentClose.toFixed(2)}`);
+    console.log(`   ✅✅✅ BOS LONG SIGNAL APPROVED ✅✅✅`);
     
     // Generate LONG signal
     return {
-      symbol,
       direction: 'LONG',
-      signalType: 'BOS',
+      signalSource: 'BOS',
       entry: currentClose,
       stopLoss: stopLoss,
-      takeProfit1: calculateTP(currentClose, stopLoss, 1.5, true),
-      takeProfit2: calculateTP(currentClose, stopLoss, 3.0, true),
-      confidence: 80,
-      reason: `BOS: Bullish break of ${lastHigh.toFixed(2)} | ATR: ${indicators.atr.toFixed(2)} | ADX: ${indicators.adx.toFixed(1)}`,
+      takeProfit1: calculateTP(currentClose, stopLoss, BOS_CONFIG.risk.minRiskRewardRatio, true),
+      takeProfit2: calculateTP(currentClose, stopLoss, BOS_CONFIG.risk.minRiskRewardRatio * 1.5, true),
+      riskPercent: riskValidation.riskPercent,
+      confidence: 'High',
+      reason: `BOS: Bullish break of structure at ${lastHigh.toFixed(2)}`,
       metadata: {
-        strategy: 'BOS',
-        brokenLevel: lastHigh,
-        breakAmount: (breakAmount * 100).toFixed(2),
-        volume: currentCandle.volume,
-        avgVolume: avgVolume,
-        volumeRatio: (currentCandle.volume / avgVolume).toFixed(2),
-        adx: indicators.adx.toFixed(1),
-        atr: indicators.atr.toFixed(4),
-        riskPercent: riskValidation.riskPercent.toFixed(2),
-        riskDollar: riskValidation.riskDollar.toFixed(2)
+        breakAmount: breakAmount,
+        volumeRatio: currentCandle.volume / avgVolume,
+        adx: adxValue,
+        atr: atrValue,
+        swingHigh: lastHigh,
+        swingLow: lastLow
       }
     };
   }
   
   // Check for BEARISH BOS
   if (BOS_CONFIG.enableShort && currentLow < lastLow) {
+    console.log(`   🔴 BEARISH BOS detected! Low ${currentLow.toFixed(2)} < ${lastLow.toFixed(2)}`);
+    
     const breakAmount = (lastLow - currentLow) / lastLow;
+    console.log(`   📊 Break amount: ${(breakAmount * 100).toFixed(2)}%`);
     
-    if (breakAmount < BOS_CONFIG.break.minPriceMove) {
+    // Validate break size with asset-specific minBreak
+    if (breakAmount < minBreak) {
+      console.log(`   ❌ Break too small (${(breakAmount * 100).toFixed(2)}% < ${(minBreak * 100).toFixed(2)}%)`);
       return null;
     }
     
-    if (currentClose >= lastLow * (2 - BOS_CONFIG.break.closeConfirmation)) {
+    const closeThreshold = lastLow * (2 - BOS_CONFIG.break.closeConfirmation);
+    if (currentClose >= closeThreshold) {
+      console.log(`   ❌ Close not beyond level (${currentClose.toFixed(2)} >= ${closeThreshold.toFixed(2)})`);
       return null;
     }
     
+    console.log(`   ✅ Break size valid, checking displacement...`);
+    
+    // Check displacement
     if (!checkDisplacement(candles, idx, 'SHORT')) {
+      console.log(`   ❌ Displacement check failed`);
       return null;
     }
     
-    if (BOS_CONFIG.structure.htfBiasRequired) {
-      if (!checkHTFBias(indicators, 'SHORT')) {
-        return null;
-      }
-    }
+    console.log(`   ✅ Displacement confirmed`);
     
-    if (BOS_CONFIG.confluence.requireLiquiditySweep) {
-      if (!checkLiquiditySweep(candles, swings, idx, 'SHORT')) {
-        return null;
-      }
-    }
+    // Calculate stop loss using provided ATR
+    const atrMultiplier = BOS_CONFIG.stopLoss.atrMultiplier;
+    const stopLoss = lastLow + (atrValue * atrMultiplier);
     
-    if (BOS_CONFIG.confluence.requireOrderBlock) {
-      if (!checkOrderBlock(candles, idx, 'SHORT')) {
-        return null;
-      }
-    }
+    console.log(`   💰 Entry: ${currentClose.toFixed(2)}, SL: ${stopLoss.toFixed(2)}`);
     
-    const atrMultiplier = assetOverride.atrMultiplier || BOS_CONFIG.stopLoss.atrMultiplier;
-    const stopLoss = lastLow + (indicators.atr * atrMultiplier);
-    
+    // Validate risk
     const riskValidation = validateRisk(
       currentClose,
       stopLoss,
@@ -317,38 +349,39 @@ function generateBOSSignal(candles, position, symbol) {
       BOS_CONFIG.risk.leverage
     );
     
+    console.log(`   🎲 Risk: ${riskValidation.riskDollar.toFixed(2)} (${(riskValidation.riskPercent * 100).toFixed(1)}%)`);
+    
     if (!riskValidation.isValid) {
-      console.log(`🚫 BOS ${symbol} SHORT rejected: Risk ${riskValidation.riskPercent.toFixed(1)}% > ${BOS_CONFIG.risk.maxLossPercent * 100}%`);
+      console.log(`   🚫 Risk too high! ${(riskValidation.riskPercent * 100).toFixed(1)}% > ${BOS_CONFIG.risk.maxLossPercent * 100}%`);
       return null;
     }
     
-    console.log(`✅ BOS ${symbol}: SHORT signal generated at ${currentClose.toFixed(2)}`);
+    console.log(`   ✅✅✅ BOS SHORT SIGNAL APPROVED ✅✅✅`);
     
+    // Generate SHORT signal
     return {
-      symbol,
       direction: 'SHORT',
-      signalType: 'BOS',
+      signalSource: 'BOS',
       entry: currentClose,
       stopLoss: stopLoss,
-      takeProfit1: calculateTP(currentClose, stopLoss, 1.5, false),
-      takeProfit2: calculateTP(currentClose, stopLoss, 3.0, false),
-      confidence: 80,
-      reason: `BOS: Bearish break of ${lastLow.toFixed(2)} | ATR: ${indicators.atr.toFixed(2)} | ADX: ${indicators.adx.toFixed(1)}`,
+      takeProfit1: calculateTP(currentClose, stopLoss, BOS_CONFIG.risk.minRiskRewardRatio, false),
+      takeProfit2: calculateTP(currentClose, stopLoss, BOS_CONFIG.risk.minRiskRewardRatio * 1.5, false),
+      riskPercent: riskValidation.riskPercent,
+      confidence: 'High',
+      reason: `BOS: Bearish break of structure at ${lastLow.toFixed(2)}`,
       metadata: {
-        strategy: 'BOS',
-        brokenLevel: lastLow,
-        breakAmount: (breakAmount * 100).toFixed(2),
-        volume: currentCandle.volume,
-        avgVolume: avgVolume,
-        volumeRatio: (currentCandle.volume / avgVolume).toFixed(2),
-        adx: indicators.adx.toFixed(1),
-        atr: indicators.atr.toFixed(4),
-        riskPercent: riskValidation.riskPercent.toFixed(2),
-        riskDollar: riskValidation.riskDollar.toFixed(2)
+        breakAmount: breakAmount,
+        volumeRatio: currentCandle.volume / avgVolume,
+        adx: adxValue,
+        atr: atrValue,
+        swingHigh: lastHigh,
+        swingLow: lastLow
       }
     };
   }
   
+  // No signal
+  console.log(`   ⏸️ BOS ${symbol}: No valid break detected`);
   return null;
 }
 
@@ -357,7 +390,8 @@ function generateBOSSignal(candles, position, symbol) {
 // ============================================
 
 /**
- * Calculate technical indicators
+ * Calculate technical indicators (FALLBACK ONLY - prefer using cached indicators)
+ * This function should rarely be called if the coordinator properly passes indicators
  */
 function calculateIndicators(candles) {
   if (candles.length < 200) return null;
@@ -389,7 +423,8 @@ function calculateIndicators(candles) {
       period: 14
     };
     const adxValues = technicalIndicators.ADX.calculate(adxInput);
-    const adx = adxValues[adxValues.length - 1];
+    const adxResult = adxValues[adxValues.length - 1];
+    const adx = typeof adxResult === 'object' ? adxResult.adx : adxResult;
     
     // EMAs for HTF bias
     const ema99Values = technicalIndicators.EMA.calculate({
@@ -420,7 +455,7 @@ function calculateIndicators(candles) {
 /**
  * Identify external swing highs and lows
  */
-function identifyExternalSwings(candles, lookback) {
+function identifyExternalSwings(candles, lookback, minSwingDistance = BOS_CONFIG.structure.minSwingDistance) {
   const swings = [];
   const startIdx = Math.max(5, candles.length - lookback);
   
@@ -440,7 +475,7 @@ function identifyExternalSwings(candles, lookback) {
     
     if (isSwingHigh) {
       const lastHigh = swings.filter(s => s.type === 'high').pop();
-      if (!lastHigh || Math.abs(candleHigh - lastHigh.price) / candleHigh >= BOS_CONFIG.structure.minSwingDistance) {
+      if (!lastHigh || Math.abs(candleHigh - lastHigh.price) / candleHigh >= minSwingDistance) {
         swings.push({
           type: 'high',
           price: candleHigh,
@@ -461,7 +496,7 @@ function identifyExternalSwings(candles, lookback) {
     
     if (isSwingLow) {
       const lastLow = swings.filter(s => s.type === 'low').pop();
-      if (!lastLow || Math.abs(candleLow - lastLow.price) / candleLow >= BOS_CONFIG.structure.minSwingDistance) {
+      if (!lastLow || Math.abs(candleLow - lastLow.price) / candleLow >= minSwingDistance) {
         swings.push({
           type: 'low',
           price: candleLow,

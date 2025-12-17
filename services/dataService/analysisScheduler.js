@@ -1,4 +1,4 @@
-// services/dataService/analysisScheduler.js - ENHANCED DEBUGGING
+// services/dataService/analysisScheduler.js - FIXED THROTTLE LOGIC
 
 const lastAnalysisTime = {};
 
@@ -11,24 +11,36 @@ async function triggerAnalysis(symbol) {
   console.log(`🔄 Time: ${new Date().toLocaleTimeString()}`);
   console.log(`🔄 ============================================`);
   
-  // Throttle: only analyze once per minute
-  if (lastAnalysisTime[symbol] && now - lastAnalysisTime[symbol] < 60000) {
-    const secondsAgo = Math.floor((now - lastAnalysisTime[symbol]) / 1000);
-    console.log(`⏱️ ${symbol}: Analysis throttled (${secondsAgo}s ago)`);
+  // ✅ FIX: Only throttle if called WITHIN the same minute (not after candle close)
+  // 30m candles = 1800 seconds apart
+  // So if we're being called again within 60 seconds, it's a duplicate/manual trigger
+  if (lastAnalysisTime[symbol]) {
+    const secondsSinceLastAnalysis = Math.floor((now - lastAnalysisTime[symbol]) / 1000);
+    console.log(`   ⏱️ Last analysis: ${secondsSinceLastAnalysis}s ago`);
     
-    // Return cached analysis if available
-    const { wsCache } = require('./cacheManager');
-    const cached = wsCache[symbol]?.lastAnalysis || null;
-    
-    if (cached) {
-      console.log(`✅ Returning cached analysis`);
+    // Only throttle if it's been less than 60 seconds (likely a duplicate)
+    if (secondsSinceLastAnalysis < 60) {
+      console.log(`⏱️ ${symbol}: Analysis throttled (too soon after last analysis)`);
+      
+      // Return cached analysis if available
+      const { wsCache } = require('./cacheManager');
+      const cached = wsCache[symbol]?.lastAnalysis || null;
+      
+      if (cached) {
+        console.log(`✅ Returning cached analysis from ${secondsSinceLastAnalysis}s ago`);
+      } else {
+        console.log(`⚠️ No cached analysis available`);
+      }
+      
+      return cached;
     } else {
-      console.log(`⚠️ No cached analysis available`);
+      console.log(`   ✅ Sufficient time elapsed - proceeding with fresh analysis`);
     }
-    
-    return cached;
+  } else {
+    console.log(`   ✅ First analysis for ${symbol}`);
   }
   
+  // ✅ Update the timestamp BEFORE running analysis
   lastAnalysisTime[symbol] = now;
   
   const { wsCache } = require('./cacheManager');
@@ -50,7 +62,7 @@ async function triggerAnalysis(symbol) {
   }
   
   console.log(`✅ ${symbol}: Data ready - proceeding with analysis`);
-  console.log(`   Price: $${wsCache[symbol].currentPrice}`);
+  console.log(`   Price: ${wsCache[symbol].currentPrice}`);
   console.log(`   Candles 30m: ${wsCache[symbol].candles30m?.length || 0}`);
   console.log(`   Candles 1h: ${wsCache[symbol].candles1h?.length || 0}`);
   console.log(`   Candles 4h: ${wsCache[symbol].candles4h?.length || 0}`);

@@ -112,19 +112,20 @@ async function analyzeSymbol(symbol) {
     const htf = calculateHigherTimeframes(candles1h, candles4h, currentPrice, assetConfig);
 
     // ============================================
-    // STEP 3: RUN SMC ANALYSIS
+    // STEP 3: RUN SIGNAL DETECTION
     // ============================================
     console.log(`   🎯 Running signal detection...`);
     console.log(`      Candles: ${candles30m.length}, Volumes: ${volumes.length}`);
     
-    // ✅ CRITICAL: The coordinator expects these parameters
-    // detectAllDefaultSignals(candles, volumes, indicators, htfData, wsCache, symbol)
+    // ✅ NEW STREAMLINED INTERFACE:
+    // Coordinator just needs: candles, volumes, indicators, htf, wsCache, symbol
+    // Each strategy handles its own logic internally
     const result = detectAllDefaultSignals(
       candles30m,      // Full candle array
-      volumes,         // Full volume array
-      indicators,      // Indicators object
-      htf,             // HTF data
-      wsCache,         // Cache reference (for 1m data if needed)
+      volumes,         // Full volume array  
+      indicators,      // Pre-calculated indicators (strategies can use or ignore)
+      htf,             // HTF data (strategies can use or ignore)
+      wsCache,         // Cache reference (for accessing 1m data if needed)
       symbol           // Symbol name
     );
 
