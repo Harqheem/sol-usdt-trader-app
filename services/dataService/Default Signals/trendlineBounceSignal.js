@@ -1,57 +1,36 @@
-// services/dataService/trendlineSRSystem.js
-// REALISTIC TRENDLINE S/R SYSTEM
-// Based on proven trading principles, not over-optimization
+// services/dataService/Default Signals/trendlineBounceSignal.js
+// TRENDLINE BOUNCE - Support/Resistance trendline bounce detection
 
-/**
- * ========================================
- * CONFIGURATION - REALISTIC & PROVEN
- * ========================================
- */
 const TRENDLINE_CONFIG = {
-  // Trendline validation - REALISTIC
-  minTouches: 3,                    // 3 touches is standard (2 to draw, 3 to confirm)
-  touchTolerance: 0.0015,           // 0.15% tolerance (realistic for crypto volatility)
-  maxLineSlope: 0.05,               // Max 5% slope
-  minLineSlope: 0.002,              // Min 0.2% slope (very flat lines are valid in ranges)
-  minLineLength: 12,                // Minimum 12 candles (6 hours on 30m)
-  
-  // Bounce detection - BALANCED
-  bounceDistanceATR: 0.5,           // Within 0.5 ATR (standard)
-  minWickPercent: 0.30,             // 30% wick (realistic rejection)
-  minVolumeMultiplier: 1.3,         // 1.3x volume (achievable)
-  minBounceClose: 0.002,            // Must close 0.2%+ away (realistic)
-  
-  // Confirmation - SINGLE CANDLE (practical)
-  requireClosedCandle: true,        // Must be closed (essential)
-  requireConfirmationCandle: true,  // One confirmation candle (practical)
-  minConfirmationMove: 0.003,       // 0.3% move for confirmation (achievable)
-  
-  // Momentum - PRACTICAL
-  minMomentumATR: 0.25,             // 0.25 ATR move (realistic)
-  allowCounterMoves: true,          // Markets aren't perfect
-  maxCounterPercent: 0.4,           // Allow up to 40% counter moves
-  
-  // Strength scoring - PRACTICAL
-  minTrendlineStrength: 65,         // 65%+ (realistic threshold)
+  minTouches: 3,
+  touchTolerance: 0.0015,
+  maxLineSlope: 0.05,
+  minLineSlope: 0.002,
+  minLineLength: 12,
+  bounceDistanceATR: 0.5,
+  minWickPercent: 0.30,
+  minVolumeMultiplier: 1.3,
+  minBounceClose: 0.002,
+  requireClosedCandle: true,
+  requireConfirmationCandle: true,
+  minConfirmationMove: 0.003,
+  minMomentumATR: 0.25,
+  allowCounterMoves: true,
+  maxCounterPercent: 0.4,
+  minTrendlineStrength: 65,
   recentTouchBonus: 12,
   slopeQualityBonus: 15,
   lengthBonus: 12,
-  maxTouchesForScoring: 6,          // 6 touches is excellent in reality
-  
-  // Risk management - YOUR SETTINGS
-  stopLossMultiplier: 1.2,          // 1.2 ATR stop loss
-  tp1Multiplier: 1.5,               // YOUR 1.5 ATR TP1
-  tp2Multiplier: 3.0,               // YOUR 3.0 ATR TP2
-  
-  // Analysis windows
+  maxTouchesForScoring: 6,
+  stopLossMultiplier: 1.2,
+  tp1Multiplier: 1.5,
+  tp2Multiplier: 3.0,
   lookbackPeriod: 100,
   recentWindow: 20
 };
 
 /**
- * ========================================
- * 1. SWING POINT DETECTION
- * ========================================
+ * Identify swing points for trendline construction
  */
 function identifySwingPoints(candles, leftBars = 3, rightBars = 3) {
   const swingHighs = [];
@@ -107,9 +86,7 @@ function identifySwingPoints(candles, leftBars = 3, rightBars = 3) {
 }
 
 /**
- * ========================================
- * 2. TRENDLINE CONSTRUCTION
- * ========================================
+ * Construct and validate trendlines
  */
 function constructTrendlines(swingPoints, candles, type = 'support') {
   const trendlines = [];
@@ -167,16 +144,14 @@ function constructTrendlines(swingPoints, candles, type = 'support') {
 }
 
 /**
- * ========================================
- * 3. TRENDLINE VALIDATION
- * ========================================
+ * Validate trendline touches and violations
  */
 function validateTrendline(slope, intercept, startIdx, endIdx, candles, type, highs, lows) {
   let touches = 2;
   const touchIndices = [startIdx, endIdx];
   let lastTouchIndex = endIdx;
   let violations = 0;
-  const maxViolations = 2; // Realistic - allow some violations
+  const maxViolations = 2;
   
   const checkEnd = Math.min(candles.length - 1, endIdx + 50);
   
@@ -220,9 +195,7 @@ function validateTrendline(slope, intercept, startIdx, endIdx, candles, type, hi
 }
 
 /**
- * ========================================
- * 4. TRENDLINE STRENGTH SCORING
- * ========================================
+ * Score trendline strength
  */
 function scoreTrendlineStrength(trendline, candles, currentPrice) {
   let strength = 35;
@@ -254,7 +227,7 @@ function scoreTrendlineStrength(trendline, candles, currentPrice) {
   }
   
   if (trendline.slopePercent < 0.002) {
-    strength -= 8; // Light penalty for very flat lines
+    strength -= 8;
   }
   
   const currentIndex = candles.length - 1;
@@ -273,9 +246,7 @@ function scoreTrendlineStrength(trendline, candles, currentPrice) {
 }
 
 /**
- * ========================================
- * 5. IDENTIFY ACTIVE TRENDLINES
- * ========================================
+ * Identify active trendlines
  */
 function identifyActiveTrendlines(candles, atr) {
   const lookback = candles.slice(-TRENDLINE_CONFIG.lookbackPeriod);
@@ -332,9 +303,7 @@ function identifyActiveTrendlines(candles, atr) {
 }
 
 /**
- * ========================================
- * 6. DETECT REALISTIC TRENDLINE BOUNCE
- * ========================================
+ * Detect trendline bounce signal
  */
 function detectTrendlineBounce(candles, volumes, atr, regime) {
   if (candles.length < TRENDLINE_CONFIG.lookbackPeriod + 3) {
@@ -348,7 +317,6 @@ function detectTrendlineBounce(candles, volumes, atr, regime) {
   
   const recent = candlesToAnalyze.slice(-TRENDLINE_CONFIG.lookbackPeriod);
   
-  // Bounce candle + 1 confirmation candle (realistic)
   const bounceCandle = recent[recent.length - 2];
   const confirmCandle = recent[recent.length - 1];
   
@@ -400,7 +368,6 @@ function detectTrendlineBounce(candles, volumes, atr, regime) {
         return null;
       }
       
-      // Realistic momentum check - allow some counter moves
       let upMoves = 0;
       let totalMoves = 0;
       for (let i = 1; i < closes.length; i++) {
@@ -410,7 +377,7 @@ function detectTrendlineBounce(candles, volumes, atr, regime) {
       const upPercent = upMoves / totalMoves;
       
       if (upPercent < (1 - TRENDLINE_CONFIG.maxCounterPercent)) {
-        return null; // Too much downward movement
+        return null;
       }
       
       let confidence = 70;
@@ -541,9 +508,7 @@ function detectTrendlineBounce(candles, volumes, atr, regime) {
 }
 
 /**
- * ========================================
- * 7. ANALYZE TRENDLINE CONTEXT
- * ========================================
+ * Analyze trendline context (for wait reasons)
  */
 function analyzeTrendlineContext(candles, volumes, atr) {
   if (candles.length < TRENDLINE_CONFIG.lookbackPeriod) {

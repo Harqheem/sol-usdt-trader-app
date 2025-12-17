@@ -1,4 +1,4 @@
-// services/dataService/structureTracker.js
+// services/dataService/Default Signals/structureTracker.js
 // MARKET STRUCTURE TRACKING - Identifies swing highs/lows and trend structure
 
 /**

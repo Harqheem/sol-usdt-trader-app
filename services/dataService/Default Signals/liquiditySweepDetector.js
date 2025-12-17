@@ -1,21 +1,11 @@
-// services/dataService/liquiditySweepDetector.js
-// DETECTS LIQUIDITY SWEEPS ON 1-MINUTE CANDLES
-
-/**
- * LIQUIDITY SWEEP DETECTION (1-MINUTE OPTIMIZED)
- * Catches stop hunts in real-time
- */
+// services/dataService/Default Signals/liquiditySweepSignal.js
+// LIQUIDITY SWEEP DETECTION - Real-time 1-minute sweep detection
 
 const SWEEP_CONFIG = {
-  // Sweep identification
   minSweepPercent: 0.005,        // 0.5% minimum sweep beyond level
   minRejectionWick: 0.50,        // 50% wick (more lenient on 1m)
   maxReversalCandles: 5,         // Max 5 minutes to reverse
-  
-  // Volume requirements
   sweepVolumeMultiplier: 2.0,    // 2x volume on sweep candle
-  
-  // Lookback for swing levels
   swingLookback: 60,             // Last 60 x 1m candles (1 hour)
   minSwingTouches: 2             // Level must have been tested 2+ times
 };
@@ -40,7 +30,6 @@ function identifySwingLevels1m(candles1m) {
     const high = highs[i];
     let isSwingHigh = true;
     
-    // Check left side
     for (let j = 1; j <= 3; j++) {
       if (highs[i - j] >= high) {
         isSwingHigh = false;
@@ -48,7 +37,6 @@ function identifySwingLevels1m(candles1m) {
       }
     }
     
-    // Check right side
     if (isSwingHigh) {
       for (let j = 1; j <= 3; j++) {
         if (highs[i + j] >= high) {
@@ -59,7 +47,6 @@ function identifySwingLevels1m(candles1m) {
     }
     
     if (isSwingHigh) {
-      // Check how many times this level was touched
       const tolerance = high * 0.002; // 0.2% tolerance
       const touches = highs.filter(h => Math.abs(h - high) <= tolerance).length;
       
@@ -110,7 +97,6 @@ function identifySwingLevels1m(candles1m) {
     }
   }
   
-  // Sort by recency (most recent first)
   swingHighs.sort((a, b) => b.index - a.index);
   swingLows.sort((a, b) => b.index - a.index);
   
@@ -125,61 +111,50 @@ function detectLiquiditySweep1m(candles1m, volumes1m) {
     return null;
   }
   
-  // Get swing levels
   const { swingHighs, swingLows } = identifySwingLevels1m(candles1m);
   
   if (swingHighs.length === 0 && swingLows.length === 0) {
     return null;
   }
   
-  // Check recent candles for sweep pattern
   const recentCount = SWEEP_CONFIG.maxReversalCandles + 1;
   const recentCandles = candles1m.slice(-recentCount);
   const recentVolumes = volumes1m.slice(-recentCount);
   
-  // Sweep candle is the first one (oldest in recent window)
   const sweepCandle = recentCandles[0];
   const sweepVolume = recentVolumes[0];
-  
-  // Current candle (latest)
   const currentCandle = recentCandles[recentCandles.length - 1];
   
   const sweepHigh = parseFloat(sweepCandle.high);
   const sweepLow = parseFloat(sweepCandle.low);
   const sweepOpen = parseFloat(sweepCandle.open);
   const sweepClose = parseFloat(sweepCandle.close);
-  
   const currentClose = parseFloat(currentCandle.close);
   
-  // Check volume spike on sweep candle
+  // Check volume spike
   const avgVolume = volumes1m.slice(-30, -recentCount).reduce((a, b) => a + b, 0) / 30;
   const volumeRatio = sweepVolume / avgVolume;
   
   if (volumeRatio < SWEEP_CONFIG.sweepVolumeMultiplier) {
-    return null; // Need volume spike
+    return null;
   }
   
-  // =====================================
-  // BULLISH SWEEP (sweep low, then reverse up)
-  // =====================================
-  const nearestSwingLow = swingLows[0]; // Most recent swing low
+  // BULLISH SWEEP
+  const nearestSwingLow = swingLows[0];
   
   if (nearestSwingLow) {
     const swingLevel = nearestSwingLow.price;
     const sweepAmount = (swingLevel - sweepLow) / swingLevel;
     
-    // Did we sweep below the swing low?
     if (sweepLow < swingLevel && sweepAmount > SWEEP_CONFIG.minSweepPercent) {
-      // Check for rejection wick
       const totalRange = sweepHigh - sweepLow;
       const lowerWick = Math.min(sweepOpen, sweepClose) - sweepLow;
       const wickPercent = totalRange > 0 ? lowerWick / totalRange : 0;
       
       if (wickPercent >= SWEEP_CONFIG.minRejectionWick) {
-        // Check if price has reversed back above the level
         const reversalAmount = (currentClose - swingLevel) / swingLevel;
         
-        if (currentClose > swingLevel && reversalAmount > 0.001) { // At least 0.1% above
+        if (currentClose > swingLevel && reversalAmount > 0.001) {
           return {
             type: 'LIQUIDITY_SWEEP',
             direction: 'LONG',
@@ -202,9 +177,7 @@ function detectLiquiditySweep1m(candles1m, volumes1m) {
     }
   }
   
-  // =====================================
-  // BEARISH SWEEP (sweep high, then reverse down)
-  // =====================================
+  // BEARISH SWEEP
   const nearestSwingHigh = swingHighs[0];
   
   if (nearestSwingHigh) {
@@ -246,7 +219,7 @@ function detectLiquiditySweep1m(candles1m, volumes1m) {
 }
 
 /**
- * Check for sweep on every 1-minute candle close
+ * Check for sweep using cached 1m data
  */
 function checkForSweep(symbol, wsCache) {
   const cache = wsCache[symbol];
@@ -256,14 +229,9 @@ function checkForSweep(symbol, wsCache) {
   }
   
   const candles1m = cache.candles1m;
-  
-  // Extract volumes from 1m candles
   const volumes1m = candles1m.map(c => parseFloat(c.volume));
   
-  // Detect sweep
-  const sweep = detectLiquiditySweep1m(candles1m, volumes1m);
-  
-  return sweep;
+  return detectLiquiditySweep1m(candles1m, volumes1m);
 }
 
 module.exports = {
