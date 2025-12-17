@@ -22,9 +22,9 @@ const BOS_CONFIG = {
   
   // Structure Detection
   structure: {
-    swingLookback: 50,
+    swingLookback: 20,
     minSwingDistance: 0.015,
-    minADX: 15,
+    minADX: 20,
     htfBiasRequired: true
   },
   
@@ -74,9 +74,9 @@ const BOS_CONFIG = {
   // Asset-specific overrides
   assetOverrides: {
     SOLUSDT: {
-      minADX: 15,
-      minBreak: 0.003,
-      minVolume: 1.3,
+      minADX: 20,
+      minBreak: 0.006,
+      minVolume: 1.6,
       minSwingDistance: 0.015
     },
     ETHUSDT: {
