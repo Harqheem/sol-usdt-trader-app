@@ -8,7 +8,7 @@ const { canTakeNewTrade } = require('../riskManager');
 const learningService = require('../Trade Learning/learningService');
 
 // ✅ NEW: Single SMC system import
-const { analyzeWithSMC } = require('./coreSMCSystem');
+const { detectAllDefaultSignals } = require('../dataService/Default Signals/defaultSignalsCoordinator');
 
 /**
  * CLEAN SMC SIGNAL ANALYSIS
@@ -108,7 +108,7 @@ async function analyzeSymbol(symbol) {
     // ============================================
     // STEP 3: RUN SMC ANALYSIS (ALL-IN-ONE)
     // ============================================
-    const result = await analyzeWithSMC(
+    const result = await detectAllDefaultSignals(
       symbol,
       candles30m,
       volumes,

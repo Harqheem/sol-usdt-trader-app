@@ -148,24 +148,26 @@ function detectAllDefaultSignals(candles, volumes, indicators, htfData, wsCache,
   let chochSignal = null;
   let liquidityGrab = null;
   
-  // BOS (Break of Structure)
+  // BOS (Break of Structure) - ✅ NEEDS FULL CANDLE DATA
   if (isSignalEnabled('BOS')) {
     bosSignal = detectBOS(
-      candles.slice(-10),
+      candles,  // ✅ Pass FULL candle array (not sliced)
       swingPoints,
       marketStructure,
-      volumes.slice(-10),
+      volumes,  // ✅ Pass FULL volume array
       indicators,
-      htfData
+      htfData,
+      symbol
     );
   } else {
     const detected = detectBOS(
-      candles.slice(-10),
+      candles,
       swingPoints,
       marketStructure,
-      volumes.slice(-10),
+      volumes,
       indicators,
-      htfData
+      htfData,
+      symbol
     );
     if (detected) logDisabledSignal('BOS', { symbol, direction: detected.direction });
   }

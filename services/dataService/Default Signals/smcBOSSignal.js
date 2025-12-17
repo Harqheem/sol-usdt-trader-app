@@ -94,21 +94,48 @@ const BOS_CONFIG = {
 };
 
 // ============================================
+// COORDINATOR INTERFACE (detectBOS)
+// ============================================
+
+/**
+ * Main entry point called by coordinator
+ * Adapts coordinator parameters to BOS signal generator
+ */
+function detectBOS(candles, swingPoints, marketStructure, volumes, indicators, htf, symbol = 'UNKNOWN') {
+  // ✅ VALIDATION
+  if (!Array.isArray(candles)) {
+    console.error(`❌ BOS ${symbol}: candles is not an array! Type: ${typeof candles}`);
+    return null;
+  }
+  
+  if (candles.length < 200) {
+    console.log(`⚠️ BOS ${symbol}: Insufficient candles: ${candles.length}/200`);
+    return null;
+  }
+  
+  // Validate candle structure
+  const firstCandle = candles[0];
+  if (!firstCandle || !firstCandle.high || !firstCandle.low || !firstCandle.close) {
+    console.error(`❌ BOS ${symbol}: Invalid candle structure`);
+    return null;
+  }
+  
+  // Call the core BOS signal generator
+  return generateBOSSignal(candles, null, symbol);
+}
+
+// ============================================
 // CORE BOS DETECTION
 // ============================================
 
 /**
- * Main BOS Signal Generation
- * @param {Array} candles - Historical candle data
+ * Core BOS Signal Generation
+ * @param {Array} candles - Historical candle data (needs 200+)
  * @param {Object} position - Current position info
  * @param {String} symbol - Trading pair
  * @returns {Object|null} Signal or null
  */
-async function generateBOSSignal(candles, position, symbol) {
-  if (!candles || candles.length < 200) {
-    return null;
-  }
-  
+function generateBOSSignal(candles, position, symbol) {
   // Don't generate new signals if we have an open position
   if (position?.isOpen) {
     return null;
@@ -120,7 +147,10 @@ async function generateBOSSignal(candles, position, symbol) {
   
   // Calculate indicators
   const indicators = calculateIndicators(candles);
-  if (!indicators) return null;
+  if (!indicators) {
+    console.log(`⚠️ BOS ${symbol}: Could not calculate indicators`);
+    return null;
+  }
   
   // Check minimum ADX
   const minADX = assetOverride.minADX || BOS_CONFIG.structure.minADX;
@@ -146,9 +176,9 @@ async function generateBOSSignal(candles, position, symbol) {
   const lastLow = lows[lows.length - 1].price;
   
   const currentCandle = candles[idx];
-  const currentHigh = currentCandle.high;
-  const currentLow = currentCandle.low;
-  const currentClose = currentCandle.close;
+  const currentHigh = parseFloat(currentCandle.high);
+  const currentLow = parseFloat(currentCandle.low);
+  const currentClose = parseFloat(currentCandle.close);
   
   // Check volume
   const volumeMultiplier = assetOverride.volumeMultiplier || BOS_CONFIG.volume.multiplier;
@@ -210,14 +240,17 @@ async function generateBOSSignal(candles, position, symbol) {
     );
     
     if (!riskValidation.isValid) {
-      console.log(`🚫 BOS LONG rejected: Risk ${riskValidation.riskPercent.toFixed(1)}% > ${BOS_CONFIG.risk.maxLossPercent * 100}%`);
+      console.log(`🚫 BOS ${symbol} LONG rejected: Risk ${riskValidation.riskPercent.toFixed(1)}% > ${BOS_CONFIG.risk.maxLossPercent * 100}%`);
       return null;
     }
+    
+    console.log(`✅ BOS ${symbol}: LONG signal generated at ${currentClose.toFixed(2)}`);
     
     // Generate LONG signal
     return {
       symbol,
-      signalType: 'Enter Long',
+      direction: 'LONG',
+      signalType: 'BOS',
       entry: currentClose,
       stopLoss: stopLoss,
       takeProfit1: calculateTP(currentClose, stopLoss, 1.5, true),
@@ -285,13 +318,16 @@ async function generateBOSSignal(candles, position, symbol) {
     );
     
     if (!riskValidation.isValid) {
-      console.log(`🚫 BOS SHORT rejected: Risk ${riskValidation.riskPercent.toFixed(1)}% > ${BOS_CONFIG.risk.maxLossPercent * 100}%`);
+      console.log(`🚫 BOS ${symbol} SHORT rejected: Risk ${riskValidation.riskPercent.toFixed(1)}% > ${BOS_CONFIG.risk.maxLossPercent * 100}%`);
       return null;
     }
     
+    console.log(`✅ BOS ${symbol}: SHORT signal generated at ${currentClose.toFixed(2)}`);
+    
     return {
       symbol,
-      signalType: 'Enter Short',
+      direction: 'SHORT',
+      signalType: 'BOS',
       entry: currentClose,
       stopLoss: stopLoss,
       takeProfit1: calculateTP(currentClose, stopLoss, 1.5, false),
@@ -326,50 +362,59 @@ async function generateBOSSignal(candles, position, symbol) {
 function calculateIndicators(candles) {
   if (candles.length < 200) return null;
   
-  const closes = candles.map(c => c.close);
-  const highs = candles.map(c => c.high);
-  const lows = candles.map(c => c.low);
-  
-  // ATR
-  const atrInput = {
-    high: highs,
-    low: lows,
-    close: closes,
-    period: 14
-  };
-  const atrValues = technicalIndicators.ATR.calculate(atrInput);
-  const atr = atrValues[atrValues.length - 1];
-  
-  // ADX
-  const adxInput = {
-    high: highs,
-    low: lows,
-    close: closes,
-    period: 14
-  };
-  const adxValues = technicalIndicators.ADX.calculate(adxInput);
-  const adx = adxValues[adxValues.length - 1];
-  
-  // EMAs for HTF bias
-  const ema99Values = technicalIndicators.EMA.calculate({
-    period: 99,
-    values: closes
-  });
-  const ema99 = ema99Values[ema99Values.length - 1];
-  
-  const sma200Values = technicalIndicators.SMA.calculate({
-    period: 200,
-    values: closes
-  });
-  const sma200 = sma200Values[sma200Values.length - 1];
-  
-  return {
-    atr,
-    adx,
-    ema99,
-    sma200,
-    currentPrice: closes[closes.length - 1]
-  };
+  try {
+    const closes = candles.map(c => parseFloat(c.close)).filter(v => !isNaN(v));
+    const highs = candles.map(c => parseFloat(c.high)).filter(v => !isNaN(v));
+    const lows = candles.map(c => parseFloat(c.low)).filter(v => !isNaN(v));
+    
+    if (closes.length < 200 || highs.length < 200 || lows.length < 200) {
+      return null;
+    }
+    
+    // ATR
+    const atrInput = {
+      high: highs,
+      low: lows,
+      close: closes,
+      period: 14
+    };
+    const atrValues = technicalIndicators.ATR.calculate(atrInput);
+    const atr = atrValues[atrValues.length - 1];
+    
+    // ADX
+    const adxInput = {
+      high: highs,
+      low: lows,
+      close: closes,
+      period: 14
+    };
+    const adxValues = technicalIndicators.ADX.calculate(adxInput);
+    const adx = adxValues[adxValues.length - 1];
+    
+    // EMAs for HTF bias
+    const ema99Values = technicalIndicators.EMA.calculate({
+      period: 99,
+      values: closes
+    });
+    const ema99 = ema99Values[ema99Values.length - 1];
+    
+    const sma200Values = technicalIndicators.SMA.calculate({
+      period: 200,
+      values: closes
+    });
+    const sma200 = sma200Values[sma200Values.length - 1];
+    
+    return {
+      atr,
+      adx,
+      ema99,
+      sma200,
+      currentPrice: closes[closes.length - 1]
+    };
+  } catch (error) {
+    console.error('❌ BOS: Error calculating indicators:', error.message);
+    return null;
+  }
 }
 
 /**
@@ -380,33 +425,35 @@ function identifyExternalSwings(candles, lookback) {
   const startIdx = Math.max(5, candles.length - lookback);
   
   for (let i = startIdx; i < candles.length - 5; i++) {
-    // Check for swing high (using external high)
+    const candleHigh = parseFloat(candles[i].high);
+    const candleLow = parseFloat(candles[i].low);
+    
+    // Check for swing high
     let isSwingHigh = true;
     for (let j = 1; j <= 5; j++) {
-      if (candles[i - j].high >= candles[i].high || 
-          candles[i + j].high >= candles[i].high) {
+      if (parseFloat(candles[i - j].high) >= candleHigh || 
+          parseFloat(candles[i + j].high) >= candleHigh) {
         isSwingHigh = false;
         break;
       }
     }
     
     if (isSwingHigh) {
-      // Check minimum distance from last swing high
       const lastHigh = swings.filter(s => s.type === 'high').pop();
-      if (!lastHigh || Math.abs(candles[i].high - lastHigh.price) / candles[i].high >= BOS_CONFIG.structure.minSwingDistance) {
+      if (!lastHigh || Math.abs(candleHigh - lastHigh.price) / candleHigh >= BOS_CONFIG.structure.minSwingDistance) {
         swings.push({
           type: 'high',
-          price: candles[i].high,
+          price: candleHigh,
           index: i
         });
       }
     }
     
-    // Check for swing low (using external low)
+    // Check for swing low
     let isSwingLow = true;
     for (let j = 1; j <= 5; j++) {
-      if (candles[i - j].low <= candles[i].low || 
-          candles[i + j].low <= candles[i].low) {
+      if (parseFloat(candles[i - j].low) <= candleLow || 
+          parseFloat(candles[i + j].low) <= candleLow) {
         isSwingLow = false;
         break;
       }
@@ -414,10 +461,10 @@ function identifyExternalSwings(candles, lookback) {
     
     if (isSwingLow) {
       const lastLow = swings.filter(s => s.type === 'low').pop();
-      if (!lastLow || Math.abs(candles[i].low - lastLow.price) / candles[i].low >= BOS_CONFIG.structure.minSwingDistance) {
+      if (!lastLow || Math.abs(candleLow - lastLow.price) / candleLow >= BOS_CONFIG.structure.minSwingDistance) {
         swings.push({
           type: 'low',
-          price: candles[i].low,
+          price: candleLow,
           index: i
         });
       }
@@ -437,19 +484,23 @@ function checkDisplacement(candles, idx, direction) {
   
   for (let i = 0; i < Math.min(3, idx + 1); i++) {
     const candle = candles[idx - i];
-    const range = candle.high - candle.low;
+    const high = parseFloat(candle.high);
+    const low = parseFloat(candle.low);
+    const open = parseFloat(candle.open);
+    const close = parseFloat(candle.close);
+    const range = high - low;
     
     if (range === 0) break;
     
-    const body = Math.abs(candle.close - candle.open);
+    const body = Math.abs(close - open);
     const bodyPercent = body / range;
     
-    const upperWick = candle.high - Math.max(candle.open, candle.close);
-    const lowerWick = Math.min(candle.open, candle.close) - candle.low;
+    const upperWick = high - Math.max(open, close);
+    const lowerWick = Math.min(open, close) - low;
     const wickPercent = (upperWick + lowerWick) / range;
     
-    const isBullish = candle.close > candle.open;
-    const isBearish = candle.close < candle.open;
+    const isBullish = close > open;
+    const isBearish = close < open;
     
     // Check if it's a strong candle
     if (bodyPercent >= BOS_CONFIG.displacement.minCandleBodyPercent &&
@@ -494,15 +545,17 @@ function checkLiquiditySweep(candles, swings, idx, direction) {
   const recentCandles = candles.slice(Math.max(0, idx - lookback), idx);
   
   if (direction === 'LONG') {
-    // Need sweep below recent low
     const lows = swings.filter(s => s.type === 'low' && s.index < idx);
     if (!lows.length) return false;
     
     const targetLow = lows[lows.length - 1].price;
     
     for (const candle of recentCandles) {
-      if (candle.low < targetLow && candle.close > targetLow) {
-        const wickBeyond = (targetLow - candle.low) / targetLow;
+      const candleLow = parseFloat(candle.low);
+      const candleClose = parseFloat(candle.close);
+      
+      if (candleLow < targetLow && candleClose > targetLow) {
+        const wickBeyond = (targetLow - candleLow) / targetLow;
         if (wickBeyond >= minWick) {
           return true;
         }
@@ -510,15 +563,17 @@ function checkLiquiditySweep(candles, swings, idx, direction) {
     }
     return false;
   } else {
-    // Need sweep above recent high
     const highs = swings.filter(s => s.type === 'high' && s.index < idx);
     if (!highs.length) return false;
     
     const targetHigh = highs[highs.length - 1].price;
     
     for (const candle of recentCandles) {
-      if (candle.high > targetHigh && candle.close < targetHigh) {
-        const wickBeyond = (candle.high - targetHigh) / targetHigh;
+      const candleHigh = parseFloat(candle.high);
+      const candleClose = parseFloat(candle.close);
+      
+      if (candleHigh > targetHigh && candleClose < targetHigh) {
+        const wickBeyond = (candleHigh - targetHigh) / targetHigh;
         if (wickBeyond >= minWick) {
           return true;
         }
@@ -537,22 +592,24 @@ function checkOrderBlock(candles, idx, direction) {
   
   for (let i = idx - 1; i >= Math.max(0, idx - lookback); i--) {
     const candle = candles[i];
-    const range = candle.high - candle.low;
+    const high = parseFloat(candle.high);
+    const low = parseFloat(candle.low);
+    const open = parseFloat(candle.open);
+    const close = parseFloat(candle.close);
+    const range = high - low;
     
     if (range === 0) continue;
     
-    const body = Math.abs(candle.close - candle.open);
+    const body = Math.abs(close - open);
     const bodyPercent = body / range;
     
-    const isBullish = candle.close > candle.open;
-    const isBearish = candle.close < candle.open;
+    const isBullish = close > open;
+    const isBearish = close < open;
     
-    // For bullish BOS, need bearish OB
     if (direction === 'LONG' && isBearish && bodyPercent >= minBody) {
       return true;
     }
     
-    // For bearish BOS, need bullish OB
     if (direction === 'SHORT' && isBullish && bodyPercent >= minBody) {
       return true;
     }
@@ -572,7 +629,7 @@ function calculateAverageVolume(candles, lookback) {
   let count = 0;
   
   for (let i = startIdx; i < idx; i++) {
-    sum += candles[i].volume;
+    sum += parseFloat(candles[i].volume);
     count++;
   }
   
@@ -583,17 +640,15 @@ function calculateAverageVolume(candles, lookback) {
  * Validate risk with leverage
  */
 function validateRisk(entry, sl, isLong, maxLossPercent, leverage) {
-  const POSITION_SIZE = 10; // $10 position
-  const TAKER_FEE = 0.00045; // 0.045%
+  const POSITION_SIZE = 10;
+  const TAKER_FEE = 0.00045;
   
   const notional = POSITION_SIZE * leverage;
   const quantity = notional / entry;
   
-  // Calculate loss
   const priceLoss = isLong ? (entry - sl) : (sl - entry);
   const dollarLoss = quantity * priceLoss;
   
-  // Calculate fees
   const entryFee = quantity * entry * TAKER_FEE;
   const exitFee = quantity * sl * TAKER_FEE;
   const totalFees = entryFee + exitFee;
@@ -626,6 +681,7 @@ function calculateTP(entry, sl, multiplier, isLong) {
 // ============================================
 
 module.exports = {
+  detectBOS,
   generateBOSSignal,
   BOS_CONFIG
 };
