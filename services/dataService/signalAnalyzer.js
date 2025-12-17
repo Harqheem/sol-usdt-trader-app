@@ -1,4 +1,4 @@
-// services/dataService/signalAnalyzer.js - CLEAN SMC CORE
+// services/dataService/signalAnalyzer.js - FIXED: Await coordinator properly
 
 const utils = require('../../utils');
 const { getAssetConfig } = require('../../config/assetConfig');
@@ -7,25 +7,28 @@ const { calculateIndicators, calculateHigherTimeframes } = require('./indicatorC
 const { canTakeNewTrade } = require('../riskManager');
 const learningService = require('../Trade Learning/learningService');
 
-// ✅ NEW: Single SMC system import
-const { detectAllDefaultSignals } = require('../dataService/Default Signals/defaultSignalsCoordinator');
+// ✅ Import coordinator
+const { detectAllDefaultSignals } = require('./Default Signals/defaultSignalsCoordinator');
 
 /**
  * CLEAN SMC SIGNAL ANALYSIS
- * No redundant systems - just SMC + S/R
  */
 async function analyzeSymbol(symbol) {
   try {
+    console.log(`🔍 ${symbol}: Starting analysis...`);
+    
     const cache = wsCache[symbol];
     
     // Validate cache
     if (!cache || !cache.isReady || !cache.currentPrice) {
+      console.log(`❌ ${symbol}: Data not ready`);
       return { error: 'Data not ready' };
     }
 
     const { candles30m, candles1h, candles4h, currentPrice } = cache;
 
     if (candles30m.length < 100) {
+      console.log(`❌ ${symbol}: Insufficient data: ${candles30m.length} candles`);
       return { error: `Insufficient data: ${candles30m.length} candles` };
     }
 
@@ -37,6 +40,7 @@ async function analyzeSymbol(symbol) {
     const volumes = candles30m.map(c => parseFloat(c.volume)).filter(v => !isNaN(v));
 
     if (closes.length < 100) {
+      console.log(`❌ ${symbol}: Invalid candle data after parsing`);
       return { error: 'Invalid candle data' };
     }
 
@@ -55,6 +59,7 @@ async function analyzeSymbol(symbol) {
     // ============================================
     // STEP 1: CHECK RISK LIMITS
     // ============================================
+    console.log(`   🛡️ Checking risk limits...`);
     const riskCheck = canTakeNewTrade(symbol);
     
     if (!riskCheck.allowed) {
@@ -99,6 +104,7 @@ async function analyzeSymbol(symbol) {
     // ============================================
     // STEP 2: CALCULATE INDICATORS
     // ============================================
+    console.log(`   📊 Calculating indicators...`);
     const indicators = calculateIndicators(closes, highs, lows, opens, volumes, assetConfig);
     indicators.currentPrice = currentPrice;
     
@@ -106,52 +112,101 @@ async function analyzeSymbol(symbol) {
     const htf = calculateHigherTimeframes(candles1h, candles4h, currentPrice, assetConfig);
 
     // ============================================
-    // STEP 3: RUN SMC ANALYSIS (ALL-IN-ONE)
+    // STEP 3: RUN SMC ANALYSIS
     // ============================================
-    const result = await detectAllDefaultSignals(
-      symbol,
-      candles30m,
-      volumes,
-      indicators,
-      htf,
-      decimals
+    console.log(`   🎯 Running signal detection...`);
+    console.log(`      Candles: ${candles30m.length}, Volumes: ${volumes.length}`);
+    
+    // ✅ CRITICAL: The coordinator expects these parameters
+    // detectAllDefaultSignals(candles, volumes, indicators, htfData, wsCache, symbol)
+    const result = detectAllDefaultSignals(
+      candles30m,      // Full candle array
+      volumes,         // Full volume array
+      indicators,      // Indicators object
+      htf,             // HTF data
+      wsCache,         // Cache reference (for 1m data if needed)
+      symbol           // Symbol name
     );
+
+    console.log(`   ✅ Signal detection complete`);
 
     // ============================================
     // STEP 4: HANDLE RESULT
     // ============================================
     
-    // ✅ FIX: If error from SMC system
-    if (result.error) {
-      return buildErrorResponse(symbol, decimals, currentPrice, ohlc, timestamp, result.reason || 'Analysis error');
-    }
-    
-    // ✅ FIX: If wait/filtered/no signal - ALWAYS build full response
-    // ✅ FIX: If wait/filtered/no signal - ALWAYS build full response
-    if (result.signal === 'WAIT' || result.signal === 'ERROR') {
-      const response = buildNoTradeResponse(
+    // Check if result is valid
+    if (!result) {
+      console.log(`❌ ${symbol}: Coordinator returned null`);
+      return buildNoTradeResponse(
         symbol, decimals, currentPrice, ohlc, timestamp,
         indicators, htf, candles30m, {
           signal: 'WAIT',
-          reason: result.reason || 'No clear signal',
-          regime: result.regime || 'Unknown',
-          structure: result.structure || 'Unknown',
-          structureConfidence: result.structureConfidence,
-          detectedSignal: result.detectedSignal
+          reason: 'Analysis returned no result',
+          regime: 'Unknown',
+          structure: 'Unknown',
+          structureConfidence: 0
         }
       );
-      
-      // Cache the analysis for frontend
-      wsCache[symbol].lastAnalysis = response;
-      wsCache[symbol].lastAnalysisTime = Date.now();
-      
-      return response;
     }
-    // ✅ FIX: If signal approved
-    if (result.signal === 'Enter Long' || result.signal === 'Enter Short') {
+    
+    // Check if result has error
+    if (result.error || result.reason?.includes('error')) {
+      console.log(`❌ ${symbol}: ${result.error || result.reason}`);
+      return buildNoTradeResponse(
+        symbol, decimals, currentPrice, ohlc, timestamp,
+        indicators, htf, candles30m, {
+          signal: 'WAIT',
+          reason: result.error || result.reason || 'Analysis error',
+          regime: result.marketStructure?.structure || 'Unknown',
+          structure: result.marketStructure?.structure || 'Unknown',
+          structureConfidence: result.marketStructure?.confidence || 0
+        }
+      );
+    }
+    
+    // Check if we have signals array
+    if (!result.signals || !Array.isArray(result.signals)) {
+      console.log(`⚠️ ${symbol}: No signals array in result`);
+      return buildNoTradeResponse(
+        symbol, decimals, currentPrice, ohlc, timestamp,
+        indicators, htf, candles30m, {
+          signal: 'WAIT',
+          reason: result.reason || 'No signals detected',
+          regime: result.marketStructure?.structure || 'Unknown',
+          structure: result.marketStructure?.structure || 'Unknown',
+          structureConfidence: result.marketStructure?.confidence || 0
+        }
+      );
+    }
+    
+    // Get best signal (highest priority = first in array)
+    const bestSignal = result.signals.length > 0 ? result.signals[0] : null;
+    
+    // ============================================
+    // STEP 5: BUILD RESPONSE
+    // ============================================
+    
+    // If we have a tradeable signal
+    if (bestSignal && (bestSignal.direction === 'LONG' || bestSignal.direction === 'SHORT')) {
+      console.log(`✅ ${symbol}: SIGNAL DETECTED - ${bestSignal.signalSource} ${bestSignal.direction}`);
+      console.log(`   Entry: ${bestSignal.entry}, SL: ${bestSignal.stopLoss}, TP1: ${bestSignal.takeProfit1}`);
+      
       const response = buildTradeResponse(
         symbol, decimals, currentPrice, ohlc, timestamp,
-        indicators, htf, candles30m, assetConfig, result
+        indicators, htf, candles30m, assetConfig, {
+          signal: bestSignal.direction === 'LONG' ? 'Enter Long' : 'Enter Short',
+          signalType: bestSignal.signalSource,
+          signalSource: bestSignal.signalSource,
+          entry: bestSignal.entry,
+          stopLoss: bestSignal.stopLoss,
+          tp1: bestSignal.takeProfit1,
+          tp2: bestSignal.takeProfit2,
+          confidence: bestSignal.confidence,
+          notes: bestSignal.reason,
+          regime: result.marketStructure?.structure || 'Unknown',
+          structure: result.marketStructure?.structure || 'Unknown',
+          structureConfidence: result.marketStructure?.confidence || 0
+        }
       );
       
       // Cache the analysis
@@ -161,18 +216,22 @@ async function analyzeSymbol(symbol) {
       return response;
     }
     
-    // ✅ FIX: Fallback - unknown signal type, treat as wait
-    console.log(`⚠️ ${symbol}: Unknown signal type: ${result.signal}`);
+    // No tradeable signal - build wait response
+    console.log(`⏸️ ${symbol}: No trade signal`);
+    console.log(`   Reason: ${result.reason || 'Conditions not met'}`);
+    
     const response = buildNoTradeResponse(
       symbol, decimals, currentPrice, ohlc, timestamp,
       indicators, htf, candles30m, {
         signal: 'WAIT',
         reason: result.reason || 'No clear signal',
-        regime: result.regime || 'Unknown',
-        structure: result.structure || 'Unknown'
+        regime: result.marketStructure?.structure || 'Unknown',
+        structure: result.marketStructure?.structure || 'Unknown',
+        structureConfidence: result.marketStructure?.confidence || 0
       }
     );
     
+    // Cache the analysis
     wsCache[symbol].lastAnalysis = response;
     wsCache[symbol].lastAnalysisTime = Date.now();
     
@@ -180,6 +239,7 @@ async function analyzeSymbol(symbol) {
 
   } catch (error) {
     console.error(`❌ ${symbol} analysis error:`, error.message);
+    console.error(error.stack);
     return { error: 'Analysis failed', details: error.message };
   }
 }
@@ -187,22 +247,6 @@ async function analyzeSymbol(symbol) {
 // ============================================
 // RESPONSE BUILDERS
 // ============================================
-
-function buildErrorResponse(symbol, decimals, currentPrice, ohlc, timestamp, reason) {
-  return {
-    decimals,
-    core: { currentPrice: parseFloat(currentPrice).toFixed(decimals), ohlc, timestamp },
-    signals: {
-      signal: 'Error',
-      notes: `Analysis error: ${reason}`,
-      entry: 'N/A',
-      tp1: 'N/A',
-      tp2: 'N/A',
-      sl: 'N/A',
-      positionSize: 'N/A'
-    }
-  };
-}
 
 function buildNoTradeResponse(symbol, decimals, currentPrice, ohlc, timestamp, indicators, htf, candles30m, result) {
   const last5 = formatLast5Candles(candles30m, decimals);
@@ -220,10 +264,6 @@ function buildNoTradeResponse(symbol, decimals, currentPrice, ohlc, timestamp, i
       notes += ` (${result.structureConfidence}%)`;
     }
     notes += '\n';
-  }
-  
-  if (result.detectedSignal) {
-    notes += `\n⚠️ Signal detected (${result.detectedSignal}) but rejected:\n${result.reason}`;
   }
   
   return {
@@ -263,7 +303,6 @@ function buildNoTradeResponse(symbol, decimals, currentPrice, ohlc, timestamp, i
 function buildTradeResponse(symbol, decimals, currentPrice, ohlc, timestamp, indicators, htf, candles30m, assetConfig, result) {
   const last5 = formatLast5Candles(candles30m, decimals);
   
-  // ✅ NEW: Determine regime for storage
   const regime = determineRegimeForEntry(currentPrice, indicators);
   
   return {
@@ -283,14 +322,13 @@ function buildTradeResponse(symbol, decimals, currentPrice, ohlc, timestamp, ind
       entry: result.entry,
       tp1: result.tp1,
       tp2: result.tp2,
-      sl: result.sl,
-      positionSize: result.positionSize,
+      sl: result.stopLoss,
+      positionSize: 10,
       signalType: result.signalType,
       signalSource: result.signalSource,
       confidence: result.confidence,
       
-      // ✅ NEW: Add strategyType - THIS IS THE KEY FIELD
-      strategyType: result.signalType, // This will be 'CVD_AT_HVN', 'BOS', etc.
+      strategyType: result.signalType,
       
       // Entry conditions for dynamic management
       entryATR: indicators.atr,
@@ -301,7 +339,7 @@ function buildTradeResponse(symbol, decimals, currentPrice, ohlc, timestamp, ind
       regime: result.regime,
       structure: result.structure,
       structureConfidence: result.structureConfidence,
-      strategy: result.strategy
+      strategy: result.signalType
     },
     assetInfo: {
       name: assetConfig.name,
@@ -310,15 +348,9 @@ function buildTradeResponse(symbol, decimals, currentPrice, ohlc, timestamp, ind
   };
 }
 
-// ============================================
-// NEW HELPER FUNCTION
-// Determine regime at entry for tracking
-// ============================================
-
 function determineRegimeForEntry(price, indicators) {
   const { sma200, adx, ema7, ema25 } = indicators;
   
-  // TRENDING BULL
   if (price > sma200 && adx > 25 && ema7 > ema25) {
     return {
       type: 'TRENDING_BULL',
@@ -326,7 +358,6 @@ function determineRegimeForEntry(price, indicators) {
     };
   }
   
-  // TRENDING BEAR
   if (price < sma200 && adx > 25 && ema7 < ema25) {
     return {
       type: 'TRENDING_BEAR',
@@ -334,12 +365,12 @@ function determineRegimeForEntry(price, indicators) {
     };
   }
   
-  // CHOPPY
   return {
     type: 'CHOPPY',
     description: 'Ranging/Choppy market'
   };
 }
+
 // ============================================
 // HELPER FORMATTERS
 // ============================================

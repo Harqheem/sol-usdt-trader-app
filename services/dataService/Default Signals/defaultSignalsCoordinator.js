@@ -26,6 +26,27 @@ const { isSignalEnabled, getEnabledSignals, logDisabledSignal } = require('../..
 function detectAllDefaultSignals(candles, volumes, indicators, htfData, wsCache, symbol) {
   const signals = [];
   
+  // ✅ VALIDATION: Ensure we have valid data
+  if (!Array.isArray(candles)) {
+    console.error(`❌ Coordinator ${symbol}: candles is not an array! Type: ${typeof candles}`);
+    return {
+      signals: [],
+      reason: 'Invalid candles data',
+      marketStructure: { structure: 'UNKNOWN', confidence: 0 },
+      structureStrength: { strength: 'unknown', score: 0 }
+    };
+  }
+  
+  if (candles.length < 100) {
+    console.log(`⚠️ Coordinator ${symbol}: Insufficient candles: ${candles.length}/100`);
+    return {
+      signals: [],
+      reason: `Insufficient data: ${candles.length} candles`,
+      marketStructure: { structure: 'UNKNOWN', confidence: 0 },
+      structureStrength: { strength: 'unknown', score: 0 }
+    };
+  }
+  
   // Log which signals are enabled
   const enabledSignals = getEnabledSignals();
   if (enabledSignals.length === 0) {
