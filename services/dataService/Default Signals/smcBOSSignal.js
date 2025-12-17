@@ -80,7 +80,7 @@ const BOS_CONFIG = {
       volumeMultiplier: 1.3,
       atrMultiplier: 0.5
     },
-    ETHUSDT: {
+    /*ETHUSDT: {
       minADX: 18,
       volumeMultiplier: 1.4,
       atrMultiplier: 0.55
@@ -89,8 +89,8 @@ const BOS_CONFIG = {
       minADX: 20,
       volumeMultiplier: 1.5,
       atrMultiplier: 0.6
+    }*/
     }
-  }
 };
 
 // ============================================

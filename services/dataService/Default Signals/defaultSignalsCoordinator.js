@@ -1,5 +1,6 @@
 // services/dataService/Default Signals/defaultSignalsCoordinator.js
 // MAIN COORDINATOR - Orchestrates all default signal detection
+// NOW WITH SIGNAL TYPE TOGGLES
 
 const { identifySwingPoints, determineStructure, calculateStructureStrength } = require('./structureTracker');
 const { detectBOS } = require('./smcBOSSignal');
@@ -11,107 +12,209 @@ const { detectTrendlineBounce, analyzeTrendlineContext } = require('./trendlineB
 const { detectVolumeSRBounce } = require('./volumeProfileSRSignal');
 const { calculateVolumeProfile, calculateEnhancedCVD } = require('./volumeProfileHelper');
 
+// ✅ NEW: Import signal configuration
+const { isSignalEnabled, getEnabledSignals, logDisabledSignal } = require('../../../config/signalConfig');
+
 /**
  * ========================================
  * MAIN SIGNAL DETECTION COORDINATOR
  * ========================================
  * Runs all signal detectors and returns prioritized signals
+ * NOW RESPECTS SIGNAL_CONFIG TOGGLES
  */
 
 function detectAllDefaultSignals(candles, volumes, indicators, htfData, wsCache, symbol) {
   const signals = [];
   
+  // Log which signals are enabled
+  const enabledSignals = getEnabledSignals();
+  if (enabledSignals.length === 0) {
+    console.log(`⚠️ ${symbol}: No signal types enabled in SIGNAL_CONFIG`);
+    return {
+      signals: [],
+      reason: 'All signal types disabled in configuration',
+      marketStructure: { structure: 'UNKNOWN', confidence: 0 },
+      structureStrength: { strength: 'unknown', score: 0 }
+    };
+  }
+  
+  console.log(`✅ ${symbol}: Active signals: ${enabledSignals.join(', ')}`);
+  
   // ============================================
-  // STEP 1: MARKET STRUCTURE ANALYSIS
+  // STEP 1: MARKET STRUCTURE ANALYSIS (ALWAYS RUN)
   // ============================================
   const swingPoints = identifySwingPoints(candles.slice(-50), 3, 0.01);
   const marketStructure = determineStructure(swingPoints);
   const structureStrength = calculateStructureStrength(marketStructure, indicators.adx);
   
   // ============================================
-  // STEP 2: VOLUME PROFILE & CVD
+  // STEP 2: VOLUME PROFILE & CVD (CONDITIONAL)
   // ============================================
-  const volumeProfile = calculateVolumeProfile(
-    candles.slice(-100),
-    volumes.slice(-100)
-  );
+  let volumeProfile = null;
+  let cvdData = null;
   
-  const cvdData = calculateEnhancedCVD(
-    candles.slice(-50),
-    volumes.slice(-50)
-  );
+  // Only calculate if volume-based signals are enabled
+  const needsVolumeData = isSignalEnabled('CVD_DIVERGENCE') || 
+                          isSignalEnabled('TRENDLINE_BOUNCE') || 
+                          isSignalEnabled('VOLUME_SR_BOUNCE');
   
-  // ============================================
-  // STEP 3: CVD DIVERGENCE (HIGHEST PRIORITY)
-  // ============================================
-  const cvdDivergence = detectCVDDivergence(
-    candles.slice(-20),
-    volumes.slice(-20)
-  );
-  
-  // Check if divergence is at HVN/POC
-  if (cvdDivergence) {
-    const currentPrice = parseFloat(candles[candles.length - 1].close);
-    const atHVN = volumeProfile.hvnLevels.some(hvn => 
-      Math.abs(currentPrice - (hvn.priceLevel + hvn.priceHigh) / 2) / currentPrice < 0.01
+  if (needsVolumeData) {
+    volumeProfile = calculateVolumeProfile(
+      candles.slice(-100),
+      volumes.slice(-100)
     );
     
-    if (atHVN) {
-      cvdDivergence.atHVN = true;
-      cvdDivergence.confidence = Math.min(98, cvdDivergence.confidence + 15);
-    }
+    cvdData = calculateEnhancedCVD(
+      candles.slice(-50),
+      volumes.slice(-50)
+    );
   }
   
   // ============================================
-  // STEP 4: TRENDLINE BOUNCE
+  // STEP 3: CVD DIVERGENCE (IF ENABLED)
   // ============================================
-  const trendlineBounce = detectTrendlineBounce(
-    candles.slice(-100),
-    volumes.slice(-100),
-    indicators.atr,
-    { type: 'NEUTRAL', positionSize: 1.0 } // Basic regime
-  );
+  let cvdDivergence = null;
+  
+  if (isSignalEnabled('CVD_DIVERGENCE')) {
+    cvdDivergence = detectCVDDivergence(
+      candles.slice(-20),
+      volumes.slice(-20)
+    );
+    
+    // Check if divergence is at HVN/POC
+    if (cvdDivergence && volumeProfile) {
+      const currentPrice = parseFloat(candles[candles.length - 1].close);
+      const atHVN = volumeProfile.hvnLevels.some(hvn => 
+        Math.abs(currentPrice - (hvn.priceLevel + hvn.priceHigh) / 2) / currentPrice < 0.01
+      );
+      
+      if (atHVN) {
+        cvdDivergence.atHVN = true;
+        cvdDivergence.confidence = Math.min(98, cvdDivergence.confidence + 15);
+      }
+    }
+  } else if (detectCVDDivergence(candles.slice(-20), volumes.slice(-20))) {
+    logDisabledSignal('CVD_DIVERGENCE', { symbol });
+  }
   
   // ============================================
-  // STEP 5: VOLUME PROFILE S/R BOUNCE
+  // STEP 4: TRENDLINE BOUNCE (IF ENABLED)
   // ============================================
-  const volumeSRBounce = detectVolumeSRBounce(
-    candles,
-    volumes,
-    indicators.atr,
-    { type: 'NEUTRAL', positionSize: 1.0 }
-  );
+  let trendlineBounce = null;
+  
+  if (isSignalEnabled('TRENDLINE_BOUNCE')) {
+    trendlineBounce = detectTrendlineBounce(
+      candles.slice(-100),
+      volumes.slice(-100),
+      indicators.atr,
+      { type: 'NEUTRAL', positionSize: 1.0 }
+    );
+  } else {
+    const detected = detectTrendlineBounce(
+      candles.slice(-100),
+      volumes.slice(-100),
+      indicators.atr,
+      { type: 'NEUTRAL', positionSize: 1.0 }
+    );
+    if (detected) logDisabledSignal('TRENDLINE_BOUNCE', { symbol });
+  }
   
   // ============================================
-  // STEP 6: SMC SIGNALS (BOS, ChoCH, Liquidity Grab)
+  // STEP 5: VOLUME PROFILE S/R BOUNCE (IF ENABLED)
   // ============================================
-  const bosSignal = detectBOS(
-    candles.slice(-10),
-    swingPoints,
-    marketStructure,
-    volumes.slice(-10),
-    indicators,
-    htf
-  );
-
-
-  const chochSignal = detectChoCH(
-    candles.slice(-10),
-    swingPoints,
-    marketStructure,
-    indicators
-  );
+  let volumeSRBounce = null;
   
-  const liquidityGrab = detectLiquidityGrab(
-    candles.slice(-10),
-    swingPoints,
-    volumes.slice(-10)
-  );
+  if (isSignalEnabled('VOLUME_SR_BOUNCE')) {
+    volumeSRBounce = detectVolumeSRBounce(
+      candles,
+      volumes,
+      indicators.atr,
+      { type: 'NEUTRAL', positionSize: 1.0 }
+    );
+  } else {
+    const detected = detectVolumeSRBounce(
+      candles,
+      volumes,
+      indicators.atr,
+      { type: 'NEUTRAL', positionSize: 1.0 }
+    );
+    if (detected) logDisabledSignal('VOLUME_SR_BOUNCE', { symbol });
+  }
   
   // ============================================
-  // STEP 7: 1-MINUTE LIQUIDITY SWEEP
+  // STEP 6: SMC SIGNALS (IF ENABLED)
   // ============================================
-  const sweep1m = wsCache ? checkForSweep(symbol, wsCache) : null;
+  let bosSignal = null;
+  let chochSignal = null;
+  let liquidityGrab = null;
+  
+  // BOS (Break of Structure)
+  if (isSignalEnabled('BOS')) {
+    bosSignal = detectBOS(
+      candles.slice(-10),
+      swingPoints,
+      marketStructure,
+      volumes.slice(-10),
+      indicators,
+      htfData
+    );
+  } else {
+    const detected = detectBOS(
+      candles.slice(-10),
+      swingPoints,
+      marketStructure,
+      volumes.slice(-10),
+      indicators,
+      htfData
+    );
+    if (detected) logDisabledSignal('BOS', { symbol, direction: detected.direction });
+  }
+  
+  // ChoCH (Change of Character)
+  if (isSignalEnabled('CHOCH')) {
+    chochSignal = detectChoCH(
+      candles.slice(-10),
+      swingPoints,
+      marketStructure,
+      indicators
+    );
+  } else {
+    const detected = detectChoCH(
+      candles.slice(-10),
+      swingPoints,
+      marketStructure,
+      indicators
+    );
+    if (detected) logDisabledSignal('CHOCH', { symbol, direction: detected.direction });
+  }
+  
+  // Liquidity Grab
+  if (isSignalEnabled('LIQUIDITY_GRAB')) {
+    liquidityGrab = detectLiquidityGrab(
+      candles.slice(-10),
+      swingPoints,
+      volumes.slice(-10)
+    );
+  } else {
+    const detected = detectLiquidityGrab(
+      candles.slice(-10),
+      swingPoints,
+      volumes.slice(-10)
+    );
+    if (detected) logDisabledSignal('LIQUIDITY_GRAB', { symbol });
+  }
+  
+  // ============================================
+  // STEP 7: 1-MINUTE LIQUIDITY SWEEP (IF ENABLED)
+  // ============================================
+  let sweep1m = null;
+  
+  if (isSignalEnabled('LIQUIDITY_SWEEP_1M')) {
+    sweep1m = wsCache ? checkForSweep(symbol, wsCache) : null;
+  } else {
+    const detected = wsCache ? checkForSweep(symbol, wsCache) : null;
+    if (detected) logDisabledSignal('LIQUIDITY_SWEEP_1M', { symbol, direction: detected.direction });
+  }
   
   // ============================================
   // STEP 8: PRIORITIZE SIGNALS
@@ -165,7 +268,7 @@ function detectAllDefaultSignals(candles, volumes, indicators, htfData, wsCache,
     });
   }
   
-  // PRIORITY 6: BOS (Break of Structure)
+  // PRIORITY 6: BOS (Break of Structure) ✅ YOUR UPDATED SYSTEM
   else if (bosSignal && structureStrength.score >= 40) {
     signals.push({
       ...bosSignal,
@@ -209,22 +312,24 @@ function detectAllDefaultSignals(candles, volumes, indicators, htfData, wsCache,
     signals: signals.sort((a, b) => a.priority - b.priority),
     marketStructure,
     structureStrength,
-    volumeProfile: {
+    volumeProfile: volumeProfile ? {
       poc: volumeProfile.poc,
       vah: volumeProfile.vah,
       val: volumeProfile.val,
       hvnLevels: volumeProfile.hvnLevels
-    },
-    cvdData: {
+    } : null,
+    cvdData: cvdData ? {
       trend: cvdData.trend,
       delta: cvdData.delta,
       current: cvdData.current
-    },
-    trendlineContext: analyzeTrendlineContext(
-      candles.slice(-100),
-      volumes.slice(-100),
-      indicators.atr
-    )
+    } : null,
+    trendlineContext: isSignalEnabled('TRENDLINE_BOUNCE') ? 
+      analyzeTrendlineContext(
+        candles.slice(-100),
+        volumes.slice(-100),
+        indicators.atr
+      ) : null,
+    enabledSignals
   };
 }
 
@@ -239,11 +344,12 @@ function getBestDefaultSignal(candles, volumes, indicators, htfData, wsCache, sy
   if (results.signals.length === 0) {
     return {
       signal: null,
-      reason: 'No signals detected',
+      reason: results.reason || 'No signals detected',
       marketContext: {
         structure: results.marketStructure.structure,
         structureConfidence: results.marketStructure.confidence,
-        cvdTrend: results.cvdData.trend
+        cvdTrend: results.cvdData?.trend || 'N/A',
+        enabledSignals: results.enabledSignals
       }
     };
   }
@@ -256,9 +362,10 @@ function getBestDefaultSignal(candles, volumes, indicators, htfData, wsCache, sy
       structure: results.marketStructure.structure,
       structureConfidence: results.marketStructure.confidence,
       structureStrength: results.structureStrength,
-      cvdTrend: results.cvdData.trend,
+      cvdTrend: results.cvdData?.trend || 'N/A',
       volumeProfile: results.volumeProfile,
-      trendlineContext: results.trendlineContext
+      trendlineContext: results.trendlineContext,
+      enabledSignals: results.enabledSignals
     }
   };
 }

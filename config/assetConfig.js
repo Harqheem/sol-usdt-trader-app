@@ -62,7 +62,7 @@ const assetProfiles = {
     }
   },
   
-  // Ethereum (ETH) - Moderate-high volatility, established smart contract platform
+  /* Ethereum (ETH) - Moderate-high volatility, established smart contract platform
   ETHUSDT: {
     name: 'Ethereum',
     category: 'layer1',
@@ -524,7 +524,7 @@ const assetProfiles = {
       emaStackWeight: 2,
       trendAlignmentBonus: 2
     }
-  }
+  }*/
 };
 
 /**
