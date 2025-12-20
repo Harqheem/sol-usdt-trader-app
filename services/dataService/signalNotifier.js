@@ -81,18 +81,18 @@ async function checkAndSendSignal(symbol, analysisResult) {
       return;
     }
     
-    // ============================================
-    // STEP 5: DETERMINE SIGNAL SOURCE
-    // ============================================
-    
-    const signalSource = analysisResult.signals.signalSource || 'default';
-    console.log(`   📡 Signal source: ${signalSource.toUpperCase()}`);
-    
-    // ============================================
-    // STEP 6: LOG TO DATABASE
-    // ============================================
-    
-    console.log(`   💾 Logging signal to database...`);
+  // ============================================
+// STEP 5: DETERMINE SIGNAL SOURCE
+// ============================================
+
+const signalSource = analysisResult.signals.signalSource || 'default';
+console.log(`   📡 Signal source: ${signalSource.toUpperCase()}`);
+
+// ============================================
+// STEP 6: LOG TO DATABASE
+// ============================================
+
+console.log(`   💾 Logging signal to database...`);
 const signalData = {
   signal: signal,
   notes: analysisResult.signals.notes || 'No notes',
@@ -104,9 +104,10 @@ const signalData = {
   leverage: 20,
   entryATR: analysisResult.signals.entryATR || null,
   entryADX: analysisResult.signals.entryADX || null,
-  entryRegime: analysisResult.signals.entryRegime || null
+  entryRegime: analysisResult.signals.entryRegime || null,
+  strategyType: analysisResult.signals.strategyType || null  // ✅ ADDED: Extract strategy type
 };    
-    try {
+try {
   const tradeId = await logSignal(symbol, signalData, 'pending', null, signalSource);
   console.log(`   ✅ Signal logged as PENDING (ID: ${tradeId})`);
   

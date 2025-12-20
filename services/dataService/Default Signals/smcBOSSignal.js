@@ -288,7 +288,8 @@ function generateBOSSignal(candles, position, symbol, indicators, htfData = null
     // Generate signal with strategy marker for trade management service
     return {
       direction: 'LONG',
-      signalSource: 'BOS',
+      signalSource: 'default',   // ✅ Database constraint requires 'default'
+      strategyType: 'BOS',       // ✅ For logsService to embed [STRATEGY:BOS] marker
       entry: currentClose,
       stopLoss: stopLoss,
       takeProfit1: tp1,     // TP1 at 1.5R
@@ -297,14 +298,15 @@ function generateBOSSignal(candles, position, symbol, indicators, htfData = null
       confidence: 'High',
       reason: `[STRATEGY:BOS] Bullish BOS: Price broke ${lastHigh.toFixed(2)} (${(breakAmount * 100).toFixed(2)}% break), ADX ${adxValue.toFixed(1)}, Strong displacement`,
       metadata: {
-        strategy: 'BOS',              // For trade management service
+        strategy: 'BOS',
+        strategyType: 'BOS',
         breakAmount: breakAmount,
         lastHigh: lastHigh,
         adx: adxValue,
-        atr: atrValue,                // Trade manager needs this for ATR-based checkpoints
+        atr: atrValue,
         volumeRatio: currentCandle.volume / avgVolume,
-        optimizationVersion: 'v2.0',  // ADX=18, EARLY_BE
-        tradeManagementProfile: 'BOS' // Links to MANAGEMENT_RULES['BOS']
+        optimizationVersion: 'v2.0',
+        tradeManagementProfile: 'BOS'
       }
     };
   }
@@ -370,7 +372,8 @@ function generateBOSSignal(candles, position, symbol, indicators, htfData = null
     // Generate signal with strategy marker for trade management service
     return {
       direction: 'SHORT',
-      signalSource: 'BOS',
+      signalSource: 'default',   // ✅ Database constraint requires 'default'
+      strategyType: 'BOS',       // ✅ For logsService to embed [STRATEGY:BOS] marker
       entry: currentClose,
       stopLoss: stopLoss,
       takeProfit1: tp1,     // TP1 at 1.5R
@@ -379,14 +382,15 @@ function generateBOSSignal(candles, position, symbol, indicators, htfData = null
       confidence: 'High',
       reason: `[STRATEGY:BOS] Bearish BOS: Price broke ${lastLow.toFixed(2)} (${(breakAmount * 100).toFixed(2)}% break), ADX ${adxValue.toFixed(1)}, Strong displacement`,
       metadata: {
-        strategy: 'BOS',              // For trade management service
+        strategy: 'BOS',
+        strategyType: 'BOS',
         breakAmount: breakAmount,
         lastLow: lastLow,
         adx: adxValue,
-        atr: atrValue,                // Trade manager needs this for ATR-based checkpoints
+        atr: atrValue,
         volumeRatio: currentCandle.volume / avgVolume,
-        optimizationVersion: 'v2.0',  // ADX=18, EARLY_BE
-        tradeManagementProfile: 'BOS' // Links to MANAGEMENT_RULES['BOS']
+        optimizationVersion: 'v2.0',
+        tradeManagementProfile: 'BOS'
       }
     };
   }
