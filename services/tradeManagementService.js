@@ -18,7 +18,7 @@ const MANAGEMENT_RULES = {
     checkpoints: [
       {
         name: 'Breakeven Protection',
-        profitATR: 1.0,
+        profitATR: 0.7,
         actions: [
           { type: 'move_sl', target: 'entry+0.1', reason: 'Protect capital, let momentum run' }
         ]

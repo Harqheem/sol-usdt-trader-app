@@ -62,6 +62,57 @@ const assetProfiles = {
     }
   },
   
+    // SUI - High volatility, newer asset
+  SUIUSDT: {
+    name: 'Sui',
+    category: 'layer1',
+    
+    ema: {
+      fast: 7,
+      medium: 21,
+      slow: 99
+    },
+    sma: {
+      trend: 50,
+      major: 200
+    },
+    
+    volatility: {
+      atrPeriod: 14,
+      atrMultiplier: 1.3,   // Very volatile
+      highThreshold: 3.0,
+      lowThreshold: 1.0
+    },
+    
+    momentum: {
+      rsiPeriod: 14,
+      rsiBullish: 45,
+      rsiBearish: 55,
+      rsiOverbought: 73,
+      rsiOversold: 27,
+      adxPeriod: 14,
+      adxStrong: 27,
+      adxWeak: 17
+    },
+    
+    trade: {
+      entryPullbackATR: 0.5,   // Wide entries
+      slBufferATR: 0.7,        // Wide stops
+      tpMultiplier1: 1.5,
+      tpMultiplier2: 4.0,      // High TP2 for explosive moves
+      maxRiskPercent: 0.015,
+      minRiskPercent: 0.005
+    },
+    
+    scoring: {
+      baseThreshold: 11,       // Lower threshold (opportunities)
+      strongADXAdjust: -2,     // Reward strong trends more
+      weakADXAdjust: 1,
+      emaStackWeight: 2,
+      trendAlignmentBonus: 2
+    }
+  }
+
   /* Ethereum (ETH) - Moderate-high volatility, established smart contract platform
   ETHUSDT: {
     name: 'Ethereum',
@@ -220,56 +271,6 @@ const assetProfiles = {
     }
   },
 
-  // SUI - High volatility, newer asset
-  SUIUSDT: {
-    name: 'Sui',
-    category: 'layer1',
-    
-    ema: {
-      fast: 7,
-      medium: 21,
-      slow: 99
-    },
-    sma: {
-      trend: 50,
-      major: 200
-    },
-    
-    volatility: {
-      atrPeriod: 14,
-      atrMultiplier: 1.3,   // Very volatile
-      highThreshold: 3.0,
-      lowThreshold: 1.0
-    },
-    
-    momentum: {
-      rsiPeriod: 14,
-      rsiBullish: 45,
-      rsiBearish: 55,
-      rsiOverbought: 73,
-      rsiOversold: 27,
-      adxPeriod: 14,
-      adxStrong: 27,
-      adxWeak: 17
-    },
-    
-    trade: {
-      entryPullbackATR: 0.5,   // Wide entries
-      slBufferATR: 0.7,        // Wide stops
-      tpMultiplier1: 1.5,
-      tpMultiplier2: 4.0,      // High TP2 for explosive moves
-      maxRiskPercent: 0.015,
-      minRiskPercent: 0.005
-    },
-    
-    scoring: {
-      baseThreshold: 11,       // Lower threshold (opportunities)
-      strongADXAdjust: -2,     // Reward strong trends more
-      weakADXAdjust: 1,
-      emaStackWeight: 2,
-      trendAlignmentBonus: 2
-    }
-  },
   
   // LINK - Moderate volatility, oracle infrastructure
   LINKUSDT: {
