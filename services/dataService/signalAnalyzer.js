@@ -1,4 +1,4 @@
-// services/dataService/signalAnalyzer.js - FIXED: Await coordinator properly
+// services/dataService/signalAnalyzer.js - FIXED: Correct signal_source mapping
 
 const utils = require('../../utils');
 const { getAssetConfig } = require('../../config/assetConfig');
@@ -192,12 +192,19 @@ async function analyzeSymbol(symbol) {
       console.log(`✅ ${symbol}: SIGNAL DETECTED - ${bestSignal.signalSource} ${bestSignal.direction}`);
       console.log(`   Entry: ${bestSignal.entry}, SL: ${bestSignal.stopLoss}, TP1: ${bestSignal.takeProfit1}`);
       
+      // ✅ FIX: Map strategy name to correct signal_source value
+      // bestSignal.signalSource contains strategy name (e.g., 'BOS', 'CHOCH', 'LIQUIDITY_GRAB')
+      // But database expects 'default' or 'fast'
+      // All strategies from defaultSignalsCoordinator should use 'default'
+      const dbSignalSource = 'default'; // All default strategies use 'default' source
+      
       const response = buildTradeResponse(
         symbol, decimals, currentPrice, ohlc, timestamp,
         indicators, htf, candles30m, assetConfig, {
           signal: bestSignal.direction === 'LONG' ? 'Enter Long' : 'Enter Short',
-          signalType: bestSignal.signalSource,
-          signalSource: bestSignal.signalSource,
+          signalType: bestSignal.signalSource, // Strategy name (BOS, CHOCH, etc.) - for display
+          signalSource: dbSignalSource,         // ✅ Database value ('default' or 'fast')
+          strategyName: bestSignal.signalSource, // ✅ Keep original strategy name for notes
           entry: bestSignal.entry,
           stopLoss: bestSignal.stopLoss,
           tp1: bestSignal.takeProfit1,
@@ -325,11 +332,12 @@ function buildTradeResponse(symbol, decimals, currentPrice, ohlc, timestamp, ind
       tp2: result.tp2,
       sl: result.stopLoss,
       positionSize: 10,
-      signalType: result.signalType,
-      signalSource: result.signalSource,
+      signalType: result.signalType,      // Strategy name (BOS, CHOCH, etc.)
+      signalSource: result.signalSource,   // ✅ Database value ('default' or 'fast')
       confidence: result.confidence,
       
-      strategyType: result.signalType,
+      // ✅ FIX: Use strategyName for the strategy type (what was signalType before)
+      strategyType: result.strategyName || result.signalType,
       
       // Entry conditions for dynamic management
       entryATR: indicators.atr,
