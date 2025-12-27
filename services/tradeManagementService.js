@@ -626,8 +626,7 @@ function getSignalType(trade) {
   const markerMatch = notes.match(/\[STRATEGY:([^\]]+)\]/);
   if (markerMatch) {
     const strategyType = markerMatch[1];
-    console.log(`✅ ${trade.symbol}: Found strategy marker: ${strategyType}`);
-    
+        
     // Validate it's a known strategy type
     if (MANAGEMENT_RULES[strategyType]) {
       return strategyType;
